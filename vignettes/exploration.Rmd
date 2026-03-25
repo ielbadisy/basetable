@@ -1,0 +1,24 @@
+---
+title: "Exploration"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Exploration}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r}
+library(basetable)
+```
+
+```{r}
+dims(iris)
+types(iris)
+describe(iris)
+missingness(airquality)
+freq(iris, "Species", prop = TRUE)
+```
+
+```{r}
+compare(mtcars, transform(mtcars, mpg = mpg * 1.1))
+```

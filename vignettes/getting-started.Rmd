@@ -1,0 +1,26 @@
+---
+title: "Getting started"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r}
+library(basetable)
+```
+
+`basetable` provides a base-style front end for tabular work with a
+`data.table` backend. The core design goals are explicit semantics, compact
+naming, and equal support for nested calls and native `|>` pipelines.
+
+```{r}
+subset(mtcars, cyl == 6, select = c("mpg", "hp", "wt"))
+```
+
+```{r}
+mtcars |>
+  pick(c("mpg", "hp", "wt", "cyl")) |>
+  aggregate(by = "cyl", value = c("mpg", "hp"), fun = mean)
+```

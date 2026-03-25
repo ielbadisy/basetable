@@ -1,0 +1,27 @@
+Package: basetable
+Title: Base R Tables Powered by data.table
+Version: 0.0.1
+Author: Imad El Badisy [aut, cre]
+Maintainer: Imad El Badisy <elbadisyimad@gmail.com>
+Authors@R: 
+    person("Imad", "El Badisy", email = "imad@example.com", role = c("aut", "cre"))
+Description: A compact tabular data manipulation and exploratory data analysis
+    toolkit with a base-R-faithful interface, a data.table execution backend,
+    and explicit semantics.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Depends: 
+    R (>= 4.2.0)
+Imports:
+    data.table,
+    functionals,
+    stats,
+    utils
+Suggests:
+    knitr,
+    rmarkdown,
+    testthat (>= 3.0.0)
+VignetteBuilder: knitr
+Config/testthat/edition: 3

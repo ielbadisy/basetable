@@ -1,0 +1,32 @@
+---
+title: "Data manipulation"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Data manipulation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r}
+library(basetable)
+```
+
+```{r}
+mtcars |>
+  subset(cyl >= 6, select = c("mpg", "hp", "wt", "cyl")) |>
+  transform(power = hp / wt) |>
+  reorder(by = c("cyl", "mpg"), decreasing = c(FALSE, TRUE))
+```
+
+```{r}
+aggregate(airquality, by = "Month", value = c("Ozone", "Temp"), fun = mean, na.rm = TRUE)
+```
+
+```{r}
+merge(
+  data.frame(id = 1:3, x = letters[1:3]),
+  data.frame(id = c(2, 3, 4), y = LETTERS[2:4]),
+  by = "id",
+  all = TRUE
+)
+```
