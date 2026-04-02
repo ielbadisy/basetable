@@ -7,6 +7,7 @@
 \alias{missingness}
 \alias{profile}
 \alias{freq}
+\alias{summarytab}
 \alias{compare}
 \title{Exploratory data analysis operations}
 \description{
@@ -29,13 +30,18 @@ profile(data, cols = NULL, top_n = 3)
 
 freq(data, column, by = NULL, prop = FALSE, sort = TRUE)
 
+summarytab(data, vars = NULL, by = NULL, overall = TRUE, p_value = FALSE,
+  digits = 1)
+
 compare(x, y, by = NULL)
 }
 \arguments{
   \item{data, x, y}{A \code{data.frame} or \code{data.table}.}
-  \item{cols, column, by}{Character vectors naming columns.}
-  \item{n, top_n, width}{Display controls.}
+  \item{cols, column, by, vars}{Character vectors naming columns.}
+  \item{n, top_n, width, digits}{Display controls.}
   \item{margin}{Whether missingness is summarized by column or row.}
+  \item{overall}{Whether to include an overall summary column in \code{summarytab()}.}
+  \item{p_value}{Whether to append a p-value column in \code{summarytab()}.}
   \item{prop, sort}{Frequency-table controls.}
 }
 \value{
@@ -48,4 +54,10 @@ types(iris)
 describe(iris)
 missingness(airquality)
 freq(iris, "Species", prop = TRUE)
+summarytab(
+  transform(mtcars, am = factor(am, labels = c("Automatic", "Manual"))),
+  vars = c("mpg", "hp"),
+  by = "am",
+  p_value = TRUE
+)
 }
