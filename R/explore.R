@@ -104,6 +104,119 @@ freq <- function(data, column, by = NULL, prop = FALSE, sort = TRUE) {
   out
 }
 
+summarytab <- function(data, vars = NULL, by = NULL, overall = TRUE, p_value = FALSE, digits = 1) {
+  df <- bt_as_data_frame(data)
+
+  if (!is.null(by)) {
+    by <- bt_resolve_cols(df, by)
+    if (length(by) != 1L) {
+      stop("`by` must name exactly one column.", call. = FALSE)
+    }
+  }
+
+  if (is.null(vars)) {
+    vars <- setdiff(names(df), by)
+  } else {
+    vars <- bt_resolve_cols(df, vars)
+  }
+
+  if (!is.null(by) && any(vars %in% by)) {
+    stop("`vars` must not include the stratification column.", call. = FALSE)
+  }
+  if (length(vars) == 0L) {
+    stop("`vars` must contain at least one column.", call. = FALSE)
+  }
+  if (p_value && is.null(by)) {
+    stop("`p_value = TRUE` requires `by`.", call. = FALSE)
+  }
+  if (is.null(by) && !overall) {
+    stop("`overall` must be TRUE when `by` is NULL.", call. = FALSE)
+  }
+
+  group <- if (is.null(by)) NULL else df[[by]]
+  group_keys <- if (is.null(group)) character(0) else bt_summarytab_keys(group)
+  group_labels <- vapply(group_keys, bt_summarytab_label, character(1))
+
+  rows <- vector("list", length = 0L)
+
+  for (var in vars) {
+    x <- df[[var]]
+    p_value_label <- if (p_value) bt_summarytab_p_value(x, group) else NULL
+
+    if (is.numeric(x)) {
+      group_values <- if (length(group_keys) > 0L) {
+        vapply(group_keys, function(key) {
+          bt_summarytab_numeric(x[bt_summarytab_match(group, key)], digits = digits)
+        }, character(1))
+      } else {
+        character(0)
+      }
+
+      rows[[length(rows) + 1L]] <- bt_summarytab_row(
+        variable = var,
+        level = "Mean (SD)",
+        group_labels = group_labels,
+        group_values = group_values,
+        overall = overall,
+        overall_value = bt_summarytab_numeric(x, digits = digits),
+        p_value = p_value,
+        p_value_label = p_value_label
+      )
+
+      if (any(is.na(x))) {
+        missing_values <- if (length(group_keys) > 0L) {
+          vapply(group_keys, function(key) {
+            mask <- bt_summarytab_match(group, key)
+            bt_summarytab_count_pct(sum(is.na(x[mask])), sum(mask), digits = digits)
+          }, character(1))
+        } else {
+          character(0)
+        }
+
+        rows[[length(rows) + 1L]] <- bt_summarytab_row(
+          variable = "",
+          level = "Missing",
+          group_labels = group_labels,
+          group_values = missing_values,
+          overall = overall,
+          overall_value = bt_summarytab_count_pct(sum(is.na(x)), length(x), digits = digits),
+          p_value = p_value,
+          p_value_label = ""
+        )
+      }
+
+      next
+    }
+
+    level_keys <- bt_summarytab_keys(x)
+    for (i in seq_along(level_keys)) {
+      level_key <- level_keys[[i]]
+      level_mask <- bt_summarytab_match(x, level_key)
+      group_values <- if (length(group_keys) > 0L) {
+        vapply(group_keys, function(key) {
+          mask <- bt_summarytab_match(group, key)
+          bt_summarytab_count_pct(sum(level_mask & mask, na.rm = TRUE), sum(mask), digits = digits)
+        }, character(1))
+      } else {
+        character(0)
+      }
+
+      rows[[length(rows) + 1L]] <- bt_summarytab_row(
+        variable = if (i == 1L) var else "",
+        level = bt_summarytab_label(level_key),
+        group_labels = group_labels,
+        group_values = group_values,
+        overall = overall,
+        overall_value = bt_summarytab_count_pct(sum(level_mask, na.rm = TRUE), length(x), digits = digits),
+        p_value = p_value,
+        p_value_label = if (i == 1L) p_value_label else ""
+      )
+    }
+  }
+
+  do.call(rbind, rows)
+}
+
 compare <- function(x, y, by = NULL) {
   x_df <- bt_as_data_frame(x)
   y_df <- bt_as_data_frame(y)
@@ -145,4 +258,134 @@ compare <- function(x, y, by = NULL) {
   }
 
   out
+}
+
+bt_summarytab_row <- function(variable, level, group_labels, group_values, overall, overall_value, p_value, p_value_label) {
+  out <- list(variable = variable, level = level)
+
+  if (length(group_labels) > 0L) {
+    for (i in seq_along(group_labels)) {
+      out[[group_labels[[i]]]] <- group_values[[i]]
+    }
+  }
+
+  if (overall) {
+    out$Overall <- overall_value
+  }
+  if (p_value) {
+    out$p_value <- p_value_label
+  }
+
+  as.data.frame(out, stringsAsFactors = FALSE, check.names = FALSE)
+}
+
+bt_summarytab_numeric <- function(x, digits = 1) {
+  x <- x[!is.na(x)]
+  if (length(x) == 0L) {
+    return("NA")
+  }
+
+  paste0(
+    bt_summarytab_number(mean(x), digits = digits),
+    " (",
+    bt_summarytab_number(stats::sd(x), digits = digits),
+    ")"
+  )
+}
+
+bt_summarytab_count_pct <- function(n, total, digits = 1) {
+  if (total == 0L) {
+    return("NA")
+  }
+
+  paste0(
+    n,
+    " (",
+    bt_summarytab_number(100 * (n / total), digits = digits),
+    "%)"
+  )
+}
+
+bt_summarytab_number <- function(x, digits = 1) {
+  if (is.na(x)) {
+    return("NA")
+  }
+
+  formatC(x, digits = digits, format = "f")
+}
+
+bt_summarytab_keys <- function(x) {
+  x_chr <- as.character(x)
+  observed <- unique(x_chr[!is.na(x_chr)])
+
+  if (is.factor(x)) {
+    observed <- levels(x)[levels(x) %in% observed]
+  }
+
+  if (any(is.na(x))) {
+    c(observed, "<NA>")
+  } else {
+    observed
+  }
+}
+
+bt_summarytab_label <- function(key) {
+  if (identical(key, "<NA>")) "Missing" else key
+}
+
+bt_summarytab_match <- function(x, key) {
+  if (identical(key, "<NA>")) {
+    is.na(x)
+  } else {
+    !is.na(x) & as.character(x) == key
+  }
+}
+
+bt_summarytab_p_value <- function(x, group) {
+  keep <- !is.na(group)
+  x <- x[keep]
+  group <- group[keep]
+
+  if (length(group) == 0L || length(unique(group)) < 2L) {
+    return(NA_character_)
+  }
+
+  p <- tryCatch({
+    if (is.numeric(x)) {
+      keep_x <- !is.na(x)
+      x <- x[keep_x]
+      group <- droplevels(as.factor(group[keep_x]))
+
+      if (length(x) == 0L || length(unique(group)) < 2L) {
+        NA_real_
+      } else if (nlevels(group) == 2L) {
+        stats::t.test(x ~ group)$p.value
+      } else {
+        stats::oneway.test(x ~ group)$p.value
+      }
+    } else {
+      x_tab <- ifelse(is.na(x), "Missing", as.character(x))
+      tbl <- table(x_tab, group, useNA = "ifany")
+
+      if (nrow(tbl) < 2L || ncol(tbl) < 2L) {
+        NA_real_
+      } else {
+        suppressWarnings(stats::chisq.test(tbl)$p.value)
+      }
+    }
+  }, error = function(e) {
+    if (!is.numeric(x)) {
+      tbl <- table(ifelse(is.na(x), "Missing", as.character(x)), group, useNA = "ifany")
+      if (all(dim(tbl) == c(2L, 2L))) {
+        return(stats::fisher.test(tbl)$p.value)
+      }
+    }
+    NA_real_
+  })
+
+  if (is.na(p)) {
+    return(NA_character_)
+  }
+
+  format.pval(p, digits = 3, eps = 0.001)
 }
