@@ -28,5 +28,5 @@ subset <- function(data, subset = NULL, select = NULL, drop = FALSE) {
     return(out[[1L]])
   }
 
-  bt_as_data_frame(out)
+  bt_as_tibble(out)
 }

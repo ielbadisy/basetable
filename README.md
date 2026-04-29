@@ -52,6 +52,19 @@ mtcars |>
   aggregate(by = "cyl", value = c("mpg", "power"), fun = mean)
 ```
 
+Table 1 style summary:
+
+```r
+library(basetable)
+
+summarytab(
+  transform(mtcars, am = factor(am, labels = c("Automatic", "Manual"))),
+  vars = c("mpg", "hp"),
+  by = "am",
+  p_value = TRUE
+)
+```
+
 ## Operation dictionary
 
 | Family | Exported function | Base reference |
@@ -66,7 +79,7 @@ mtcars |>
 | Split/apply/combine | `split()`, `by_apply()`, `combine()` | `split()`, `by()` |
 | Reshaping | `reshape()`, `stack()`, `unstack()` | base equivalents |
 | Inspection | `glimpse()`, `dims()`, `types()`, `headtail()` | `str()`, `dim()`, `head()` |
-| EDA | `describe()`, `missingness()`, `profile()`, `freq()`, `compare()` | base summaries |
+| EDA | `describe()`, `missingness()`, `profile()`, `freq()`, `summarytab()`, `compare()` | base summaries |
 
 ## Positioning
 

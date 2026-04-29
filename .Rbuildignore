@@ -1,0 +1,6 @@
+^\.git$
+^\.Rhistory$
+^.*\.Rhistory$
+^\.Rcheck$
+^\.\.Rcheck$
+^.*\.Rcheck$

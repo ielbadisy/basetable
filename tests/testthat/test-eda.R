@@ -1,9 +1,10 @@
-test_that("dims, types, describe, and missing return data frames", {
+test_that("dims, types, describe, missingness, and summarytab return data frames", {
   expect_s3_class(dims(iris), "data.frame")
   expect_s3_class(types(iris), "data.frame")
   expect_s3_class(describe(iris), "data.frame")
   expect_s3_class(missingness(iris), "data.frame")
   expect_s3_class(missingness(iris, margin = "row"), "data.frame")
+  expect_s3_class(summarytab(iris, vars = c("Sepal.Length", "Species")), "data.frame")
 })
 
 test_that("freq and compare provide stable outputs", {
@@ -16,4 +17,23 @@ test_that("freq and compare provide stable outputs", {
     by = "Species"
   )
   expect_true(all(c("dims", "names", "types", "missing", "key_overlap") %in% names(cmp)))
+})
+
+test_that("summarytab builds table1-style summaries with optional p-values", {
+  dat <- transform(
+    mtcars,
+    am = factor(am, levels = c(0, 1), labels = c("Automatic", "Manual")),
+    cyl = factor(cyl)
+  )
+
+  out <- summarytab(dat, vars = c("mpg", "cyl"), by = "am", p_value = TRUE)
+
+  expect_equal(
+    names(out),
+    c("variable", "level", "Automatic", "Manual", "Overall", "p_value")
+  )
+  expect_equal(out$level[[1]], "Mean (SD)")
+  expect_true(any(out$variable == "mpg"))
+  expect_true(any(out$variable == "cyl"))
+  expect_true(any(!is.na(out$p_value) & nzchar(out$p_value)))
 })

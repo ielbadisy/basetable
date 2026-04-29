@@ -26,7 +26,7 @@ aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TR
     out <- out[ord, , drop = FALSE]
   }
 
-  out
+  bt_as_tibble(out)
 }
 
 count <- function(data, by, sort = TRUE, name = "n") {
@@ -43,5 +43,5 @@ count <- function(data, by, sort = TRUE, name = "n") {
     out <- out[order(out[[name]], decreasing = TRUE), , drop = FALSE]
     rownames(out) <- NULL
   }
-  out
+  bt_as_tibble(out)
 }

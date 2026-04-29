@@ -20,5 +20,14 @@ freq(iris, "Species", prop = TRUE)
 ```
 
 ```{r}
+summarytab(
+  transform(mtcars, am = factor(am, labels = c("Automatic", "Manual"))),
+  vars = c("mpg", "hp"),
+  by = "am",
+  p_value = TRUE
+)
+```
+
+```{r}
 compare(mtcars, transform(mtcars, mpg = mpg * 1.1))
 ```
