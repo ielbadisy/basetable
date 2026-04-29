@@ -5,7 +5,9 @@ split <- function(data, by, drop = FALSE, keep.by = FALSE) {
   out <- base::split(df, key, drop = drop)
 
   if (!keep.by) {
-    out <- lapply(out, function(piece) piece[, setdiff(names(piece), by), drop = FALSE])
+    out <- lapply(out, function(piece) bt_as_tibble(piece[, setdiff(names(piece), by), drop = FALSE]))
+  } else {
+    out <- lapply(out, bt_as_tibble)
   }
 
   out
@@ -28,5 +30,5 @@ combine <- function(x, id = NULL) {
   }
 
   out <- data.table::rbindlist(x, fill = TRUE, idcol = id)
-  bt_as_data_frame(out)
+  bt_as_tibble(out)
 }

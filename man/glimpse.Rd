@@ -45,8 +45,8 @@ compare(x, y, by = NULL)
   \item{prop, sort}{Frequency-table controls.}
 }
 \value{
-Most functions return a plain \code{data.frame}. \code{compare()} returns a
-named list of comparison tables.
+Most functions return a tibble. \code{compare()} returns a named list of
+comparison tibbles.
 }
 \examples{
 dims(iris)

@@ -15,13 +15,13 @@ duplicated_keys <- function(data, by) {
   counts <- counts[counts$Freq > 1L, , drop = FALSE]
 
   if (nrow(counts) == 0L) {
-    return(df[FALSE, by, drop = FALSE])
+    return(bt_as_tibble(df[FALSE, by, drop = FALSE]))
   }
 
   rows <- match(as.character(counts$key), as.character(key))
   out <- cbind(df[rows, by, drop = FALSE], N = counts$Freq)
   rownames(out) <- NULL
-  out
+  bt_as_tibble(out)
 }
 
 assert_key <- function(data, by) {

@@ -1,25 +1,25 @@
 dims <- function(data) {
   df <- bt_as_data_frame(data)
-  data.frame(rows = nrow(df), cols = ncol(df), stringsAsFactors = FALSE)
+  bt_as_tibble(data.frame(rows = nrow(df), cols = ncol(df), stringsAsFactors = FALSE))
 }
 
 types <- function(data) {
   df <- bt_as_data_frame(data)
-  data.frame(
+  bt_as_tibble(data.frame(
     column = names(df),
     class = vapply(df, bt_mode, character(1)),
     typeof = vapply(df, typeof, character(1)),
     stringsAsFactors = FALSE
-  )
+  ))
 }
 
 headtail <- function(data, n = 3) {
   df <- bt_as_data_frame(data)
   if (nrow(df) <= (2L * n)) {
-    return(df)
+    return(bt_as_tibble(df))
   }
   idx <- c(seq_len(n), seq.int(nrow(df) - n + 1L, nrow(df)))
-  df[idx, , drop = FALSE]
+  bt_as_tibble(df[idx, , drop = FALSE])
 }
 
 glimpse <- function(data, width = getOption("width")) {
@@ -64,7 +64,7 @@ describe <- function(data, cols = NULL, top_n = 3) {
     )
   })
 
-  do.call(rbind, rows)
+  bt_as_tibble(do.call(rbind, rows))
 }
 
 profile <- function(data, cols = NULL, top_n = 3) {
@@ -101,7 +101,7 @@ freq <- function(data, column, by = NULL, prop = FALSE, sort = TRUE) {
     rownames(out) <- NULL
   }
 
-  out
+  bt_as_tibble(out)
 }
 
 summarytab <- function(data, vars = NULL, by = NULL, overall = TRUE, p_value = FALSE, digits = 1) {
@@ -214,7 +214,7 @@ summarytab <- function(data, vars = NULL, by = NULL, overall = TRUE, p_value = F
     }
   }
 
-  do.call(rbind, rows)
+  bt_as_tibble(do.call(rbind, rows))
 }
 
 compare <- function(x, y, by = NULL) {
@@ -257,7 +257,9 @@ compare <- function(x, y, by = NULL) {
     )
   }
 
-  out
+  lapply(out, function(x) {
+    if (inherits(x, "data.frame")) bt_as_tibble(x) else x
+  })
 }
 
 bt_summarytab_row <- function(variable, level, group_labels, group_values, overall, overall_value, p_value, p_value_label) {
@@ -276,7 +278,7 @@ bt_summarytab_row <- function(variable, level, group_labels, group_values, overa
     out$p_value <- p_value_label
   }
 
-  as.data.frame(out, stringsAsFactors = FALSE, check.names = FALSE)
+  bt_as_tibble(as.data.frame(out, stringsAsFactors = FALSE, check.names = FALSE))
 }
 
 bt_summarytab_numeric <- function(x, digits = 1) {

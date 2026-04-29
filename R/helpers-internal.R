@@ -10,6 +10,10 @@ bt_as_data_frame <- function(data) {
   as.data.frame(data, stringsAsFactors = FALSE)
 }
 
+bt_as_tibble <- function(data) {
+  tibble::as_tibble(data)
+}
+
 bt_col_expr <- function(expr, data) {
   eval(expr, envir = data, enclos = parent.frame())
 }
