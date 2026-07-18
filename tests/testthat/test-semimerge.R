@@ -4,7 +4,7 @@ test_that("semimerge keeps matching rows from x", {
 
   out <- semimerge(x, y, by = "id")
 
-  expect_s3_class(out, "tbl_df")
+  expect_s3_class(out, "data.table")
   expect_equal(out$id, c(2, 3))
   expect_equal(out$value, c("b", "c"))
 })

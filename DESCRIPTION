@@ -21,6 +21,9 @@ Imports:
     tibble,
     utils
 Suggests:
+    bench,
+    dplyr,
+    ggplot2,
     knitr,
     rmarkdown,
     testthat (>= 3.0.0)

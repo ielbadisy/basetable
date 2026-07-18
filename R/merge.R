@@ -6,8 +6,8 @@ merge <- function(x,
                   all.y = all,
                   sort = FALSE,
                   suffixes = c(".x", ".y")) {
-  x_dt <- bt_as_data_table(x)
-  y_dt <- bt_as_data_table(y)
+  x_dt <- bt_as_data_table_ro(x)
+  y_dt <- bt_as_data_table_ro(y)
 
   if (is.null(by)) {
     by <- common_names(x_dt, y_dt)
@@ -28,5 +28,5 @@ merge <- function(x,
     suffixes = suffixes
   )
 
-  bt_as_tibble(out)
+  out
 }

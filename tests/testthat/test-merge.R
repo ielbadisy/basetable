@@ -4,7 +4,7 @@ test_that("merge joins two tables", {
 
   out <- merge(x, y, by = "id", all.x = TRUE)
 
-  expect_s3_class(out, "tbl_df")
+  expect_s3_class(out, "data.table")
   expect_equal(nrow(out), 2L)
   expect_true(all(c("id", "value_x", "value_y") %in% names(out)))
 })
