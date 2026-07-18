@@ -9,12 +9,11 @@ updatemerge <- function(x, y, by, cols = NULL) {
   }
   cols <- bt_resolve_cols(x_dt, cols)
 
-  x_key <- interaction(x_dt[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
-  y_key <- interaction(y_dt[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
-  idx <- match(x_key, y_key)
+  y_first <- y_dt[!duplicated(y_dt, by = by)]
+  idx <- y_first[x_dt, on = by, which = TRUE]
 
   for (nm in cols) {
-    values <- y_dt[[nm]][idx]
+    values <- y_first[[nm]][idx]
     keep <- !is.na(idx)
     x_dt[[nm]][keep] <- values[keep]
   }
