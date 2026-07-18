@@ -379,13 +379,10 @@ propcount <- function(data, by, margin = NULL) {
     out$prop <- out$n / sum(out$n)
     return(out)
   }
-  margin <- bt_resolve_cols(bt_as_data_frame(out), margin)
-  total <- stats::aggregate(out$n, out[margin], sum)
-  names(total)[ncol(total)] <- ".total"
-  out <- merge(out, total, by = margin, sort = FALSE)
-  out$prop <- out$n / out$.total
-  out$.total <- NULL
-  out
+  margin <- bt_resolve_cols(out, margin)
+  out_dt <- data.table::as.data.table(out)
+  out_dt[, prop := n / sum(n), by = margin]
+  bt_as_tibble(out_dt)
 }
 
 applyby <- function(data, by, fun, ..., bind = FALSE, id = ".group") {
