@@ -24,11 +24,12 @@ library(data.table)
 ```
 
 The benchmarks below compare `basetable` with raw `data.table`, base R, and
-`dplyr` on three representative table operations:
+`dplyr` on four representative table operations:
 
 - row subsetting and column selection
 - keyed joins
 - grouped aggregation
+- grouped counting
 
 `basetable` wraps `data.table` as its execution backend, so the `data.table`
 comparison is the one that matters most here: it isolates the cost of the
@@ -115,6 +116,17 @@ run_aggregate_benchmark <- function() {
   )
 }
 
+run_count_benchmark <- function() {
+  bench::mark(
+    basetable = basetable::count(subset_dt, by = "grp"),
+    data_table = subset_dt[, .N, by = grp],
+    base_r = as.data.frame(table(subset_dt$grp)),
+    dplyr = subset_dt |> dplyr::count(grp),
+    iterations = 15,
+    check = FALSE
+  )
+}
+
 summarise_benchmark <- function(x, operation) {
   out <- data.table::as.data.table(x)[, .(
     operation = operation,
@@ -137,10 +149,11 @@ summarise_benchmark <- function(x, operation) {
 benchmark_results <- data.table::rbindlist(list(
   summarise_benchmark(run_subset_benchmark(), "Subset and select"),
   summarise_benchmark(run_merge_benchmark(), "Merge"),
-  summarise_benchmark(run_aggregate_benchmark(), "Aggregate")
+  summarise_benchmark(run_aggregate_benchmark(), "Aggregate"),
+  summarise_benchmark(run_count_benchmark(), "Group count")
 ), fill = TRUE)
 
-benchmark_results[, operation := factor(operation, levels = c("Subset and select", "Merge", "Aggregate"))]
+benchmark_results[, operation := factor(operation, levels = c("Subset and select", "Merge", "Aggregate", "Group count"))]
 ```
 
 ## Results Table
@@ -174,6 +187,18 @@ knitr::kable(
 The "Relative time vs data.table" column is the direct measure of wrapper
 cost: a value close to 1.00 for the `basetable` row means the base-R-faithful
 interface adds effectively no overhead over calling `data.table` directly.
+
+A broader perf pass also rewrote several other functions that previously did
+their grouping/joining/row iteration in pure base R (`interaction()`+`table()`
+or `split()`, row-wise `apply()`, `paste()`-based key matching) instead of
+using data.table's compiled internals. `inst/benchmarks/benchmark-all.R`
+tracks these against their native data.table equivalents; the most dramatic
+fix was `rollingmerge()`, which reimplemented a rolling/nearest join with a
+hand-rolled per-group R loop and measured at roughly **1500x** the cost of
+data.table's native `roll=` join before being rewritten to use it directly —
+it now runs at parity. `count()`, `duplicated_keys()`, `freq()`, `filldown()`,
+`fillup()`, `split()`, and `summarise()`/`summarize()`/`summaries()` all saw
+similar (smaller) reductions in overhead from the same kind of fix.
 
 ## Absolute Time
 
