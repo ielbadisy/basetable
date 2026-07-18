@@ -18,6 +18,30 @@ This repository now contains the initial package scaffold, naming dictionary,
 semantic specification, first implementation pass, tests, vignettes, and
 benchmark scripts.
 
+## Benchmarks
+
+The `Benchmarks` vignette contains the reproducible report. The summary below
+uses 15 iterations per workload on this workspace.
+
+![Benchmark absolute time](man/figures/benchmark-absolute.png)
+
+![Benchmark relative time](man/figures/benchmark-relative.png)
+
+| Operation | Implementation | Median (ms) | Iterations / sec | Memory (MB) | Relative time |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Subset and select | basetable | 3.87 | 198.0 | 5.48 | 1.00 |
+| Subset and select | base R | 3.72 | 268.0 | 5.48 | 0.96 |
+| Subset and select | dplyr | 1.96 | 462.0 | 4.87 | 0.51 |
+| Merge | basetable | 5.82 | 171.0 | 7.98 | 1.00 |
+| Merge | base R | 30.90 | 31.3 | 11.00 | 5.31 |
+| Merge | dplyr | 3.29 | 304.0 | 4.70 | 0.57 |
+| Aggregate | basetable | 8.13 | 109.0 | 8.21 | 1.00 |
+| Aggregate | base R | 24.40 | 41.0 | 28.50 | 3.00 |
+| Aggregate | dplyr | 2.86 | 348.0 | 4.07 | 0.35 |
+
+Rerun `vignettes/benchmarking.Rmd` to refresh the report if the workload or
+implementation changes.
+
 ## Installation
 
 ```r
