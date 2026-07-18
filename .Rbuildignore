@@ -4,3 +4,5 @@
 ^\.Rcheck$
 ^\.\.Rcheck$
 ^.*\.Rcheck$
+^CONTRIBUTING\.md$
+^cran-comments\.md$
