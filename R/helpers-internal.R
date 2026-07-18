@@ -114,3 +114,47 @@ bt_order_data <- function(df, by, decreasing = FALSE, na.last = TRUE) {
   ord <- do.call(order, c(df[by], list(decreasing = decreasing, na.last = na.last)))
   df[ord, , drop = FALSE]
 }
+
+bt_eval_in_data <- function(expr, data) {
+  eval(expr, envir = as.list(data), enclos = parent.frame())
+}
+
+bt_eval_logical <- function(expr, data, n) {
+  value <- bt_eval_in_data(expr, data)
+  if (!is.logical(value) || length(value) != n) {
+    stop("Expression must evaluate to a logical vector with one value per row.", call. = FALSE)
+  }
+  value[is.na(value)] <- FALSE
+  value
+}
+
+bt_split_by <- function(data, by, drop = FALSE, keepby = FALSE) {
+  df <- bt_as_data_frame(data)
+  by <- bt_resolve_cols(df, by)
+  key <- interaction(df[, by, drop = FALSE], drop = drop, lex.order = TRUE)
+  pieces <- base::split(df, key, drop = drop)
+
+  if (!keepby) {
+    pieces <- lapply(pieces, function(piece) bt_as_tibble(piece[, setdiff(names(piece), by), drop = FALSE]))
+  } else {
+    pieces <- lapply(pieces, bt_as_tibble)
+  }
+
+  pieces
+}
+
+bt_group_keys <- function(data, by) {
+  df <- bt_as_data_frame(data)
+  by <- bt_resolve_cols(df, by)
+  unique(df[, by, drop = FALSE])
+}
+
+bt_set_row_names <- function(x, n) {
+  if (length(x) == 1L) {
+    rep(x, n)
+  } else if (length(x) == n) {
+    x
+  } else {
+    stop("Length mismatch.", call. = FALSE)
+  }
+}
