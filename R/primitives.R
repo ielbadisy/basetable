@@ -1306,7 +1306,7 @@ padcenter <- function(x, width, pad = " ") {
     left_pad <- floor(n / 2)
     right_pad <- n - left_pad
     paste0(strrep(pad, left_pad), s, strrep(pad, right_pad))
-  }, character(1))
+  }, character(1), USE.NAMES = FALSE)
 }
 #' Test for a pattern match anywhere in the string
 #'
