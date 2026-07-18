@@ -4,8 +4,6 @@ semimerge <- function(x, y, by) {
   by <- bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
 
-  x_key <- interaction(x_dt[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
-  y_key <- interaction(y_dt[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
-
-  x_dt[x_key %in% y_key, , drop = FALSE]
+  y_keys <- unique(y_dt[, by, with = FALSE])
+  x_dt[y_keys, on = by, nomatch = NULL]
 }
