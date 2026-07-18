@@ -6,6 +6,21 @@ bt_as_data_table <- function(data) {
   data.table::as.data.table(data)
 }
 
+# Like bt_as_data_table(), but skips the defensive copy when `data` is
+# already a data.table. Only safe for callers that never mutate the
+# result in place (no `:=`, no `set*()`, no `x[[nm]][...] <-`); such
+# callers must use bt_as_data_table() instead.
+bt_as_data_table_ro <- function(data) {
+  if (data.table::is.data.table(data)) {
+    return(data)
+  }
+  if (!inherits(data, "data.frame")) {
+    stop("`data` must be a data.frame or data.table.", call. = FALSE)
+  }
+
+  data.table::as.data.table(data)
+}
+
 bt_as_data_frame <- function(data) {
   as.data.frame(data, stringsAsFactors = FALSE)
 }
