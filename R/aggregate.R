@@ -19,18 +19,12 @@ aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TR
 }
 
 count <- function(data, by, sort = TRUE, name = "n") {
-  df <- bt_as_data_frame(data)
-  by <- bt_resolve_cols(df, by)
-  key <- interaction(df[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
-  tab <- as.data.frame(table(key), stringsAsFactors = FALSE)
-  tab <- tab[tab$Freq > 0L, , drop = FALSE]
-  rows <- match(as.character(tab$key), as.character(key))
-  out <- cbind(df[rows, by, drop = FALSE], tab["Freq"])
-  names(out)[ncol(out)] <- name
-  rownames(out) <- NULL
+  dt <- bt_as_data_table_ro(data)
+  by <- bt_resolve_cols(dt, by)
+  out <- dt[, list(N = .N), by = by]
+  data.table::setnames(out, "N", name)
   if (sort) {
-    out <- out[order(out[[name]], decreasing = TRUE), , drop = FALSE]
-    rownames(out) <- NULL
+    data.table::setorderv(out, name, order = -1L)
   }
   bt_as_tibble(out)
 }
