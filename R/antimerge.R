@@ -1,6 +1,6 @@
 antimerge <- function(x, y, by) {
-  x_dt <- bt_as_data_table(x)
-  y_dt <- bt_as_data_table(y)
+  x_dt <- bt_as_data_table_ro(x)
+  y_dt <- bt_as_data_table_ro(y)
   by <- bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
 
