@@ -1832,6 +1832,66 @@ minute <- function(x) as.integer(format(as.POSIXct(x), "%M"))
 #' @return An integer vector.
 #' @export
 second <- function(x) as.integer(format(as.POSIXct(x), "%S"))
+bt_floor_date <- function(d, unit) {
+  switch(
+    unit,
+    day = d,
+    week = d - (as.integer(format(d, "%u")) - 1L),
+    month = as.Date(format(d, "%Y-%m-01")),
+    year = as.Date(format(d, "%Y-01-01"))
+  )
+}
+
+bt_ceiling_date <- function(d, unit) {
+  switch(
+    unit,
+    day = d,
+    week = bt_floor_date(d, "week") + 7L,
+    month = {
+      first_of_month <- bt_floor_date(d, "month")
+      out <- vapply(first_of_month, function(fd) {
+        if (is.na(fd)) return(NA_real_)
+        as.numeric(seq.Date(as.Date(fd, origin = "1970-01-01"), by = "1 month", length.out = 2L)[2L])
+      }, numeric(1))
+      as.Date(out, origin = "1970-01-01")
+    },
+    year = as.Date(paste0(as.integer(format(d, "%Y")) + 1L, "-01-01"))
+  )
+}
+
+bt_add_months_one <- function(day, n_months, invalid) {
+  if (is.na(day)) {
+    return(NA_real_)
+  }
+  y <- as.integer(format(day, "%Y"))
+  m <- as.integer(format(day, "%m"))
+  dom <- as.integer(format(day, "%d"))
+  total <- (y * 12L + (m - 1L)) + n_months
+  ty <- total %/% 12L
+  tm <- total %% 12L + 1L
+  first_of_target <- as.Date(sprintf("%d-%02d-01", ty, tm))
+  days_in_target <- as.integer(format(seq.Date(first_of_target, by = "1 month", length.out = 2L)[2L] - 1L, "%d"))
+
+  if (dom <= days_in_target) {
+    return(as.numeric(first_of_target + dom - 1L))
+  }
+
+  switch(
+    invalid,
+    previous = as.numeric(first_of_target + days_in_target - 1L),
+    `next` = as.numeric(first_of_target + dom - 1L),
+    missing = NA_real_,
+    error = stop(sprintf("Adding %d month(s) to %s produces an invalid date.", n_months, day), call. = FALSE)
+  )
+}
+
+bt_as_datetime <- function(x) {
+  if (inherits(x, "POSIXct")) {
+    return(x)
+  }
+  as.POSIXct(as.Date(x))
+}
+
 #' Round a date down to a unit
 #'
 #' @param x An atomic vector.
@@ -1839,7 +1899,9 @@ second <- function(x) as.integer(format(as.POSIXct(x), "%S"))
 #'
 #' @return A Date vector.
 #' @export
-floordate <- function(x, unit = c("day", "week", "month", "year")) as.Date(x)
+floordate <- function(x, unit = c("day", "week", "month", "year")) {
+  bt_floor_date(as.Date(x), match.arg(unit))
+}
 #' Round a date up to a unit
 #'
 #' @param x An atomic vector.
@@ -1847,7 +1909,9 @@ floordate <- function(x, unit = c("day", "week", "month", "year")) as.Date(x)
 #'
 #' @return A Date vector.
 #' @export
-ceilingdate <- function(x, unit = c("day", "week", "month", "year")) as.Date(x)
+ceilingdate <- function(x, unit = c("day", "week", "month", "year")) {
+  bt_ceiling_date(as.Date(x), match.arg(unit))
+}
 #' Round a date to the nearest unit
 #'
 #' @param x An atomic vector.
@@ -1855,7 +1919,14 @@ ceilingdate <- function(x, unit = c("day", "week", "month", "year")) as.Date(x)
 #'
 #' @return A Date vector.
 #' @export
-rounddate <- function(x, unit = c("day", "week", "month", "year")) as.Date(x)
+rounddate <- function(x, unit = c("day", "week", "month", "year")) {
+  unit <- match.arg(unit)
+  d <- as.Date(x)
+  fl <- bt_floor_date(d, unit)
+  ce <- bt_ceiling_date(d, unit)
+  closer_to_floor <- (as.numeric(d) - as.numeric(fl)) <= (as.numeric(ce) - as.numeric(d))
+  as.Date(ifelse(closer_to_floor, as.numeric(fl), as.numeric(ce)), origin = "1970-01-01")
+}
 #' Add days to a date
 #'
 #' @param x An atomic vector.
@@ -1880,7 +1951,13 @@ addweeks <- function(x, n) as.Date(x) + 7 * n
 #'
 #' @return A Date vector.
 #' @export
-addmonths <- function(x, n, invalid = c("previous", "next", "missing", "error")) seq.Date(as.Date(x), by = paste(n, "month"), length.out = 1L)[1L]
+addmonths <- function(x, n, invalid = c("previous", "next", "missing", "error")) {
+  invalid <- match.arg(invalid)
+  d <- as.Date(x)
+  n <- rep_len(as.integer(n), length(d))
+  out <- vapply(seq_along(d), function(i) bt_add_months_one(d[i], n[i], invalid), numeric(1))
+  as.Date(out, origin = "1970-01-01")
+}
 #' Add years to a date
 #'
 #' @param x An atomic vector.
@@ -1889,7 +1966,9 @@ addmonths <- function(x, n, invalid = c("previous", "next", "missing", "error"))
 #'
 #' @return A Date vector.
 #' @export
-addyears <- function(x, n, invalid = c("previous", "next", "missing", "error")) seq.Date(as.Date(x), by = paste(n, "year"), length.out = 1L)[1L]
+addyears <- function(x, n, invalid = c("previous", "next", "missing", "error")) {
+  addmonths(x, as.integer(n) * 12L, invalid = match.arg(invalid))
+}
 #' Difference between two dates
 #'
 #' @param x An atomic vector.
@@ -1898,7 +1977,9 @@ addyears <- function(x, n, invalid = c("previous", "next", "missing", "error")) 
 #'
 #' @return A numeric vector of differences.
 #' @export
-datediff <- function(x, y, units = "days") as.numeric(as.Date(x) - as.Date(y))
+datediff <- function(x, y, units = "days") {
+  as.numeric(difftime(bt_as_datetime(x), bt_as_datetime(y), units = units))
+}
 #' Sequence of dates
 #'
 #' @param from Start date.
