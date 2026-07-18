@@ -29,18 +29,22 @@ uses 15 iterations per workload on this workspace.
 
 | Operation | Implementation | Median (ms) | Iterations / sec | Memory (MB) | Relative time |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Subset and select | basetable | 1.93 | 525.4 | 4.58 | 1.00 |
-| Subset and select | data.table | 1.52 | 610.0 | 3.27 | 0.79 |
-| Subset and select | base R | 1.54 | 647.0 | 3.10 | 0.80 |
-| Subset and select | dplyr | 1.76 | 528.8 | 4.98 | 0.91 |
-| Merge | basetable | 4.96 | 194.7 | 3.76 | 1.00 |
-| Merge | data.table | 4.92 | 195.6 | 3.35 | 0.99 |
-| Merge | base R | 4.91 | 195.6 | 3.35 | 0.99 |
-| Merge | dplyr | 3.50 | 271.0 | 5.81 | 0.71 |
-| Aggregate | basetable | 1.36 | 687.0 | 0.91 | 1.00 |
-| Aggregate | data.table | 1.88 | 506.9 | 3.12 | 1.38 |
-| Aggregate | base R | 24.94 | 39.5 | 28.55 | 18.31 |
-| Aggregate | dplyr | 2.77 | 322.8 | 7.01 | 2.03 |
+| Subset and select | basetable | 2.36 | 406.5 | 4.57 | 1.00 |
+| Subset and select | data.table | 1.98 | 470.9 | 3.27 | 0.84 |
+| Subset and select | base R | 1.67 | 596.6 | 3.10 | 0.71 |
+| Subset and select | dplyr | 2.56 | 370.8 | 4.98 | 1.08 |
+| Merge | basetable | 5.45 | 176.1 | 3.76 | 1.00 |
+| Merge | data.table | 5.57 | 178.5 | 3.35 | 1.02 |
+| Merge | base R | 5.51 | 175.2 | 3.35 | 1.01 |
+| Merge | dplyr | 4.65 | 204.2 | 5.81 | 0.85 |
+| Aggregate | basetable | 1.83 | 519.2 | 0.91 | 1.00 |
+| Aggregate | data.table | 2.16 | 406.5 | 3.12 | 1.18 |
+| Aggregate | base R | 34.75 | 30.3 | 28.55 | 19.02 |
+| Aggregate | dplyr | 2.61 | 369.7 | 7.01 | 1.43 |
+| Group count | basetable | 1.22 | 799.4 | 2.77 | 1.00 |
+| Group count | data.table | 0.88 | 1115.1 | 2.70 | 0.72 |
+| Group count | base R | 2.11 | 459.2 | 5.73 | 1.73 |
+| Group count | dplyr | 2.27 | 349.4 | 5.14 | 1.86 |
 
 `basetable` wraps `data.table` as its execution backend, so the `data.table`
 row is the one that matters most: it isolates wrapper overhead from the
@@ -55,6 +59,18 @@ internal j-expression and averages over 300 iterations puts basetable's
 actual wrapper overhead at roughly 1.2x for subset, 1.1x for aggregate, and
 about parity for merge (the large base R gap here is `stats::aggregate`'s
 formula-interface overhead, not a basetable result).
+
+A separate perf pass rewrote several other functions that previously did
+their grouping/joining/row iteration in pure base R instead of using
+data.table's compiled internals (tracked in `inst/benchmarks/benchmark-all.R`
+against native data.table equivalents, not shown in the chart above). The
+largest fix was `rollingmerge()`, which reimplemented a rolling/nearest join
+with a hand-rolled per-group R loop and measured at roughly **1500x** the
+cost of data.table's native `roll=` join before being rewritten to use it
+directly — it now runs at parity. `count()` (shown above as "Group count"),
+`duplicated_keys()`, `freq()`, `filldown()`, `fillup()`, `split()`, and
+`summarise()`/`summarize()`/`summaries()` all saw similar (smaller)
+reductions in overhead from the same kind of fix.
 
 Rerun `vignettes/benchmarking.Rmd` to refresh the report if the workload or
 implementation changes.
