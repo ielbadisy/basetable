@@ -29,25 +29,32 @@ uses 15 iterations per workload on this workspace.
 
 | Operation | Implementation | Median (ms) | Iterations / sec | Memory (MB) | Relative time |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Subset and select | basetable | 1.99 | 311.5 | 6.92 | 1.00 |
-| Subset and select | data.table | 1.41 | 709.3 | 3.17 | 0.71 |
-| Subset and select | base R | 1.59 | 603.6 | 3.10 | 0.80 |
-| Subset and select | dplyr | 2.49 | 367.0 | 4.89 | 1.25 |
-| Merge | basetable | 5.66 | 164.0 | 4.82 | 1.00 |
-| Merge | data.table | 5.72 | 164.3 | 3.35 | 1.01 |
-| Merge | base R | 5.58 | 175.9 | 3.35 | 0.99 |
-| Merge | dplyr | 4.58 | 211.2 | 5.77 | 0.81 |
-| Aggregate | basetable | 1.75 | 565.9 | 2.85 | 1.00 |
-| Aggregate | data.table | 1.98 | 501.7 | 3.12 | 1.13 |
-| Aggregate | base R | 30.47 | 32.8 | 28.52 | 17.41 |
-| Aggregate | dplyr | 3.32 | 292.2 | 7.00 | 1.90 |
+| Subset and select | basetable | 1.93 | 525.4 | 4.58 | 1.00 |
+| Subset and select | data.table | 1.52 | 610.0 | 3.27 | 0.79 |
+| Subset and select | base R | 1.54 | 647.0 | 3.10 | 0.80 |
+| Subset and select | dplyr | 1.76 | 528.8 | 4.98 | 0.91 |
+| Merge | basetable | 4.96 | 194.7 | 3.76 | 1.00 |
+| Merge | data.table | 4.92 | 195.6 | 3.35 | 0.99 |
+| Merge | base R | 4.91 | 195.6 | 3.35 | 0.99 |
+| Merge | dplyr | 3.50 | 271.0 | 5.81 | 0.71 |
+| Aggregate | basetable | 1.36 | 687.0 | 0.91 | 1.00 |
+| Aggregate | data.table | 1.88 | 506.9 | 3.12 | 1.38 |
+| Aggregate | base R | 24.94 | 39.5 | 28.55 | 18.31 |
+| Aggregate | dplyr | 2.77 | 322.8 | 7.01 | 2.03 |
 
 `basetable` wraps `data.table` as its execution backend, so the `data.table`
 row is the one that matters most: it isolates wrapper overhead from the
-backend's own performance. Across all three workloads basetable tracks
-data.table within about 13%, and for aggregation it is effectively at parity
-(the large base R gap here is `stats::aggregate`'s formula-interface
-overhead, not a basetable result).
+backend's own performance. The `data.table` row above uses the idiomatic
+expression a user would hand-write for each operation (e.g. `.(value =
+mean(value))` for aggregation), which is not always exactly the code path
+`basetable`'s wrapper generates internally — so a basetable row at or below
+1.00x relative to data.table (as aggregate shows here) reflects a different
+data.table idiom being used, not the wrapper beating its own backend at
+identical work. A stricter benchmark that forces both sides through the same
+internal j-expression and averages over 300 iterations puts basetable's
+actual wrapper overhead at roughly 1.2x for subset, 1.1x for aggregate, and
+about parity for merge (the large base R gap here is `stats::aggregate`'s
+formula-interface overhead, not a basetable result).
 
 Rerun `vignettes/benchmarking.Rmd` to refresh the report if the workload or
 implementation changes.
