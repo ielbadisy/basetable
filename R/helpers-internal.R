@@ -76,3 +76,41 @@ bt_top_values <- function(x, n = 3L) {
 bt_distinct_n <- function(x) {
   data.table::uniqueN(x, na.rm = FALSE)
 }
+
+bt_is_blank <- function(x) {
+  if (is.factor(x)) {
+    x <- as.character(x)
+  }
+  is.na(x) | trimws(as.character(x)) == ""
+}
+
+bt_clean_names <- function(nms, method = c("unique", "universal", "minimal")) {
+  method <- match.arg(method)
+
+  if (method == "minimal") {
+    return(nms)
+  }
+
+  cleaned <- tolower(nms)
+  cleaned <- gsub("[^[:alnum:]]+", "_", cleaned)
+  cleaned <- gsub("^_+|_+$", "", cleaned)
+  cleaned[cleaned == ""] <- "x"
+
+  if (method == "universal") {
+    cleaned <- make.names(cleaned, unique = FALSE)
+  }
+
+  make.unique(cleaned, sep = "_")
+}
+
+bt_key_expr <- function(data, by) {
+  by <- bt_resolve_cols(data, by)
+  interaction(data[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
+}
+
+bt_order_data <- function(df, by, decreasing = FALSE, na.last = TRUE) {
+  by <- bt_resolve_cols(df, by)
+  decreasing <- bt_recycle_flag(decreasing, length(by), "decreasing")
+  ord <- do.call(order, c(df[by], list(decreasing = decreasing, na.last = na.last)))
+  df[ord, , drop = FALSE]
+}
