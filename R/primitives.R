@@ -2012,7 +2012,12 @@ datediff <- function(x, y, units = "days") {
 #'
 #' @return A Date vector.
 #' @export
-dateseq <- function(from, to, by = "day", length.out = NULL) seq.Date(as.Date(from), as.Date(to), by = by, length.out = length.out)
+dateseq <- function(from, to, by = "day", length.out = NULL) {
+  if (!is.null(length.out)) {
+    return(seq.Date(as.Date(from), as.Date(to), length.out = length.out))
+  }
+  seq.Date(as.Date(from), as.Date(to), by = by)
+}
 #' Test whether a date falls within a range
 #'
 #' @param x An atomic vector.
