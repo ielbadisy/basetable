@@ -1,8 +1,7 @@
 subset <- function(data, subset = NULL, select = NULL, drop = FALSE) {
-  dt <- bt_as_data_table(data)
+  dt <- bt_as_data_table_ro(data)
   data_mask <- as.list(dt)
 
-  rows <- rep(TRUE, nrow(dt))
   subset_expr <- substitute(subset)
   if (!base::missing(subset) && !identical(subset_expr, quote(NULL))) {
     rows <- eval(subset_expr, envir = data_mask, enclos = parent.frame())
@@ -10,6 +9,8 @@ subset <- function(data, subset = NULL, select = NULL, drop = FALSE) {
       stop("`subset` must evaluate to a logical vector with one value per row.", call. = FALSE)
     }
     rows[is.na(rows)] <- FALSE
+  } else {
+    rows <- rep(TRUE, nrow(dt))
   }
 
   out <- if (is.null(select)) {
