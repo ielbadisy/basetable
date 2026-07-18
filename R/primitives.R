@@ -603,11 +603,11 @@ bt_roll_window <- function(n, width, align) {
   )
 }
 
-bt_roll_apply <- function(x, width, FUN, align = c("right", "left", "center"), fill = NA, ...) {
+bt_roll_apply <- function(x, width, FUN, align = c("right", "left", "center"), fill = NA, partial = TRUE, ...) {
   align <- match.arg(align)
   idxs <- bt_roll_window(length(x), width, align)
   out <- vapply(idxs, function(idx) {
-    if (length(idx) == 0L) return(fill)
+    if (length(idx) == 0L || (!partial && length(idx) < width)) return(fill)
     FUN(x[idx], ...)
   }, FUN.VALUE = FUN(x[seq_len(min(width, length(x)))], ...))
   out
@@ -625,8 +625,8 @@ bt_roll_apply <- function(x, width, FUN, align = c("right", "left", "center"), f
 #' @return A numeric vector of rolling means.
 #' @export
 rollmean <- function(x, width, align = c("right", "left", "center"), fill = NA, partial = FALSE, na.rm = FALSE) {
-  if (exists("frollmean", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollmean(x, n = width, align = match.arg(align), fill = fill))
-  bt_roll_apply(x, width, mean, align = align, fill = fill, na.rm = na.rm)
+  if (exists("frollmean", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollmean(x, n = width, align = match.arg(align), fill = fill, na.rm = na.rm, partial = partial))
+  bt_roll_apply(x, width, mean, align = align, fill = fill, partial = partial, na.rm = na.rm)
 }
 
 #' Rolling sum
@@ -641,8 +641,8 @@ rollmean <- function(x, width, align = c("right", "left", "center"), fill = NA, 
 #' @return A numeric vector of rolling sums.
 #' @export
 rollsum <- function(x, width, align = c("right", "left", "center"), fill = NA, partial = FALSE, na.rm = FALSE) {
-  if (exists("frollsum", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollsum(x, n = width, align = match.arg(align), fill = fill))
-  bt_roll_apply(x, width, sum, align = align, fill = fill, na.rm = na.rm)
+  if (exists("frollsum", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollsum(x, n = width, align = match.arg(align), fill = fill, na.rm = na.rm, partial = partial))
+  bt_roll_apply(x, width, sum, align = align, fill = fill, partial = partial, na.rm = na.rm)
 }
 
 #' Rolling minimum
@@ -657,8 +657,8 @@ rollsum <- function(x, width, align = c("right", "left", "center"), fill = NA, p
 #' @return A numeric vector of rolling minimums.
 #' @export
 rollmin <- function(x, width, align = c("right", "left", "center"), fill = NA, partial = FALSE, na.rm = FALSE) {
-  if (exists("frollmin", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollmin(x, n = width, align = match.arg(align), fill = fill))
-  bt_roll_apply(x, width, min, align = align, fill = fill, na.rm = na.rm)
+  if (exists("frollmin", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollmin(x, n = width, align = match.arg(align), fill = fill, na.rm = na.rm, partial = partial))
+  bt_roll_apply(x, width, min, align = align, fill = fill, partial = partial, na.rm = na.rm)
 }
 
 #' Rolling maximum
@@ -673,8 +673,8 @@ rollmin <- function(x, width, align = c("right", "left", "center"), fill = NA, p
 #' @return A numeric vector of rolling maximums.
 #' @export
 rollmax <- function(x, width, align = c("right", "left", "center"), fill = NA, partial = FALSE, na.rm = FALSE) {
-  if (exists("frollmax", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollmax(x, n = width, align = match.arg(align), fill = fill))
-  bt_roll_apply(x, width, max, align = align, fill = fill, na.rm = na.rm)
+  if (exists("frollmax", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollmax(x, n = width, align = match.arg(align), fill = fill, na.rm = na.rm, partial = partial))
+  bt_roll_apply(x, width, max, align = align, fill = fill, partial = partial, na.rm = na.rm)
 }
 
 #' Rolling median
@@ -689,8 +689,8 @@ rollmax <- function(x, width, align = c("right", "left", "center"), fill = NA, p
 #' @return A numeric vector of rolling medians.
 #' @export
 rollmedian <- function(x, width, align = c("right", "left", "center"), fill = NA, partial = FALSE, na.rm = FALSE) {
-  if (exists("frollmedian", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollmedian(x, n = width, align = match.arg(align), fill = fill))
-  bt_roll_apply(x, width, stats::median, align = align, fill = fill, na.rm = na.rm)
+  if (exists("frollmedian", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollmedian(x, n = width, align = match.arg(align), fill = fill, na.rm = na.rm, partial = partial))
+  bt_roll_apply(x, width, stats::median, align = align, fill = fill, partial = partial, na.rm = na.rm)
 }
 
 #' Rolling standard deviation
@@ -705,8 +705,8 @@ rollmedian <- function(x, width, align = c("right", "left", "center"), fill = NA
 #' @return A numeric vector of rolling standard deviations.
 #' @export
 rollsd <- function(x, width, align = c("right", "left", "center"), fill = NA, partial = FALSE, na.rm = FALSE) {
-  if (exists("frollsd", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollsd(x, n = width, align = match.arg(align), fill = fill))
-  bt_roll_apply(x, width, stats::sd, align = align, fill = fill, na.rm = na.rm)
+  if (exists("frollsd", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollsd(x, n = width, align = match.arg(align), fill = fill, na.rm = na.rm, partial = partial))
+  bt_roll_apply(x, width, stats::sd, align = align, fill = fill, partial = partial, na.rm = na.rm)
 }
 
 #' Rolling variance
@@ -721,8 +721,8 @@ rollsd <- function(x, width, align = c("right", "left", "center"), fill = NA, pa
 #' @return A numeric vector of rolling variances.
 #' @export
 rollvar <- function(x, width, align = c("right", "left", "center"), fill = NA, partial = FALSE, na.rm = FALSE) {
-  if (exists("frollapply", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollapply(x, n = width, FUN = stats::var, align = match.arg(align), fill = fill))
-  bt_roll_apply(x, width, stats::var, align = align, fill = fill, na.rm = na.rm)
+  if (exists("frollvar", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollvar(x, n = width, align = match.arg(align), fill = fill, na.rm = na.rm, partial = partial))
+  bt_roll_apply(x, width, stats::var, align = align, fill = fill, partial = partial, na.rm = na.rm)
 }
 
 #' Rolling product
@@ -737,8 +737,8 @@ rollvar <- function(x, width, align = c("right", "left", "center"), fill = NA, p
 #' @return A numeric vector of rolling products.
 #' @export
 rollprod <- function(x, width, align = c("right", "left", "center"), fill = NA, partial = FALSE, na.rm = FALSE) {
-  if (exists("frollprod", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollprod(x, n = width, align = match.arg(align), fill = fill))
-  bt_roll_apply(x, width, prod, align = align, fill = fill, na.rm = na.rm)
+  if (exists("frollprod", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollprod(x, n = width, align = match.arg(align), fill = fill, na.rm = na.rm, partial = partial))
+  bt_roll_apply(x, width, prod, align = align, fill = fill, partial = partial, na.rm = na.rm)
 }
 
 #' Rolling window apply
@@ -754,8 +754,8 @@ rollprod <- function(x, width, align = c("right", "left", "center"), fill = NA, 
 #' @return A vector with one result per window.
 #' @export
 rollapply <- function(x, width, FUN, ..., align = c("right", "left", "center"), fill = NA, partial = FALSE) {
-  if (exists("frollapply", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollapply(x, n = width, FUN = FUN, ..., align = match.arg(align), fill = fill))
-  bt_roll_apply(x, width, FUN, align = align, fill = fill, ...)
+  if (exists("frollapply", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollapply(x, N = width, FUN = FUN, ..., align = match.arg(align), fill = fill, partial = partial))
+  bt_roll_apply(x, width, FUN, align = align, fill = fill, partial = partial, ...)
 }
 
 #' Apply a function to selected columns
