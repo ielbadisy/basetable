@@ -37,7 +37,8 @@ emptycols <- function(data) {
 
 emptyrows <- function(data) {
   df <- bt_as_data_frame(data)
-  keep <- apply(df, 1L, function(x) all(bt_is_blank(x)))
+  mask <- do.call(cbind, lapply(df, bt_is_blank))
+  keep <- rowSums(mask) == ncol(df)
   df[keep, , drop = FALSE]
 }
 
@@ -485,11 +486,11 @@ separate <- function(data, column, into, sep, remove = TRUE, extra = c("warn", "
   extra <- match.arg(extra); fill <- match.arg(fill)
   parts <- strsplit(as.character(df[[column]]), sep, fixed = FALSE)
   max_len <- length(into)
-  out <- do.call(rbind, lapply(parts, function(x) {
-    x <- x[seq_len(min(length(x), max_len))]
-    if (length(x) < max_len) x <- c(x, rep(NA_character_, max_len - length(x)))
-    as.data.frame(as.list(x), stringsAsFactors = FALSE)
-  }))
+  padded <- lapply(parts, function(x) {
+    length(x) <- max_len
+    x
+  })
+  out <- as.data.frame(do.call(rbind, padded), stringsAsFactors = FALSE)
   names(out) <- into
   if (remove) df[[column]] <- NULL
   bt_as_tibble(cbind(df, out, stringsAsFactors = FALSE))
@@ -498,10 +499,11 @@ separate <- function(data, column, into, sep, remove = TRUE, extra = c("warn", "
 unite <- function(data, column, cols, sep = "_", remove = TRUE, na.rm = FALSE) {
   df <- bt_as_data_frame(data)
   cols <- bt_resolve_cols(df, cols)
-  new <- apply(df[, cols, drop = FALSE], 1L, function(x) {
-    if (na.rm) x <- x[!is.na(x)]
-    paste(x, collapse = sep)
-  })
+  new <- if (na.rm) {
+    apply(df[, cols, drop = FALSE], 1L, function(x) paste(x[!is.na(x)], collapse = sep))
+  } else {
+    do.call(paste, c(df[cols], list(sep = sep)))
+  }
   keep <- if (remove) setdiff(names(df), cols) else names(df)
   df <- df[, keep, drop = FALSE]
   df[[column]] <- new
@@ -595,7 +597,7 @@ normalizeunicode <- function(x) x
 normalizeencoding <- function(x) enc2utf8(x)
 transliterate <- function(x) iconv(x, from = "", to = "ASCII//TRANSLIT")
 textdist <- function(x, y) utils::adist(x, y)
-nearesttext <- function(x, choices) choices[apply(textdist(x, choices), 1L, which.min)]
+nearesttext <- function(x, choices) choices[max.col(-textdist(x, choices), ties.method = "first")]
 similartext <- function(x, choices) nearesttext(x, choices)
 isalpha <- function(x) grepl("^[[:alpha:]]+$", x)
 isalphanumeric <- function(x) grepl("^[[:alnum:]]+$", x)
