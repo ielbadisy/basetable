@@ -613,6 +613,10 @@ rollingmerge <- function(x, y, by, direction = c("backward", "forward", "nearest
   bt_as_tibble(out)
 }
 
+nearestmerge <- function(x, y, by, tolerance = Inf) {
+  rollingmerge(x, y, by = by, direction = "nearest", tolerance = tolerance)
+}
+
 rangemerge <- function(x, y, by, lower, upper) {
   x_dt <- bt_as_data_frame(x); y_dt <- bt_as_data_frame(y)
   by <- bt_resolve_cols(x_dt, by); bt_resolve_cols(y_dt, by)
