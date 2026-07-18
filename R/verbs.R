@@ -123,7 +123,7 @@ transmute <- function(data, ...) {
 #' @return A tibble.
 #' @export
 summarise <- function(data, ..., by = NULL) {
-  df <- bt_as_data_frame(data)
+  dt <- bt_as_data_table_ro(data)
   dots <- as.list(substitute(list(...)))[-1L]
 
   if (length(dots) == 0L) {
@@ -135,29 +135,21 @@ summarise <- function(data, ..., by = NULL) {
     stop("All summary expressions must be named.", call. = FALSE)
   }
 
-  by <- if (is.null(by)) character(0) else bt_resolve_cols(df, by)
-  pieces <- if (length(by) == 0L) {
-    list(df)
+  by <- if (is.null(by)) character(0) else bt_resolve_cols(dt, by)
+  j_call <- as.call(c(quote(list), dots))
+
+  out <- if (length(by) == 0L) {
+    dt[, eval(j_call)]
   } else {
-    split(df, by = by, keep.by = TRUE)
+    dt[, eval(j_call), keyby = by]
   }
 
-  rows <- lapply(pieces, function(piece) {
-    env <- list2env(as.list(piece), parent = parent.frame())
-    values <- lapply(dots, function(expr) eval(expr, envir = env, enclos = parent.frame()))
-    bad <- vapply(values, function(x) length(x) != 1L, logical(1))
-    if (any(bad)) {
-      stop("Each summary expression must return exactly one value per group.", call. = FALSE)
-    }
-    out <- as.data.frame(values, stringsAsFactors = FALSE, check.names = FALSE)
-    names(out) <- summary_names
-    if (length(by) > 0L) {
-      out <- cbind(piece[1L, by, drop = FALSE], out, stringsAsFactors = FALSE)
-    }
-    out
-  })
+  expected_groups <- if (length(by) == 0L) 1L else data.table::uniqueN(dt, by = by)
+  if (nrow(out) != expected_groups) {
+    stop("Each summary expression must return exactly one value per group.", call. = FALSE)
+  }
 
-  bt_as_tibble(data.table::rbindlist(rows, fill = TRUE))
+  bt_as_tibble(out)
 }
 
 #' @rdname summarise
