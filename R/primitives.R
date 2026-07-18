@@ -1262,7 +1262,11 @@ truncate <- function(x, n, ellipsis = "...") ifelse(nchar(x) > n, paste0(substr(
 #'
 #' @return A character vector padded to `width`.
 #' @export
-padleft <- function(x, width, pad = " ") sprintf(paste0("%", width, "s"), x)
+padleft <- function(x, width, pad = " ") {
+  x <- as.character(x)
+  n <- pmax(width - nchar(x), 0L)
+  paste0(strrep(pad, n), x)
+}
 #' Pad text on the right
 #'
 #' @param x An atomic vector.
@@ -1271,7 +1275,11 @@ padleft <- function(x, width, pad = " ") sprintf(paste0("%", width, "s"), x)
 #'
 #' @return A character vector padded to `width`.
 #' @export
-padright <- function(x, width, pad = " ") sprintf(paste0("%-", width, "s"), x)
+padright <- function(x, width, pad = " ") {
+  x <- as.character(x)
+  n <- pmax(width - nchar(x), 0L)
+  paste0(x, strrep(pad, n))
+}
 #' Pad text on both sides
 #'
 #' @param x An atomic vector.
@@ -1306,7 +1314,12 @@ contains <- function(x, pattern, fixed = FALSE) grepl(pattern, x, fixed = fixed)
 #'
 #' @return A logical vector.
 #' @export
-matches <- function(x, pattern, fixed = FALSE) grepl(paste0("^", pattern, "$"), x, fixed = fixed)
+matches <- function(x, pattern, fixed = FALSE) {
+  if (fixed) {
+    return(!is.na(x) & x == pattern)
+  }
+  grepl(paste0("^", pattern, "$"), x)
+}
 #' Test whether strings start with a pattern
 #'
 #' @param x An atomic vector.
@@ -1315,7 +1328,12 @@ matches <- function(x, pattern, fixed = FALSE) grepl(paste0("^", pattern, "$"), 
 #'
 #' @return A logical vector.
 #' @export
-startswith <- function(x, pattern, fixed = FALSE) startsWith(x, pattern)
+startswith <- function(x, pattern, fixed = FALSE) {
+  if (fixed) {
+    return(startsWith(x, pattern))
+  }
+  grepl(paste0("^", pattern), x)
+}
 #' Test whether strings end with a pattern
 #'
 #' @param x An atomic vector.
@@ -1324,7 +1342,12 @@ startswith <- function(x, pattern, fixed = FALSE) startsWith(x, pattern)
 #'
 #' @return A logical vector.
 #' @export
-endswith <- function(x, pattern, fixed = FALSE) vapply(pattern, function(p) grepl(paste0(p, "$"), x, fixed = fixed), logical(length(x)))
+endswith <- function(x, pattern, fixed = FALSE) {
+  if (fixed) {
+    return(endsWith(x, pattern))
+  }
+  grepl(paste0(pattern, "$"), x)
+}
 #' Count pattern matches per string
 #'
 #' @param x An atomic vector.
