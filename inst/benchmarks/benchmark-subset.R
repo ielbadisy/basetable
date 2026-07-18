@@ -12,6 +12,8 @@ x <- data.frame(
 bench_subset <- function() {
   system.time(subset(x, value > 0, select = c("id", "grp", "value")))
   system.time(base::subset(x, value > 0, select = c("id", "grp", "value")))
+  dt <- as.data.table(x)
+  system.time(dt[value > 0, .(id, grp, value)])
 }
 
 print(bench_subset())
