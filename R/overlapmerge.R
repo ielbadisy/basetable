@@ -1,6 +1,6 @@
 overlapmerge <- function(x, y, startx, endx, starty, endy, by = NULL) {
-  x_dt <- bt_as_data_table(x)
-  y_dt <- bt_as_data_table(y)
+  x_dt <- bt_as_data_table_ro(x)
+  y_dt <- bt_as_data_table_ro(y)
 
   by <- if (is.null(by)) character(0) else bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
