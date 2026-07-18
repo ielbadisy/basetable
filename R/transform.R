@@ -1,9 +1,9 @@
 transform <- function(data, ..., .keep = TRUE) {
-  df <- bt_as_data_frame(data)
+  dt <- bt_as_data_table(data)
   dots <- as.list(substitute(list(...)))[-1L]
 
   if (length(dots) == 0L) {
-    return(bt_as_tibble(df))
+    return(bt_as_tibble(dt))
   }
 
   nms <- names(dots)
@@ -12,21 +12,18 @@ transform <- function(data, ..., .keep = TRUE) {
   }
 
   created <- character()
-  env <- list2env(as.list(df), parent = parent.frame())
   for (i in seq_along(dots)) {
     nm <- nms[[i]]
-    assign(nm, eval(dots[[i]], envir = env, enclos = parent.frame()), envir = env)
+    value <- eval(dots[[i]], envir = dt, enclos = parent.frame())
+    dt[, (nm) := value]
     created <- c(created, nm)
   }
 
-  out <- as.data.frame(as.list.environment(env, all.names = TRUE), stringsAsFactors = FALSE)
-  out <- out[, unique(c(names(df), created)), drop = FALSE]
-
   if (!isTRUE(.keep)) {
-    out <- out[, created, drop = FALSE]
+    dt <- dt[, unique(created), with = FALSE]
   }
 
-  bt_as_tibble(out)
+  bt_as_tibble(dt)
 }
 
 within <- function(data, expr) {
