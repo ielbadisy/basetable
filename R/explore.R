@@ -97,6 +97,22 @@ freq <- function(data, column, by = NULL, prop = FALSE, sort = TRUE) {
   bt_as_tibble(out)
 }
 
+#' Table 1-style descriptive summary
+#'
+#' Build a publication-style summary table of one or more variables, optionally
+#' stratified by a grouping column, in the manner of a clinical "Table 1".
+#'
+#' @param data A data.frame or data.table.
+#' @param vars Character vector of variables to summarize. Defaults to every
+#'   column other than `by`.
+#' @param by Optional single column name used to stratify the summary.
+#' @param overall Include an "Overall" column alongside the by-group columns.
+#' @param p_value Include a column of between-group p-values. Requires `by`.
+#' @param digits Number of decimal places used when formatting numbers.
+#'
+#' @return A tibble with one row per variable (or variable level), and one
+#'   column per stratum plus `Overall`/`p_value` as requested.
+#' @export
 summarytab <- function(data, vars = NULL, by = NULL, overall = TRUE, p_value = FALSE, digits = 1) {
   df <- bt_as_data_frame(data)
 
