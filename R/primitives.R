@@ -443,21 +443,13 @@ unionrows <- function(x, y, by = NULL) {
 }
 
 intersectrows <- function(x, y, by = NULL) {
-  x_df <- bt_as_data_frame(x); y_df <- bt_as_data_frame(y)
-  if (is.null(by)) return(bt_as_tibble(intersect(x_df, y_df)))
-  by <- bt_resolve_cols(x_df, by); bt_resolve_cols(y_df, by)
-  key_y <- unique(y_df[, by, drop = FALSE])
-  keep <- !is.na(match(paste(x_df[, by, drop = FALSE]), paste(key_y[, by, drop = FALSE])))
-  bt_as_tibble(x_df[keep, , drop = FALSE])
+  if (is.null(by)) return(bt_as_tibble(intersect(bt_as_data_frame(x), bt_as_data_frame(y))))
+  bt_as_tibble(matchedkeys(x, y, by))
 }
 
 diffrows <- function(x, y, by = NULL) {
-  x_df <- bt_as_data_frame(x); y_df <- bt_as_data_frame(y)
-  if (is.null(by)) return(bt_as_tibble(setdiff(x_df, y_df)))
-  by <- bt_resolve_cols(x_df, by); bt_resolve_cols(y_df, by)
-  key_y <- unique(y_df[, by, drop = FALSE])
-  keep <- is.na(match(paste(x_df[, by, drop = FALSE]), paste(key_y[, by, drop = FALSE])))
-  bt_as_tibble(x_df[keep, , drop = FALSE])
+  if (is.null(by)) return(bt_as_tibble(setdiff(bt_as_data_frame(x), bt_as_data_frame(y))))
+  bt_as_tibble(unmatchedkeys(x, y, by))
 }
 
 equalrows <- function(x, y, by = NULL) {
