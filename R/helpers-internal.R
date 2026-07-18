@@ -29,6 +29,20 @@ bt_as_tibble <- function(data) {
   tibble::as_tibble(data)
 }
 
+# Vectorized last-observation-carried-forward, works for any atomic vector
+# type (unlike data.table::nafill(), which is numeric-only).
+bt_locf <- function(x) {
+  ok <- !is.na(x)
+  idx <- cumsum(ok)
+  fill_pos <- which(!ok & idx > 0L)
+  if (length(fill_pos) > 0L) {
+    x[fill_pos] <- x[ok][idx[fill_pos]]
+  }
+  x
+}
+
+bt_nocb <- function(x) rev(bt_locf(rev(x)))
+
 bt_col_expr <- function(expr, data) {
   eval(expr, envir = data, enclos = parent.frame())
 }
