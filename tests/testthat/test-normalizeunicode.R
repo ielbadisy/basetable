@@ -4,4 +4,5 @@ test_that("normalizeunicode normalizes Unicode text", {
   x <- "e\u0301"
 
   expect_equal(normalizeunicode(x, form = "NFC"), "é")
+  expect_equal(normalizeunicode(factor(x), form = "NFC"), "é")
 })
