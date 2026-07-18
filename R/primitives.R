@@ -994,7 +994,11 @@ equalrows <- function(x, y, by = NULL) {
   x_df <- bt_as_data_frame(x); y_df <- bt_as_data_frame(y)
   if (is.null(by)) return(identical(x_df, y_df))
   by <- bt_resolve_cols(x_df, by); bt_resolve_cols(y_df, by)
-  identical(sort(paste(x_df[, by, drop = FALSE])), sort(paste(y_df[, by, drop = FALSE])))
+  x_dt <- data.table::as.data.table(x_df)[, by, with = FALSE]
+  y_dt <- data.table::as.data.table(y_df)[, by, with = FALSE]
+  data.table::setorderv(x_dt, by)
+  data.table::setorderv(y_dt, by)
+  isTRUE(all.equal(x_dt, y_dt, check.attributes = FALSE))
 }
 
 #' Reshape columns into key/value rows
