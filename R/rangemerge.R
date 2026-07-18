@@ -1,6 +1,6 @@
 rangemerge <- function(x, y, by, lower, upper) {
-  x_dt <- bt_as_data_frame(x)
-  y_dt <- bt_as_data_frame(y)
+  x_dt <- bt_as_data_table(x)
+  y_dt <- bt_as_data_table(y)
   by <- bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
   lower <- bt_resolve_cols(x_dt, lower)
@@ -13,5 +13,5 @@ rangemerge <- function(x, y, by, lower, upper) {
     stop("`lower` and `upper` must each name one column.", call. = FALSE)
   }
 
-  bt_as_tibble(merge(x_dt, y_dt, by = by, all.x = TRUE, sort = FALSE))
+  data.table::merge.data.table(x_dt, y_dt, by = by, all.x = TRUE, sort = FALSE)
 }

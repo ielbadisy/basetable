@@ -29,15 +29,15 @@ uses 15 iterations per workload on this workspace.
 
 | Operation | Implementation | Median (ms) | Iterations / sec | Memory (MB) | Relative time |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Subset and select | basetable | 3.87 | 198.0 | 5.48 | 1.00 |
-| Subset and select | base R | 3.72 | 268.0 | 5.48 | 0.96 |
-| Subset and select | dplyr | 1.96 | 462.0 | 4.87 | 0.51 |
-| Merge | basetable | 5.82 | 171.0 | 7.98 | 1.00 |
-| Merge | base R | 30.90 | 31.3 | 11.00 | 5.31 |
-| Merge | dplyr | 3.29 | 304.0 | 4.70 | 0.57 |
-| Aggregate | basetable | 8.13 | 109.0 | 8.21 | 1.00 |
-| Aggregate | base R | 24.40 | 41.0 | 28.50 | 3.00 |
-| Aggregate | dplyr | 2.86 | 348.0 | 4.07 | 0.35 |
+| Subset and select | basetable | 5.53 | 166.6 | 7.47 | 1.00 |
+| Subset and select | base R | 1.83 | 530.3 | 4.88 | 0.33 |
+| Subset and select | dplyr | 3.02 | 301.6 | 5.12 | 0.55 |
+| Merge | basetable | 6.08 | 163.0 | 5.95 | 1.00 |
+| Merge | base R | 5.62 | 175.3 | 3.35 | 0.92 |
+| Merge | dplyr | 4.46 | 218.6 | 5.77 | 0.73 |
+| Aggregate | basetable | 16.58 | 59.4 | 14.44 | 1.00 |
+| Aggregate | base R | 33.14 | 32.8 | 28.45 | 2.00 |
+| Aggregate | dplyr | 2.80 | 346.8 | 7.01 | 0.17 |
 
 Rerun `vignettes/benchmarking.Rmd` to refresh the report if the workload or
 implementation changes.

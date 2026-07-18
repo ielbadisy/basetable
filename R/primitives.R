@@ -526,29 +526,29 @@ aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TR
     cbind(piece[1L, by, drop = FALSE], out, stringsAsFactors = FALSE)
   })
   out <- data.table::rbindlist(rows, fill = TRUE)
-  if (sort) out <- out[do.call(order, out[by])]
-  bt_as_tibble(out)
+  if (sort && length(by) > 0L) data.table::setorderv(out, by)
+  out
 }
 
 unmatchedkeys <- function(x, y, by) {
-  x_dt <- bt_as_data_frame(x)
-  y_dt <- bt_as_data_frame(y)
+  x_dt <- bt_as_data_table(x)
+  y_dt <- bt_as_data_table(y)
   by <- bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
   key_y <- unique(y_dt[, by, drop = FALSE])
   keep <- !duplicated(x_dt[, by, drop = FALSE]) & is.na(match(paste(x_dt[, by, drop = FALSE]), paste(key_y[, by, drop = FALSE])))
-  bt_as_tibble(x_dt[keep, , drop = FALSE])
+  x_dt[keep, , drop = FALSE]
 }
 
 matchedkeys <- function(x, y, by) {
-  x_dt <- bt_as_data_frame(x)
-  y_dt <- bt_as_data_frame(y)
+  x_dt <- bt_as_data_table(x)
+  y_dt <- bt_as_data_table(y)
   by <- bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
   key_x <- interaction(x_dt[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
   key_y <- interaction(y_dt[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
   keep <- key_x %in% key_y
-  bt_as_tibble(x_dt[keep, , drop = FALSE])
+  x_dt[keep, , drop = FALSE]
 }
 
 joinrelationship <- function(x, y, by) {
@@ -564,53 +564,55 @@ joinrelationship <- function(x, y, by) {
 semimerge <- function(x, y, by) matchedkeys(x, y, by)
 
 antimerge <- function(x, y, by) {
-  x_dt <- bt_as_data_frame(x)
-  y_dt <- bt_as_data_frame(y)
+  x_dt <- bt_as_data_table(x)
+  y_dt <- bt_as_data_table(y)
   by <- bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
   key_x <- interaction(x_dt[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
   key_y <- interaction(y_dt[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
   keep <- !(key_x %in% key_y)
-  bt_as_tibble(x_dt[keep, , drop = FALSE])
+  x_dt[keep, , drop = FALSE]
 }
 
 crossmerge <- function(x, y) {
-  x_dt <- bt_as_data_frame(x)
-  y_dt <- bt_as_data_frame(y)
-  out <- merge(x_dt, y_dt, by = NULL, all = TRUE, sort = FALSE)
-  bt_as_tibble(out)
+  x_dt <- data.table::copy(bt_as_data_table(x))
+  y_dt <- data.table::copy(bt_as_data_table(y))
+  x_dt[[".bt_tmp_key"]] <- 1L
+  y_dt[[".bt_tmp_key"]] <- 1L
+  out <- data.table::merge.data.table(x_dt, y_dt, by = ".bt_tmp_key", all = TRUE, sort = FALSE, allow.cartesian = TRUE)
+  out[[".bt_tmp_key"]] <- NULL
+  out
 }
 
 updatemerge <- function(x, y, by, cols = NULL) {
-  x_dt <- bt_as_data_frame(x)
-  y_dt <- bt_as_data_frame(y)
+  x_dt <- bt_as_data_table(x)
+  y_dt <- bt_as_data_table(y)
   by <- bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
   if (is.null(cols)) cols <- setdiff(intersect(names(x_dt), names(y_dt)), by)
   cols <- bt_resolve_cols(x_dt, cols)
-  key <- merge(x_dt[, by, drop = FALSE], y_dt[, c(by, cols), drop = FALSE], by = by, all.x = TRUE, sort = FALSE, suffixes = c("", ".y"))
+  key <- data.table::merge.data.table(x_dt[, by, with = FALSE], y_dt[, c(by, cols), with = FALSE], by = by, all.x = TRUE, sort = FALSE, suffixes = c("", ".y"))
   for (nm in cols) {
     y_nm <- paste0(nm, ".y")
     if (y_nm %in% names(key)) {
       x_dt[[nm]] <- ifelse(is.na(key[[y_nm]]), x_dt[[nm]], key[[y_nm]])
     }
   }
-  bt_as_tibble(x_dt)
+  x_dt
 }
 
 rollingmerge <- function(x, y, by, direction = c("backward", "forward", "nearest"), tolerance = Inf) {
-  x_dt <- bt_as_data_frame(x)
-  y_dt <- bt_as_data_frame(y)
+  x_dt <- bt_as_data_table(x)
+  y_dt <- bt_as_data_table(y)
   by <- bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
   direction <- match.arg(direction)
   if (length(by) < 1L) stop("`by` is required.", call. = FALSE)
   idx <- by[[length(by)]]
   keys <- by[length(by)]
-  x_dt <- x_dt[order(x_dt[[idx]]), , drop = FALSE]
-  y_dt <- y_dt[order(y_dt[[idx]]), , drop = FALSE]
-  out <- merge(x_dt, y_dt, by = by, all.x = TRUE, sort = FALSE, suffixes = c(".x", ".y"))
-  bt_as_tibble(out)
+  x_dt <- x_dt[order(x_dt[[idx]])]
+  y_dt <- y_dt[order(y_dt[[idx]])]
+  data.table::merge.data.table(x_dt, y_dt, by = by, all.x = TRUE, sort = FALSE, suffixes = c(".x", ".y"))
 }
 
 nearestmerge <- function(x, y, by, tolerance = Inf) {
@@ -618,18 +620,18 @@ nearestmerge <- function(x, y, by, tolerance = Inf) {
 }
 
 rangemerge <- function(x, y, by, lower, upper) {
-  x_dt <- bt_as_data_frame(x); y_dt <- bt_as_data_frame(y)
+  x_dt <- bt_as_data_table(x); y_dt <- bt_as_data_table(y)
   by <- bt_resolve_cols(x_dt, by); bt_resolve_cols(y_dt, by)
   lower <- bt_resolve_cols(x_dt, lower); upper <- bt_resolve_cols(x_dt, upper)
-  bt_as_tibble(merge(x_dt, y_dt, by = by, all.x = TRUE, sort = FALSE))
+  data.table::merge.data.table(x_dt, y_dt, by = by, all.x = TRUE, sort = FALSE)
 }
 
 overlapmerge <- function(x, y, startx, endx, starty, endy, by = NULL) {
-  bt_as_tibble(merge(bt_as_data_frame(x), bt_as_data_frame(y), by = by, all = FALSE, sort = FALSE))
+  data.table::merge.data.table(bt_as_data_table(x), bt_as_data_table(y), by = by, all = FALSE, sort = FALSE)
 }
 
 nonequimerge <- function(x, y, by, ...) {
-  bt_as_tibble(merge(bt_as_data_frame(x), bt_as_data_frame(y), by = by, all = FALSE, sort = FALSE, ...))
+  data.table::merge.data.table(bt_as_data_table(x), bt_as_data_table(y), by = by, all = FALSE, sort = FALSE, ...)
 }
 
 rbindfill <- function(..., id = NULL, fill = TRUE, typeconflict = c("error", "coerce")) {

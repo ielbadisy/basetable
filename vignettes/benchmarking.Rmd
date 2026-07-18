@@ -20,6 +20,7 @@ library(basetable)
 library(bench)
 library(dplyr)
 library(ggplot2)
+library(data.table)
 ```
 
 The benchmarks below compare `basetable` with base R and `dplyr` on three
@@ -38,42 +39,37 @@ set.seed(1)
 subset_n <- 1e5
 merge_n <- 5e4
 
-subset_df <- data.frame(
+subset_dt <- data.table(
   id = seq_len(subset_n),
   grp = sample(letters[1:5], subset_n, replace = TRUE),
   value = rnorm(subset_n)
 )
 
-subset_tbl <- tibble::as_tibble(subset_df)
-
-merge_x <- data.frame(
+merge_x_dt <- data.table(
   id = seq_len(merge_n),
   value_x = rnorm(merge_n)
 )
 
-merge_y <- data.frame(
+merge_y_dt <- data.table(
   id = sample(seq_len(merge_n), merge_n),
   value_y = rnorm(merge_n)
 )
-
-merge_x_tbl <- tibble::as_tibble(merge_x)
-merge_y_tbl <- tibble::as_tibble(merge_y)
 ```
 
 ```{r benchmark}
 run_subset_benchmark <- function() {
   bench::mark(
     basetable = basetable::subset(
-      subset_df,
+      subset_dt,
       value > 0,
       select = c("id", "grp", "value")
     ),
     base_r = base::subset(
-      subset_df,
+      subset_dt,
       value > 0,
       select = c("id", "grp", "value")
     ),
-    dplyr = subset_tbl |>
+    dplyr = subset_dt |>
       dplyr::filter(value > 0) |>
       dplyr::select(id, grp, value),
     iterations = 15,
@@ -83,9 +79,9 @@ run_subset_benchmark <- function() {
 
 run_merge_benchmark <- function() {
   bench::mark(
-    basetable = basetable::merge(merge_x, merge_y, by = "id"),
-    base_r = base::merge(merge_x, merge_y, by = "id"),
-    dplyr = dplyr::inner_join(merge_x_tbl, merge_y_tbl, by = "id"),
+    basetable = basetable::merge(merge_x_dt, merge_y_dt, by = "id"),
+    base_r = base::merge(merge_x_dt, merge_y_dt, by = "id"),
+    dplyr = dplyr::inner_join(merge_x_dt, merge_y_dt, by = "id"),
     iterations = 15,
     check = FALSE
   )
@@ -94,7 +90,7 @@ run_merge_benchmark <- function() {
 run_aggregate_benchmark <- function() {
   bench::mark(
     basetable = basetable::aggregate(
-      subset_df,
+      subset_dt,
       by = "grp",
       value = "value",
       fun = mean,
@@ -102,10 +98,10 @@ run_aggregate_benchmark <- function() {
     ),
     base_r = stats::aggregate(
       value ~ grp,
-      data = subset_df,
+      data = subset_dt,
       FUN = mean
     ),
-    dplyr = subset_tbl |>
+    dplyr = subset_dt |>
       dplyr::group_by(grp) |>
       dplyr::summarise(value = mean(value), .groups = "drop"),
     iterations = 15,
@@ -114,60 +110,43 @@ run_aggregate_benchmark <- function() {
 }
 
 summarise_benchmark <- function(x, operation) {
-  out <- tibble::as_tibble(x) |>
-    dplyr::transmute(
-      operation = operation,
-      implementation = as.character(expression),
-      median_ms = as.numeric(median) * 1000,
-      itr_per_sec = as.numeric(`itr/sec`),
-      mem_alloc_mb = as.numeric(mem_alloc) / 1024^2
-    )
+  out <- data.table::as.data.table(x)[, .(
+    operation = operation,
+    implementation = as.character(expression),
+    median_ms = as.numeric(median) * 1000,
+    itr_per_sec = as.numeric(`itr/sec`),
+    mem_alloc_mb = as.numeric(mem_alloc) / 1024^2
+  )]
 
-  out |>
-    dplyr::group_by(operation) |>
-    dplyr::mutate(
-      relative_time = median_ms / median_ms[implementation == "basetable"],
-      implementation = factor(
-        implementation,
-        levels = c("basetable", "base_r", "dplyr"),
-        labels = c("basetable", "base R", "dplyr")
-      )
-    ) |>
-    dplyr::ungroup()
+  out[, relative_time := median_ms / median_ms[implementation == "basetable"], by = operation]
+  out[, implementation := factor(
+    implementation,
+    levels = c("basetable", "base_r", "dplyr"),
+    labels = c("basetable", "base R", "dplyr")
+  )]
+  out
 }
 
-benchmark_results <- dplyr::bind_rows(
+benchmark_results <- data.table::rbindlist(list(
   summarise_benchmark(run_subset_benchmark(), "Subset and select"),
   summarise_benchmark(run_merge_benchmark(), "Merge"),
   summarise_benchmark(run_aggregate_benchmark(), "Aggregate")
-) |>
-  dplyr::mutate(
-    operation = factor(
-      operation,
-      levels = c("Subset and select", "Merge", "Aggregate")
-    )
-  )
+), fill = TRUE)
+
+benchmark_results[, operation := factor(operation, levels = c("Subset and select", "Merge", "Aggregate"))]
 ```
 
 ## Results Table
 
 ```{r table, results='asis'}
-table_results <- benchmark_results |>
-  dplyr::arrange(operation, implementation) |>
-  dplyr::mutate(
-    median_ms = format(round(median_ms, 2), nsmall = 2),
-    itr_per_sec = format(round(itr_per_sec, 1), nsmall = 1),
-    mem_alloc_mb = format(round(mem_alloc_mb, 2), nsmall = 2),
-    relative_time = format(round(relative_time, 2), nsmall = 2)
-  ) |>
-  dplyr::select(
-    operation,
-    implementation,
-    median_ms,
-    itr_per_sec,
-    mem_alloc_mb,
-    relative_time
-  )
+table_results <- data.table::copy(benchmark_results)
+data.table::setorderv(table_results, c("operation", "implementation"))
+table_results[, `:=`(
+  median_ms = format(round(median_ms, 2), nsmall = 2),
+  itr_per_sec = format(round(itr_per_sec, 1), nsmall = 1),
+  mem_alloc_mb = format(round(mem_alloc_mb, 2), nsmall = 2),
+  relative_time = format(round(relative_time, 2), nsmall = 2)
+)]
 
 knitr::kable(
   table_results,

@@ -4,6 +4,6 @@ test_that("nearestmerge wraps rollingmerge nearest mode", {
 
   out <- nearestmerge(x, y, by = "id")
 
-  expect_s3_class(out, "tbl_df")
+  expect_s3_class(out, "data.table")
   expect_true("id" %in% names(out))
 })

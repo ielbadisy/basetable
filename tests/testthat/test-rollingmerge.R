@@ -4,7 +4,7 @@ test_that("rollingmerge joins using a rolling key", {
 
   out <- rollingmerge(x, y, by = c("id", "time"), direction = "backward")
 
-  expect_s3_class(out, "tbl_df")
+  expect_s3_class(out, "data.table")
   expect_true("value" %in% names(out))
   expect_equal(out$value, c("a", "b", "c"))
 })

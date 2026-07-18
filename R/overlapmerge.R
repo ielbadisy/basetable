@@ -32,5 +32,5 @@ overlapmerge <- function(x, y, startx, endx, starty, endy, by = NULL) {
   )
 
   data.table::setnames(out, c(x_start_tmp, x_end_tmp), c(startx, endx))
-  bt_as_tibble(out)
+  out
 }

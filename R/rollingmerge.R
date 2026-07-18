@@ -99,5 +99,5 @@ rollingmerge <- function(x, y, by, direction = c("backward", "forward", "nearest
     }
   }
 
-  bt_as_tibble(out)
+  out
 }
