@@ -1783,7 +1783,7 @@ reorderlevels <- function(x, by) factor(x, levels = by)
 #'
 #' @return A factor including the additional levels.
 #' @export
-expandlevels <- function(x, levels) factor(x, levels = unique(c(levels, base::levels(x))))
+expandlevels <- function(x, levels) factor(x, levels = unique(c(base::levels(x), levels)))
 nalevel <- function(x, value = "Missing") ifelse(is.na(x), value, as.character(x))
 #' Extract the year
 #'
