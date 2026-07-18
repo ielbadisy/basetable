@@ -76,7 +76,7 @@ constants <- function(data) {
 #' @export
 emptycols <- function(data) {
   df <- bt_as_data_frame(data)
-  names(df)[vapply(df, bt_is_blank, logical(1)) | vapply(df, function(x) all(is.na(x)), logical(1))]
+  names(df)[vapply(df, function(x) all(bt_is_blank(x)), logical(1)) | vapply(df, function(x) all(is.na(x)), logical(1))]
 }
 
 #' Rows that are entirely blank or missing
