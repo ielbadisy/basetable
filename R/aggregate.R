@@ -1,5 +1,5 @@
 aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TRUE) {
-  dt <- bt_as_data_table(data)
+  dt <- bt_as_data_table_ro(data)
   by <- bt_resolve_cols(dt, by)
 
   if (is.null(value)) {
