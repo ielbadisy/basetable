@@ -14,6 +14,8 @@ test_that("substring helpers", {
   expect_equal(middle("hello", 2, 4), "ell")
   expect_equal(truncate("hello world", 8), "hello...")
   expect_equal(truncate("hi", 8), "hi")
+  expect_equal(padcenter("hi", 6), "  hi  ")
+  expect_equal(padcenter("hi", 6, pad = "*"), "**hi**")
 })
 
 test_that("pattern-matching helpers", {

@@ -29,6 +29,8 @@ test_that("sameschema/compareschema report column name and type differences", {
   expect_equal(sort(out$column), c("a", "b", "c"))
   expect_false(out$in_y[out$column == "b"])
   expect_false(out$in_x[out$column == "c"])
+
+  expect_equal(changedcols(x, z), compareschema(x, z))
 })
 
 test_that("joinrelationship classifies key cardinality", {

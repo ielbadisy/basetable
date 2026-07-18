@@ -21,6 +21,7 @@ test_that("summarise, distinct, slice, relocate, and bind helpers work", {
   expect_s3_class(stats, "tbl_df")
   expect_equal(nrow(stats), length(unique(mtcars$cyl)))
   expect_true(all(c("cyl", "mean_mpg", "n") %in% names(stats)))
+  expect_equal(summarize(mtcars, mean_mpg = mean(mpg), by = "cyl"), summarise(mtcars, mean_mpg = mean(mpg), by = "cyl"))
 
   uniq <- distinct(mtcars, cols = "cyl")
   expect_equal(nrow(uniq), length(unique(mtcars$cyl)))

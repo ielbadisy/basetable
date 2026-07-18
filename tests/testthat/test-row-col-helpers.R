@@ -7,6 +7,7 @@ test_that("rowapply/rownumber basics", {
 test_that("column metadata helpers", {
   df <- data.frame(a = 1:3, b = c("x", "x", "y"), stringsAsFactors = FALSE)
 
+  expect_equal(colnames(df), c("a", "b"))
   expect_equal(classes(df)$class, c("integer", "character"))
   expect_equal(unname(uniques(df)), c(3L, 2L))
   expect_equal(unname(cardinality(df, "b")), 2)
