@@ -8,19 +8,9 @@ common_names <- function(x, y) {
 }
 
 duplicated_keys <- function(data, by) {
-  df <- bt_as_data_frame(data)
-  by <- bt_resolve_cols(df, by)
-  key <- interaction(df[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
-  counts <- as.data.frame(table(key), stringsAsFactors = FALSE)
-  counts <- counts[counts$Freq > 1L, , drop = FALSE]
-
-  if (nrow(counts) == 0L) {
-    return(bt_as_tibble(df[FALSE, by, drop = FALSE]))
-  }
-
-  rows <- match(as.character(counts$key), as.character(key))
-  out <- cbind(df[rows, by, drop = FALSE], N = counts$Freq)
-  rownames(out) <- NULL
+  dt <- bt_as_data_table_ro(data)
+  by <- bt_resolve_cols(dt, by)
+  out <- dt[, list(N = .N), by = by][N > 1L]
   bt_as_tibble(out)
 }
 
