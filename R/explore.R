@@ -72,33 +72,26 @@ profile <- function(data, cols = NULL, top_n = 3) {
 }
 
 freq <- function(data, column, by = NULL, prop = FALSE, sort = TRUE) {
-  df <- bt_as_data_frame(data)
-  column <- bt_resolve_cols(df, column)
+  dt <- bt_as_data_table_ro(data)
+  column <- bt_resolve_cols(dt, column)
   if (length(column) != 1L) {
     stop("`column` must name exactly one column.", call. = FALSE)
   }
 
-  groups <- if (is.null(by)) column else c(bt_resolve_cols(df, by), column)
-  out <- as.data.frame(table(df[, groups, drop = FALSE], useNA = "ifany"), stringsAsFactors = FALSE)
-  names(out)[ncol(out)] <- "n"
-  out <- out[out$n > 0L, , drop = FALSE]
+  by <- if (is.null(by)) character(0) else bt_resolve_cols(dt, by)
+  groups <- c(by, column)
+  out <- dt[, list(n = .N), by = groups]
 
   if (prop) {
-    if (is.null(by)) {
-      out$prop <- out$n / sum(out$n)
+    if (length(by) == 0L) {
+      out[, prop := n / sum(n)]
     } else {
-      by <- bt_resolve_cols(df, by)
-      totals <- stats::aggregate(out$n, out[by], sum)
-      names(totals)[ncol(totals)] <- ".total"
-      out <- merge(out, totals, by = by, sort = FALSE)
-      out$prop <- out$n / out$.total
-      out$.total <- NULL
+      out[, prop := n / sum(n), by = by]
     }
   }
 
   if (sort) {
-    out <- out[order(out$n, decreasing = TRUE), , drop = FALSE]
-    rownames(out) <- NULL
+    data.table::setorderv(out, "n", order = -1L)
   }
 
   bt_as_tibble(out)
