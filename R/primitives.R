@@ -1033,7 +1033,14 @@ tolong <- function(data, cols, names = "variable", values = "value", idcols = NU
 towide <- function(data, names, values, idcols = NULL, fun = NULL, fill = NA) {
   df <- bt_as_data_frame(data)
   idcols <- if (is.null(idcols)) setdiff(names(df), c(names, values)) else bt_resolve_cols(df, idcols)
-  bt_as_tibble(data.table::dcast(data.table::as.data.table(df), formula = stats::reformulate(c(idcols, names), response = values), fun.aggregate = fun %||% length, fill = fill))
+  lhs <- if (length(idcols)) paste(idcols, collapse = " + ") else "."
+  bt_as_tibble(data.table::dcast(
+    data.table::as.data.table(df),
+    formula = stats::reformulate(names, response = lhs),
+    value.var = values,
+    fun.aggregate = fun %||% length,
+    fill = fill
+  ))
 }
 
 #' Split one column into several
