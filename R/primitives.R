@@ -1709,7 +1709,7 @@ parsedate <- function(x, formats, tz = "UTC", strict = FALSE) {
 #' @return A POSIXct vector.
 #' @export
 parsedatetime <- function(x, formats, tz = "UTC", strict = FALSE) {
-  out <- rep(as.POSIXct(NA), length(x))
+  out <- rep(as.POSIXct(NA, tz = tz), length(x))
   for (fmt in formats) {
     idx <- is.na(out) & !is.na(x)
     if (!any(idx)) break
