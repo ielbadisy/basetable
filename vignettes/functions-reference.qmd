@@ -25,12 +25,21 @@ options(width = 90, digits = 4)
 
 # Introduction
 
-`basetable` is a compact R package for tabular data manipulation and
-exploratory data analysis. It has three design goals:
+`basetable` is a bridge for people who already know base R and want
+`data.table`'s speed without learning `data.table`'s `[i, j, by]` syntax or
+dplyr's tidy evaluation. It is aimed specifically at two audiences: **teaching**
+table manipulation to people learning base R (without the extra cognitive load
+of non-standard evaluation or terse `[i, j, by]` syntax), and **migrating** a
+codebase already built on base-R table semantics (`subset()`, `merge()`,
+`aggregate()`, and friends) to `data.table`-backed speed without a rewrite.
+It is not trying to replace dplyr or data.table for a new project that's free
+to pick any tool; both are more established choices with a larger ecosystem.
+
+Design goals:
 
 - **Base-style naming and semantics.** Functions read like `subset()`,
-  `transform()`, `aggregate()`, `merge()`, and `split()` — the base R verbs
-  most R users already know — rather than inventing a new grammar.
+  `transform()`, `aggregate()`, `merge()`, and `split()`, the base R verbs
+  most R users already know, rather than inventing a new grammar.
 - **`data.table` as the execution backend.** Every operation that touches real
   data routes through `data.table`, so the package is fast without asking you
   to learn `data.table`'s `[i, j, by]` syntax.
@@ -40,13 +49,21 @@ exploratory data analysis. It has three design goals:
   expression arguments, which mirror base R's own `subset()`/`transform()`
   behavior).
 
+One practical consequence of the base-style naming: `basetable` reuses names
+like `subset()`, `merge()`, `filter()`, and `count()` that dplyr and
+data.table also define. If you attach `dplyr`/`data.table` in the same
+session, whichever package was attached **last** wins for any shared name and
+silently shadows the other: call `basetable::fn()` explicitly (or use the
+[`conflicted`](https://conflicted.r-lib.org/) package) if you need both
+loaded at once.
+
 This document walks through **every function `basetable` exports**, grouped
 into sections that build on each other: start with the core verbs, move
 through aggregation, joining, reshaping, and exploration, then into the
 lower-level data-cleaning, string, date, and numeric utility functions. Read
 it top to bottom to learn the package, or jump to a section as a reference.
 
-Every example below is real, runnable code — the output shown is the actual
+Every example below is real, runnable code: the output shown is the actual
 output `basetable` produces.
 
 # Core verbs {#sec-core-verbs}
@@ -83,7 +100,7 @@ transform(mtcars, power = hp / wt, power_sq = power^2)
 ```
 
 `within()` instead evaluates a whole block of code against the data's columns
-and returns whatever new/changed variables come out — this is `basetable`'s
+and returns whatever new/changed variables come out: this is `basetable`'s
 version of `base::within()`.
 
 ```{r}
@@ -127,7 +144,7 @@ reorder(mtcars, by = c("cyl", "mpg"), decreasing = c(FALSE, TRUE)) |> headtail(3
 ## Grouped summaries: `aggregate()`
 
 `aggregate()` computes one summary function over one or more value columns,
-per group — the `data.table`-backed analogue of `stats::aggregate()`. Note it
+per group, the `data.table`-backed analogue of `stats::aggregate()`. Note it
 returns a `data.table` directly (not a tibble), since it's meant to be fast and
 composable with further `data.table` operations.
 
@@ -154,7 +171,7 @@ directly, dplyr-style, with `by` as a named argument:
 summarise(mtcars, mean_mpg = mean(mpg), n = length(mpg), by = "cyl")
 ```
 
-`summaries()` is the same idea with `by` as the second positional argument —
+`summaries()` is the same idea with `by` as the second positional argument,
 useful when you're calling it programmatically:
 
 ```{r}
@@ -239,7 +256,7 @@ crossmerge(data.frame(size = c("S", "M")), data.frame(color = c("red", "blue")))
 
 `rollingmerge()` matches each row of `x` to the nearest row of `y` **at or
 before** it (`direction = "backward"`), at or after it (`"forward"`), or
-whichever is numerically closest (`"nearest"`) — the classic "as-of" join used
+whichever is numerically closest (`"nearest"`), the classic "as-of" join used
 for time series and event logs. `nearestmerge()` is a convenience wrapper for
 `direction = "nearest"`.
 
@@ -254,7 +271,7 @@ nearestmerge(trades, quotes, by = c("id", "time"))
 ## Interval overlap joins: `overlapmerge()`
 
 `overlapmerge()` matches rows whose `[startx, endx]` interval overlaps a
-`[starty, endy]` interval in `y` (optionally within an exact `by` key) — for
+`[starty, endy]` interval in `y` (optionally within an exact `by` key), for
 example, matching events to the time windows they fall inside.
 
 ```{r}
@@ -320,7 +337,7 @@ diffrows(a, b, by = "id")
 ## Comparing two tables: `equalrows()`, `equaldata()`, `sameschema()`, `compareschema()`, `changedcols()`
 
 `equalrows()` aligns two tables by a key and compares every column
-(order-insensitive, duplicate-sensitive) — not just the key itself.
+(order-insensitive, duplicate-sensitive), not just the key itself.
 `equaldata()` compares full table content directly. `sameschema()` and
 `compareschema()` (aliased for this purpose by `changedcols()`) compare column
 names and types.
@@ -335,7 +352,7 @@ compareschema(mtcars, iris)
 ## Comparing two snapshots of the same table: `addedrows()`, `removedrows()`, `changedrows()`
 
 `changedrows()` returns only the rows whose key exists in both snapshots
-*and* whose non-key values actually differ — a row whose key matches but
+*and* whose non-key values actually differ: a row whose key matches but
 whose values are identical is not "changed".
 
 ```{r}
@@ -453,7 +470,7 @@ compare(iris, with_na, by = "Species")
 ## Assertions that stop on failure: `assert*()`
 
 Each `assert*()` function returns its input invisibly if the check passes, and
-throws an informative error otherwise — useful as a pipeline guard.
+throws an informative error otherwise, useful as a pipeline guard.
 
 ```{r}
 mtcars |>
@@ -482,7 +499,7 @@ tryCatch(assert_key(mtcars, "cyl"), error = function(e) conditionMessage(e))
 
 ## Finding rows/values that fail a check: `invalidrows()`, `invalidvalues()`, `outofrange()`
 
-These are the non-throwing counterparts of the `assert*()` functions above —
+These are the non-throwing counterparts of the `assert*()` functions above:
 instead of stopping, they return the offending rows.
 
 ```{r}
@@ -770,7 +787,7 @@ hour(t); minute(t); second(t)
 ## Arithmetic and sequences: `adddays()`, `addweeks()`, `addmonths()`, `addyears()`, `datediff()`, `dateseq()`, `betweendates()`
 
 `addmonths()`/`addyears()` handle end-of-month overflow explicitly via
-`invalid = c("previous", "next", "missing", "error")` — e.g. what should
+`invalid = c("previous", "next", "missing", "error")`: e.g. what should
 January 31st plus one month become, given February doesn't have 31 days?
 
 ```{r}
@@ -850,7 +867,7 @@ rollapply(1:5, width = 3, FUN = sum, partial = TRUE)
 # Functional helpers {#sec-functional}
 
 `map()`/`walk()`/`reduce()` are lightweight `functionals`-package-backed
-helpers for working with plain vectors and lists (not tables) — useful for the
+helpers for working with plain vectors and lists (not tables), useful for the
 occasional loop-replacement inside a larger `basetable` pipeline.
 
 ```{r}
