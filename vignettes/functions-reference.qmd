@@ -319,8 +319,9 @@ diffrows(a, b, by = "id")
 
 ## Comparing two tables: `equalrows()`, `equaldata()`, `sameschema()`, `compareschema()`, `changedcols()`
 
-`equalrows()` compares two tables' rows by key (order-insensitive, duplicate-
-sensitive). `equaldata()` compares full table content. `sameschema()` and
+`equalrows()` aligns two tables by a key and compares every column
+(order-insensitive, duplicate-sensitive) — not just the key itself.
+`equaldata()` compares full table content directly. `sameschema()` and
 `compareschema()` (aliased for this purpose by `changedcols()`) compare column
 names and types.
 
@@ -332,6 +333,10 @@ compareschema(mtcars, iris)
 ```
 
 ## Comparing two snapshots of the same table: `addedrows()`, `removedrows()`, `changedrows()`
+
+`changedrows()` returns only the rows whose key exists in both snapshots
+*and* whose non-key values actually differ — a row whose key matches but
+whose values are identical is not "changed".
 
 ```{r}
 old <- data.frame(id = c(1, 2, 3), status = c("a", "b", "c"))
