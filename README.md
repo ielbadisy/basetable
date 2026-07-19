@@ -1,16 +1,45 @@
 # basetable
 
-`basetable` is a compact R package for tabular data manipulation and exploratory
-data analysis with:
+`basetable` is a bridge for base-R users and base-R codebases: it gives you
+`data.table`'s speed without asking you to learn `data.table`'s `[i, j, by]`
+syntax or dplyr's tidy evaluation. If you already know `subset()`,
+`transform()`, `aggregate()`, `merge()`, and `split()`, you already know most
+of `basetable`'s API.
+
+This is a deliberately niche tool, not a dplyr/data.table competitor: it's
+aimed at
+
+- teaching table manipulation to people learning base R, without the added
+  cognitive load of tidyverse's non-standard evaluation or data.table's terse
+  syntax, and
+- migrating a codebase that's built on base R's `subset()`/`merge()`/
+  `aggregate()`/etc. to `data.table`-backed speed with minimal rewriting,
+  rather than a full rewrite onto dplyr or raw `data.table`.
+
+Design goals:
 
 - base-style naming and semantics
 - `data.table` as the execution backend
 - explicit, standard-evaluation interfaces
 - natural support for both nested calls and `|>`
 
-This package is not a dplyr clone. The API centers on functions that feel close
-to `subset()`, `transform()`, `aggregate()`, `merge()`, `split()`, and
-`reshape()`.
+## Using basetable alongside dplyr and data.table
+
+`basetable` deliberately reuses base-R verb names: `subset()`, `merge()`,
+`filter()`, `count()`, `transform()`, `split()`, and others, because that's
+the whole point (see above). The tradeoff: if you `library(dplyr)` or
+`library(data.table)` in the same session, whichever package was attached
+**last** wins for any shared name, silently shadowing the other. We hit this
+ourselves during development: attaching `dplyr` in one script shadowed
+`basetable::pick()` used later in the same session.
+
+Two ways to avoid it:
+
+- Call the function you mean explicitly: `basetable::filter(...)`,
+  `dplyr::filter(...)`.
+- If you already use the [`conflicted`](https://conflicted.r-lib.org/)
+  package, declare a preference once per session:
+  `conflicted::conflict_prefer("filter", "basetable")`.
 
 ## Status
 
@@ -145,3 +174,9 @@ faster internals for common table tasks, and compact EDA helpers. Compared with
 raw `data.table`, it favors a stable function interface over `[i, j, by]`.
 Compared with dplyr, it avoids tidy evaluation, grouped-object state, and verb
 grammar centered on `filter()`, `mutate()`, and `summarise()`.
+
+`basetable` is not trying to out-compete dplyr or data.table for new
+projects that are free to pick any tool; both are more established
+choices with a much larger ecosystem. It's aimed specifically at people
+teaching or learning base R, and at codebases already built on base-R table
+semantics that want `data.table`'s speed without a rewrite.
