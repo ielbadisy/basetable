@@ -1,0 +1,225 @@
+---
+title: "Benchmarks"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Benchmarks}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 8,
+  fig.height = 5
+)
+
+library(basetable)
+library(bench)
+library(dplyr)
+library(ggplot2)
+library(data.table)
+```
+
+The benchmarks below compare `basetable` with raw `data.table`, base R, and
+`dplyr` on three representative table operations:
+
+- row subsetting and column selection
+- keyed joins
+- grouped aggregation
+
+`basetable` wraps `data.table` as its execution backend, so the `data.table`
+comparison is the one that matters most here: it isolates the cost of the
+base-R-faithful wrapper itself, separate from the backend's own performance.
+The goal is not to prove a universal winner over base R or dplyr. It is to
+show how close the wrapper gets to its own backend.
+
+```{r data}
+set.seed(1)
+
+subset_n <- 1e5
+merge_n <- 5e4
+
+subset_dt <- data.table(
+  id = seq_len(subset_n),
+  grp = sample(letters[1:5], subset_n, replace = TRUE),
+  value = rnorm(subset_n)
+)
+
+merge_x_dt <- data.table(
+  id = seq_len(merge_n),
+  value_x = rnorm(merge_n)
+)
+
+merge_y_dt <- data.table(
+  id = sample(seq_len(merge_n), merge_n),
+  value_y = rnorm(merge_n)
+)
+```
+
+```{r benchmark}
+run_subset_benchmark <- function() {
+  bench::mark(
+    basetable = basetable::subset(
+      subset_dt,
+      value > 0,
+      select = c("id", "grp", "value")
+    ),
+    data_table = subset_dt[value > 0, .(id, grp, value)],
+    base_r = base::subset(
+      subset_dt,
+      value > 0,
+      select = c("id", "grp", "value")
+    ),
+    dplyr = subset_dt |>
+      dplyr::filter(value > 0) |>
+      dplyr::select(id, grp, value),
+    iterations = 15,
+    check = FALSE
+  )
+}
+
+run_merge_benchmark <- function() {
+  bench::mark(
+    basetable = basetable::merge(merge_x_dt, merge_y_dt, by = "id"),
+    data_table = data.table::merge.data.table(merge_x_dt, merge_y_dt, by = "id"),
+    base_r = base::merge(merge_x_dt, merge_y_dt, by = "id"),
+    dplyr = dplyr::inner_join(merge_x_dt, merge_y_dt, by = "id"),
+    iterations = 15,
+    check = FALSE
+  )
+}
+
+run_aggregate_benchmark <- function() {
+  bench::mark(
+    basetable = basetable::aggregate(
+      subset_dt,
+      by = "grp",
+      value = "value",
+      fun = mean,
+      sort = FALSE
+    ),
+    data_table = subset_dt[, .(value = mean(value)), by = grp],
+    base_r = stats::aggregate(
+      value ~ grp,
+      data = subset_dt,
+      FUN = mean
+    ),
+    dplyr = subset_dt |>
+      dplyr::group_by(grp) |>
+      dplyr::summarise(value = mean(value), .groups = "drop"),
+    iterations = 15,
+    check = FALSE
+  )
+}
+
+summarise_benchmark <- function(x, operation) {
+  out <- data.table::as.data.table(x)[, .(
+    operation = operation,
+    implementation = as.character(expression),
+    median_ms = as.numeric(median) * 1000,
+    itr_per_sec = as.numeric(`itr/sec`),
+    mem_alloc_mb = as.numeric(mem_alloc) / 1024^2
+  )]
+
+  out[, relative_time := median_ms / median_ms[implementation == "basetable"], by = operation]
+  out[, overhead_vs_data_table := median_ms / median_ms[implementation == "data_table"], by = operation]
+  out[, implementation := factor(
+    implementation,
+    levels = c("basetable", "data_table", "base_r", "dplyr"),
+    labels = c("basetable", "data.table", "base R", "dplyr")
+  )]
+  out
+}
+
+benchmark_results <- data.table::rbindlist(list(
+  summarise_benchmark(run_subset_benchmark(), "Subset and select"),
+  summarise_benchmark(run_merge_benchmark(), "Merge"),
+  summarise_benchmark(run_aggregate_benchmark(), "Aggregate")
+), fill = TRUE)
+
+benchmark_results[, operation := factor(operation, levels = c("Subset and select", "Merge", "Aggregate"))]
+```
+
+## Results Table
+
+```{r table, results='asis'}
+table_results <- data.table::copy(benchmark_results)
+data.table::setorderv(table_results, c("operation", "implementation"))
+table_results[, `:=`(
+  median_ms = format(round(median_ms, 2), nsmall = 2),
+  itr_per_sec = format(round(itr_per_sec, 1), nsmall = 1),
+  mem_alloc_mb = format(round(mem_alloc_mb, 2), nsmall = 2),
+  relative_time = format(round(relative_time, 2), nsmall = 2),
+  overhead_vs_data_table = format(round(overhead_vs_data_table, 2), nsmall = 2)
+)]
+
+knitr::kable(
+  table_results,
+  col.names = c(
+    "Operation",
+    "Implementation",
+    "Median (ms)",
+    "Iterations / sec",
+    "Memory (MB)",
+    "Relative time vs basetable",
+    "Relative time vs data.table"
+  ),
+  align = c("l", "l", "r", "r", "r", "r", "r")
+)
+```
+
+The "Relative time vs data.table" column is the direct measure of wrapper
+cost: a value close to 1.00 for the `basetable` row means the base-R-faithful
+interface adds effectively no overhead over calling `data.table` directly.
+
+## Absolute Time
+
+```{r absolute-plot, fig.cap="Median runtime by implementation and operation."}
+ggplot(
+  benchmark_results,
+  aes(x = implementation, y = median_ms, fill = implementation)
+) +
+  geom_col(width = 0.7) +
+  facet_wrap(~operation, ncol = 1, scales = "free_y") +
+  coord_flip() +
+  scale_y_log10(labels = scales::label_number(accuracy = 0.01)) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    x = NULL,
+    y = "Median time (ms, log scale)",
+    fill = NULL
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(face = "bold")
+  )
+```
+
+## Relative Time
+
+```{r relative-plot, fig.cap="Relative runtime compared with basetable for each workload. Values above 1 mean slower than basetable."}
+ggplot(
+  benchmark_results,
+  aes(x = implementation, y = relative_time, fill = implementation)
+) +
+  geom_hline(yintercept = 1, linetype = 2, color = "grey50") +
+  geom_col(width = 0.7) +
+  facet_wrap(~operation, ncol = 1, scales = "free_y") +
+  coord_flip() +
+  scale_y_continuous(labels = scales::label_number(accuracy = 0.01)) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    x = NULL,
+    y = "Relative time vs basetable",
+    fill = NULL
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(face = "bold")
+  )
+```

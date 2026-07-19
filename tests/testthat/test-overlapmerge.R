@@ -4,7 +4,7 @@ test_that("overlapmerge matches overlapping intervals", {
 
   out <- overlapmerge(x, y, startx = "startx", endx = "endx", starty = "starty", endy = "endy", by = "id")
 
-  expect_s3_class(out, "tbl_df")
+  expect_s3_class(out, "data.table")
   expect_true("value" %in% names(out))
   expect_equal(out$value, c("a", "b"))
 })

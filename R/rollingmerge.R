@@ -18,12 +18,12 @@ rollingmerge <- function(x, y, by, direction = c("backward", "forward", "nearest
   x_groups <- if (length(exact_keys) == 0L) {
     rep(1L, nrow(x_dt))
   } else {
-    interaction(x_dt[, exact_keys, drop = FALSE], drop = TRUE, lex.order = TRUE)
+    interaction(x_dt[, exact_keys, with = FALSE], drop = TRUE, lex.order = TRUE)
   }
   y_groups <- if (length(exact_keys) == 0L) {
     rep(1L, nrow(y_dt))
   } else {
-    interaction(y_dt[, exact_keys, drop = FALSE], drop = TRUE, lex.order = TRUE)
+    interaction(y_dt[, exact_keys, with = FALSE], drop = TRUE, lex.order = TRUE)
   }
 
   x_split <- base::split(x_rows, x_groups, drop = TRUE)
@@ -99,5 +99,5 @@ rollingmerge <- function(x, y, by, direction = c("backward", "forward", "nearest
     }
   }
 
-  bt_as_tibble(out)
+  out
 }

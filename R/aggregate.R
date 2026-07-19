@@ -1,32 +1,21 @@
 aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TRUE) {
-  df <- bt_as_data_frame(data)
-  by <- bt_resolve_cols(df, by)
+  dt <- bt_as_data_table(data)
+  by <- bt_resolve_cols(dt, by)
 
   if (is.null(value)) {
-    value <- setdiff(names(df), by)
+    value <- setdiff(names(dt), by)
   } else {
-    value <- bt_resolve_cols(df, value)
+    value <- bt_resolve_cols(dt, value)
   }
 
   f <- match.fun(fun)
-  key <- interaction(df[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
-  pieces <- base::split(df[, c(by, value), drop = FALSE], key, drop = TRUE)
+  out <- dt[, lapply(.SD, function(x) f(x, ..., na.rm = na.rm)), by = by, .SDcols = value]
 
-  out <- lapply(pieces, function(piece) {
-    vals <- lapply(piece[, value, drop = FALSE], function(x) f(x, ..., na.rm = na.rm))
-    vals_df <- as.data.frame(vals, stringsAsFactors = FALSE, check.names = FALSE)
-    names(vals_df) <- value
-    cbind(piece[1L, by, drop = FALSE], vals_df, stringsAsFactors = FALSE)
-  })
-  out <- do.call(rbind, out)
-  rownames(out) <- NULL
-
-  if (sort && length(by) > 0L && all(by %in% names(out))) {
-    ord <- do.call(order, lapply(by, function(nm) out[[nm]]))
-    out <- out[ord, , drop = FALSE]
+  if (sort && length(by) > 0L) {
+    data.table::setorderv(out, by)
   }
 
-  bt_as_tibble(out)
+  out
 }
 
 count <- function(data, by, sort = TRUE, name = "n") {

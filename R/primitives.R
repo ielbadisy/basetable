@@ -1,9 +1,5 @@
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
-nrows <- function(data) nrow(bt_as_data_frame(data))
-
-ncols <- function(data) ncol(bt_as_data_frame(data))
-
 colnames <- function(data) names(bt_as_data_frame(data))
 
 rownames <- function(data) base::rownames(bt_as_data_frame(data))
@@ -75,45 +71,6 @@ repairnames <- function(data, method = c("unique", "universal", "minimal")) {
   bt_as_tibble(df)
 }
 
-pick <- function(data, cols) {
-  df <- bt_as_data_frame(data)
-  cols <- bt_resolve_cols(df, cols)
-  bt_as_tibble(df[, cols, drop = FALSE])
-}
-
-drop <- function(data, cols) {
-  df <- bt_as_data_frame(data)
-  cols <- bt_resolve_cols(df, cols)
-  keep <- setdiff(names(df), cols)
-  bt_as_tibble(df[, keep, drop = FALSE])
-}
-
-rename <- function(data, old = NULL, new = NULL, ...) {
-  df <- bt_as_data_frame(data)
-  dots <- as.list(substitute(list(...)))[-1L]
-
-  if (!is.null(old) || !is.null(new)) {
-    old <- bt_resolve_cols(df, old)
-    if (is.null(new) || length(new) != length(old)) {
-      stop("`old` and `new` must have the same length.", call. = FALSE)
-    }
-    names(df)[match(old, names(df))] <- new
-    return(bt_as_tibble(df))
-  }
-
-  if (length(dots) == 0L) {
-    return(bt_as_tibble(df))
-  }
-  new_names <- names(dots)
-  if (is.null(new_names) || any(!nzchar(new_names))) {
-    stop("Rename expressions must be named.", call. = FALSE)
-  }
-  old_names <- vapply(dots, bt_rename_old_name, character(1), enclos = parent.frame())
-  old_names <- bt_resolve_cols(df, old_names)
-  names(df)[match(old_names, names(df))] <- new_names
-  bt_as_tibble(df)
-}
-
 renamewith <- function(data, cols, fun) {
   df <- bt_as_data_frame(data)
   cols <- bt_resolve_cols(df, cols)
@@ -156,11 +113,6 @@ firstcols <- function(data, cols) move(data, cols, before = 1L)
 
 lastcols <- function(data, cols) move(data, cols, after = ncol(bt_as_data_frame(data)) - length(bt_resolve_cols(bt_as_data_frame(data), cols)))
 
-slice <- function(data, rows) {
-  df <- bt_as_data_frame(data)
-  bt_as_tibble(df[rows, , drop = FALSE])
-}
-
 firstrows <- function(data, n = 1L) {
   df <- bt_as_data_frame(data)
   bt_as_tibble(utils::head(df, n))
@@ -190,18 +142,6 @@ orderrows <- function(data, by, decreasing = FALSE, na.last = TRUE) {
 reverse <- function(data) {
   df <- bt_as_data_frame(data)
   bt_as_tibble(df[rev(seq_len(nrow(df))), , drop = FALSE])
-}
-
-distinct <- function(data, by = NULL, cols = NULL, .keep_all = TRUE) {
-  df <- bt_as_data_frame(data)
-  by <- by %||% cols
-  if (is.null(by)) {
-    return(bt_as_tibble(unique(df)))
-  }
-  by <- bt_resolve_cols(df, by)
-  keep <- !duplicated(df[, by, drop = FALSE])
-  out <- if (.keep_all) df[keep, , drop = FALSE] else df[keep, by, drop = FALSE]
-  bt_as_tibble(out)
 }
 
 firstby <- function(data, by, order = NULL) {
@@ -235,49 +175,76 @@ removeduplicates <- function(data, by = NULL, keep = c("first", "last", "none"))
 rowmin <- function(data, cols = NULL, na.rm = FALSE) {
   df <- bt_as_data_frame(data)
   if (!is.null(cols)) df <- df[, bt_resolve_cols(df, cols), drop = FALSE]
-  apply(df, 1L, min, na.rm = na.rm)
+  do.call(pmin, c(as.list(df), na.rm = na.rm))
 }
 
 rowmax <- function(data, cols = NULL, na.rm = FALSE) {
   df <- bt_as_data_frame(data)
   if (!is.null(cols)) df <- df[, bt_resolve_cols(df, cols), drop = FALSE]
-  apply(df, 1L, max, na.rm = na.rm)
+  do.call(pmax, c(as.list(df), na.rm = na.rm))
 }
 
 rowany <- function(data, cols = NULL, na.rm = FALSE) {
   df <- bt_as_data_frame(data)
   if (!is.null(cols)) df <- df[, bt_resolve_cols(df, cols), drop = FALSE]
-  apply(df, 1L, function(x) any(x, na.rm = na.rm))
+  mat <- as.matrix(df)
+  if (na.rm) {
+    mat[is.na(mat)] <- FALSE
+    return(rowSums(mat) > 0)
+  }
+  has_na <- rowSums(is.na(mat)) > 0
+  mat[is.na(mat)] <- FALSE
+  out <- rowSums(mat) > 0
+  out[has_na & !out] <- NA
+  out
 }
 
 rowall <- function(data, cols = NULL, na.rm = FALSE) {
   df <- bt_as_data_frame(data)
   if (!is.null(cols)) df <- df[, bt_resolve_cols(df, cols), drop = FALSE]
-  apply(df, 1L, function(x) all(x, na.rm = na.rm))
+  mat <- as.matrix(df)
+  if (na.rm) {
+    mat[is.na(mat)] <- TRUE
+    return(rowSums(!mat) == 0)
+  }
+  has_na <- rowSums(is.na(mat)) > 0
+  mat[is.na(mat)] <- TRUE
+  out <- rowSums(!mat) == 0
+  out[has_na & out] <- NA
+  out
 }
 
 rowcount <- function(data, cols = NULL, value = TRUE, na.rm = FALSE) {
   df <- bt_as_data_frame(data)
   if (!is.null(cols)) df <- df[, bt_resolve_cols(df, cols), drop = FALSE]
-  apply(df, 1L, function(x) sum(x == value, na.rm = na.rm))
+  eqmat <- sapply(df, function(x) x == value)
+  if (is.null(dim(eqmat))) eqmat <- matrix(eqmat, nrow = nrow(df))
+  as.integer(rowSums(eqmat, na.rm = na.rm))
 }
 
 rowfirst <- function(data, cols = NULL, na.rm = FALSE) {
   df <- bt_as_data_frame(data)
   if (!is.null(cols)) df <- df[, bt_resolve_cols(df, cols), drop = FALSE]
-  apply(df, 1L, function(x) {
-    x <- x[!is.na(x) | !na.rm]
-    x[[1L]]
-  })
+  mat <- as.matrix(df)
+  if (!na.rm) return(mat[, 1L])
+  nonna <- !is.na(mat)
+  idx <- max.col(nonna, ties.method = "first")
+  out <- mat[cbind(seq_len(nrow(mat)), idx)]
+  out[rowSums(nonna) == 0] <- NA
+  out
 }
 
 rowlast <- function(data, cols = NULL, na.rm = FALSE) {
   df <- bt_as_data_frame(data)
   if (!is.null(cols)) df <- df[, bt_resolve_cols(df, cols), drop = FALSE]
-  apply(df, 1L, function(x) {
-    x <- x[!is.na(x) | !na.rm]
-    tail(x, 1L)
-  })
+  mat <- as.matrix(df)
+  if (!na.rm) return(mat[, ncol(mat)])
+  nonna <- !is.na(mat)
+  idx_rev <- max.col(nonna[, rev(seq_len(ncol(nonna))), drop = FALSE], ties.method = "first")
+  idx <- ncol(mat) - idx_rev + 1L
+  out <- mat[cbind(seq_len(nrow(mat)), idx)]
+  out[rowSums(nonna) == 0] <- NA
+  out
 }
 
 rowapply <- function(data, cols = NULL, fun, ...) {
@@ -406,74 +373,6 @@ replacewhere <- function(data, condition, cols, value) {
   bt_as_tibble(df)
 }
 
-transform <- function(data, ..., by = NULL, keep = TRUE, .keep = keep) {
-  df <- bt_as_data_frame(data)
-  dots <- as.list(substitute(list(...)))[-1L]
-  if (length(dots) == 0L) return(bt_as_tibble(df))
-  nms <- names(dots)
-  if (is.null(nms) || any(nms == "")) stop("All transformation expressions must be named.", call. = FALSE)
-  if (is.null(by)) {
-    env <- list2env(as.list(df), parent = parent.frame())
-    for (i in seq_along(dots)) assign(nms[[i]], eval(dots[[i]], env, parent.frame()), envir = env)
-    out <- as.data.frame(as.list.environment(env, all.names = TRUE), stringsAsFactors = FALSE)
-    out <- out[, unique(c(names(df), nms)), drop = FALSE]
-    if (!isTRUE(.keep)) out <- out[, nms, drop = FALSE]
-    return(bt_as_tibble(out))
-  }
-  pieces <- bt_split_by(df, by = by, drop = FALSE, keepby = TRUE)
-  out <- lapply(pieces, function(piece) {
-    env <- list2env(as.list(piece), parent = parent.frame())
-    for (i in seq_along(dots)) assign(nms[[i]], eval(dots[[i]], env, parent.frame()), envir = env)
-    tmp <- as.data.frame(as.list.environment(env, all.names = TRUE), stringsAsFactors = FALSE)
-    tmp <- tmp[, unique(c(names(piece), nms)), drop = FALSE]
-    if (!isTRUE(.keep)) tmp <- tmp[, c(by, nms), drop = FALSE]
-    tmp
-  })
-  bt_as_tibble(data.table::rbindlist(out, fill = TRUE))
-}
-
-within <- function(data, expr, by = NULL) {
-  df <- bt_as_data_frame(data)
-  expr <- substitute(expr)
-  if (is.null(by)) {
-    env <- list2env(as.list(df), parent = parent.frame())
-    eval(expr, envir = env)
-    out <- as.list.environment(env, all.names = TRUE)
-    out <- out[vapply(out, function(x) length(x) == nrow(df) || is.null(x), logical(1))]
-    out <- out[!vapply(out, is.null, logical(1))]
-    return(bt_as_tibble(as.data.frame(out, stringsAsFactors = FALSE)))
-  }
-  pieces <- bt_split_by(df, by = by, keepby = TRUE)
-  out <- lapply(pieces, function(piece) {
-    env <- list2env(as.list(piece), parent = parent.frame())
-    eval(expr, envir = env)
-    tmp <- as.list.environment(env, all.names = TRUE)
-    tmp <- tmp[vapply(tmp, function(x) length(x) == nrow(piece) || is.null(x), logical(1))]
-    tmp <- tmp[!vapply(tmp, is.null, logical(1))]
-    bt_as_tibble(as.data.frame(tmp, stringsAsFactors = FALSE))
-  })
-  bt_as_tibble(data.table::rbindlist(out, fill = TRUE))
-}
-
-summaries <- function(data, by = NULL, ...) {
-  df <- bt_as_data_frame(data)
-  dots <- as.list(substitute(list(...)))[-1L]
-  if (length(dots) == 0L) stop("At least one summary expression is required.", call. = FALSE)
-  nms <- names(dots)
-  if (is.null(nms) || any(nms == "")) stop("All summary expressions must be named.", call. = FALSE)
-  pieces <- if (is.null(by)) list(df) else bt_split_by(df, by = by, keepby = TRUE)
-  rows <- lapply(pieces, function(piece) {
-    env <- list2env(as.list(piece), parent = parent.frame())
-    vals <- lapply(dots, function(expr) eval(expr, env, parent.frame()))
-    if (any(vapply(vals, length, integer(1)) != 1L)) stop("Each summary expression must return one value.", call. = FALSE)
-    out <- as.data.frame(vals, stringsAsFactors = FALSE, check.names = FALSE)
-    names(out) <- nms
-    if (!is.null(by)) out <- cbind(piece[1L, bt_resolve_cols(piece, by), drop = FALSE], out, stringsAsFactors = FALSE)
-    out
-  })
-  bt_as_tibble(data.table::rbindlist(rows, fill = TRUE))
-}
-
 propcount <- function(data, by, margin = NULL) {
   out <- count(data, by = by, sort = FALSE, name = "n")
   if (is.null(margin)) {
@@ -500,55 +399,22 @@ recombine <- function(x, id = NULL) {
   combine(x, id = id)
 }
 
-count <- function(data, by, sort = TRUE, name = "n") {
-  df <- bt_as_data_frame(data)
-  by <- bt_resolve_cols(df, by)
-  out <- stats::aggregate(rep(1L, nrow(df)), df[, by, drop = FALSE], sum)
-  names(out)[ncol(out)] <- name
-  if (sort) out <- out[order(out[[name]], decreasing = TRUE), , drop = FALSE]
-  bt_as_tibble(out)
-}
-
-split <- function(data, by, drop = FALSE, keep.by = FALSE, keepby = keep.by) {
-  bt_split_by(data, by = by, drop = drop, keepby = keepby)
-}
-
-aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TRUE) {
-  df <- bt_as_data_frame(data)
-  by <- bt_resolve_cols(df, by)
-  if (is.null(value)) value <- setdiff(names(df), by) else value <- bt_resolve_cols(df, value)
-  pieces <- split(df[, c(by, value), drop = FALSE], by = by, keep.by = TRUE)
-  f <- match.fun(fun)
-  rows <- lapply(pieces, function(piece) {
-    vals <- lapply(piece[, value, drop = FALSE], function(x) f(x, ..., na.rm = na.rm))
-    out <- as.data.frame(vals, stringsAsFactors = FALSE)
-    names(out) <- value
-    cbind(piece[1L, by, drop = FALSE], out, stringsAsFactors = FALSE)
-  })
-  out <- data.table::rbindlist(rows, fill = TRUE)
-  if (sort) out <- out[do.call(order, out[by])]
-  bt_as_tibble(out)
-}
-
 unmatchedkeys <- function(x, y, by) {
-  x_dt <- bt_as_data_frame(x)
-  y_dt <- bt_as_data_frame(y)
+  x_dt <- bt_as_data_table(x)
+  y_dt <- bt_as_data_table(y)
   by <- bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
-  key_y <- unique(y_dt[, by, drop = FALSE])
-  keep <- !duplicated(x_dt[, by, drop = FALSE]) & is.na(match(paste(x_dt[, by, drop = FALSE]), paste(key_y[, by, drop = FALSE])))
-  bt_as_tibble(x_dt[keep, , drop = FALSE])
+  y_keys <- unique(y_dt[, by, with = FALSE])
+  unique(x_dt, by = by)[!y_keys, on = by]
 }
 
 matchedkeys <- function(x, y, by) {
-  x_dt <- bt_as_data_frame(x)
-  y_dt <- bt_as_data_frame(y)
+  x_dt <- bt_as_data_table(x)
+  y_dt <- bt_as_data_table(y)
   by <- bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
-  key_x <- interaction(x_dt[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
-  key_y <- interaction(y_dt[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
-  keep <- key_x %in% key_y
-  bt_as_tibble(x_dt[keep, , drop = FALSE])
+  y_keys <- unique(y_dt[, by, with = FALSE])
+  x_dt[y_keys, on = by, nomatch = NULL]
 }
 
 joinrelationship <- function(x, y, by) {
@@ -561,75 +427,8 @@ joinrelationship <- function(x, y, by) {
   if (!x_dup && !y_dup) "one-to-one" else if (!x_dup && y_dup) "one-to-many" else if (x_dup && !y_dup) "many-to-one" else "many-to-many"
 }
 
-semimerge <- function(x, y, by) matchedkeys(x, y, by)
-
-antimerge <- function(x, y, by) {
-  x_dt <- bt_as_data_frame(x)
-  y_dt <- bt_as_data_frame(y)
-  by <- bt_resolve_cols(x_dt, by)
-  bt_resolve_cols(y_dt, by)
-  key_x <- interaction(x_dt[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
-  key_y <- interaction(y_dt[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
-  keep <- !(key_x %in% key_y)
-  bt_as_tibble(x_dt[keep, , drop = FALSE])
-}
-
-crossmerge <- function(x, y) {
-  x_dt <- bt_as_data_frame(x)
-  y_dt <- bt_as_data_frame(y)
-  out <- merge(x_dt, y_dt, by = NULL, all = TRUE, sort = FALSE)
-  bt_as_tibble(out)
-}
-
-updatemerge <- function(x, y, by, cols = NULL) {
-  x_dt <- bt_as_data_frame(x)
-  y_dt <- bt_as_data_frame(y)
-  by <- bt_resolve_cols(x_dt, by)
-  bt_resolve_cols(y_dt, by)
-  if (is.null(cols)) cols <- setdiff(intersect(names(x_dt), names(y_dt)), by)
-  cols <- bt_resolve_cols(x_dt, cols)
-  key <- merge(x_dt[, by, drop = FALSE], y_dt[, c(by, cols), drop = FALSE], by = by, all.x = TRUE, sort = FALSE, suffixes = c("", ".y"))
-  for (nm in cols) {
-    y_nm <- paste0(nm, ".y")
-    if (y_nm %in% names(key)) {
-      x_dt[[nm]] <- ifelse(is.na(key[[y_nm]]), x_dt[[nm]], key[[y_nm]])
-    }
-  }
-  bt_as_tibble(x_dt)
-}
-
-rollingmerge <- function(x, y, by, direction = c("backward", "forward", "nearest"), tolerance = Inf) {
-  x_dt <- bt_as_data_frame(x)
-  y_dt <- bt_as_data_frame(y)
-  by <- bt_resolve_cols(x_dt, by)
-  bt_resolve_cols(y_dt, by)
-  direction <- match.arg(direction)
-  if (length(by) < 1L) stop("`by` is required.", call. = FALSE)
-  idx <- by[[length(by)]]
-  keys <- by[length(by)]
-  x_dt <- x_dt[order(x_dt[[idx]]), , drop = FALSE]
-  y_dt <- y_dt[order(y_dt[[idx]]), , drop = FALSE]
-  out <- merge(x_dt, y_dt, by = by, all.x = TRUE, sort = FALSE, suffixes = c(".x", ".y"))
-  bt_as_tibble(out)
-}
-
 nearestmerge <- function(x, y, by, tolerance = Inf) {
   rollingmerge(x, y, by = by, direction = "nearest", tolerance = tolerance)
-}
-
-rangemerge <- function(x, y, by, lower, upper) {
-  x_dt <- bt_as_data_frame(x); y_dt <- bt_as_data_frame(y)
-  by <- bt_resolve_cols(x_dt, by); bt_resolve_cols(y_dt, by)
-  lower <- bt_resolve_cols(x_dt, lower); upper <- bt_resolve_cols(x_dt, upper)
-  bt_as_tibble(merge(x_dt, y_dt, by = by, all.x = TRUE, sort = FALSE))
-}
-
-overlapmerge <- function(x, y, startx, endx, starty, endy, by = NULL) {
-  bt_as_tibble(merge(bt_as_data_frame(x), bt_as_data_frame(y), by = by, all = FALSE, sort = FALSE))
-}
-
-nonequimerge <- function(x, y, by, ...) {
-  bt_as_tibble(merge(bt_as_data_frame(x), bt_as_data_frame(y), by = by, all = FALSE, sort = FALSE, ...))
 }
 
 rbindfill <- function(..., id = NULL, fill = TRUE, typeconflict = c("error", "coerce")) {
@@ -712,21 +511,6 @@ unite <- function(data, column, cols, sep = "_", remove = TRUE, na.rm = FALSE) {
   bt_as_tibble(df)
 }
 
-expandrows <- function(data, times) {
-  df <- bt_as_data_frame(data)
-  times <- bt_set_row_names(times, nrow(df))
-  bt_as_tibble(df[rep(seq_len(nrow(df)), times), , drop = FALSE])
-}
-
-completegrid <- function(data, cols, fill = list()) {
-  df <- bt_as_data_frame(data)
-  cols <- bt_resolve_cols(df, cols)
-  grid <- expand.grid(lapply(df[cols], function(x) unique(x)), KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
-  out <- merge(grid, df, by = cols, all.x = TRUE, sort = FALSE)
-  for (nm in names(fill)) if (nm %in% names(out)) out[[nm]][is.na(out[[nm]])] <- fill[[nm]]
-  bt_as_tibble(out)
-}
-
 transpose <- function(data) {
   df <- bt_as_data_frame(data)
   bt_as_tibble(as.data.frame(t(df), stringsAsFactors = FALSE))
@@ -761,59 +545,8 @@ replacevalues <- function(x, old, new) {
   out
 }
 
-missingrows <- function(data, cols = NULL, mode = c("any", "all")) {
-  df <- bt_as_data_frame(data)
-  mode <- match.arg(mode)
-  if (!is.null(cols)) df <- df[, bt_resolve_cols(df, cols), drop = FALSE]
-  keep <- if (mode == "any") apply(df, 1L, function(x) any(bt_is_blank(x))) else apply(df, 1L, function(x) all(bt_is_blank(x)))
-  bt_as_tibble(df[keep, , drop = FALSE])
-}
-
-omitmissing <- function(data, cols = NULL, mode = c("any", "all")) {
-  df <- bt_as_data_frame(data)
-  mode <- match.arg(mode)
-  if (!is.null(cols)) df <- df[, bt_resolve_cols(df, cols), drop = FALSE]
-  keep <- if (mode == "any") apply(df, 1L, function(x) !any(bt_is_blank(x))) else apply(df, 1L, function(x) !all(bt_is_blank(x)))
-  bt_as_tibble(bt_as_data_frame(data)[keep, , drop = FALSE])
-}
-
-keepmissing <- function(data, cols, mode = c("any", "all")) {
-  df <- bt_as_data_frame(data)
-  mode <- match.arg(mode)
-  cols <- bt_resolve_cols(df, cols)
-  keep <- if (mode == "any") apply(df[, cols, drop = FALSE], 1L, function(x) any(bt_is_blank(x))) else apply(df[, cols, drop = FALSE], 1L, function(x) all(bt_is_blank(x)))
-  bt_as_tibble(df[keep, , drop = FALSE])
-}
-
-filldown <- function(data, cols, by = NULL) {
-  df <- bt_as_data_frame(data)
-  cols <- bt_resolve_cols(df, cols)
-  if (is.null(by)) {
-    for (nm in cols) {
-      x <- df[[nm]]
-      last <- NA
-      for (i in seq_along(x)) if (!bt_is_blank(x[[i]])) last <- x[[i]] else x[[i]] <- last
-      df[[nm]] <- x
-    }
-    return(bt_as_tibble(df))
-  }
-  pieces <- bt_split_by(df, by = by, keepby = TRUE)
-  bt_as_tibble(data.table::rbindlist(lapply(pieces, function(piece) filldown(piece, cols)), fill = TRUE))
-}
-
-fillup <- function(data, cols, by = NULL) {
-  reverse(filldown(reverse(data), cols = cols, by = by))
-}
-
 fillboth <- function(data, cols, by = NULL) {
   fillup(filldown(data, cols = cols, by = by), cols = cols, by = by)
-}
-
-missingindicator <- function(data, cols = NULL) {
-  df <- bt_as_data_frame(data)
-  if (!is.null(cols)) df <- df[, bt_resolve_cols(df, cols), drop = FALSE]
-  out <- lapply(df, function(x) as.integer(bt_is_blank(x)))
-  bt_as_tibble(as.data.frame(out, stringsAsFactors = FALSE))
 }
 
 trim <- function(x) trimws(x)
@@ -1057,9 +790,9 @@ addedrows <- function(old, new, by = NULL) {
   old_df <- bt_as_data_frame(old); new_df <- bt_as_data_frame(new)
   if (is.null(by)) return(bt_as_tibble(setdiff(new_df, old_df)))
   by <- bt_resolve_cols(old_df, by); bt_resolve_cols(new_df, by)
-  xk <- interaction(old_df[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
-  yk <- interaction(new_df[, by, drop = FALSE], drop = TRUE, lex.order = TRUE)
-  bt_as_tibble(new_df[!(yk %in% xk), , drop = FALSE])
+  old_dt <- bt_as_data_table(old_df); new_dt <- bt_as_data_table(new_df)
+  old_keys <- unique(old_dt[, by, with = FALSE])
+  bt_as_tibble(new_dt[!old_keys, on = by])
 }
 removedrows <- function(old, new, by = NULL) addedrows(new, old, by = by)
 changedrows <- function(old, new, by = NULL) {
@@ -1069,24 +802,3 @@ changedrows <- function(old, new, by = NULL) {
   bt_as_tibble(merge(old_df, new_df, by = by, suffixes = c(".old", ".new"), all = FALSE))
 }
 changedcols <- function(old, new, by = NULL) compareschema(old, new)
-compare <- function(x, y, by = NULL) {
-  x_df <- bt_as_data_frame(x)
-  y_df <- bt_as_data_frame(y)
-  out <- list(
-    dims = data.frame(object = c("x", "y"), rows = c(nrow(x_df), nrow(y_df)), cols = c(ncol(x_df), ncol(y_df)), stringsAsFactors = FALSE),
-    names = data.frame(column = union(names(x_df), names(y_df)), in_x = union(names(x_df), names(y_df)) %in% names(x_df), in_y = union(names(x_df), names(y_df)) %in% names(y_df), stringsAsFactors = FALSE),
-    types = merge(types(x_df), types(y_df), by = "column", all = TRUE, suffixes = c(".x", ".y")),
-    missing = merge(missingness(x_df, margin = "column"), missingness(y_df, margin = "column"), by = "column", all = TRUE, suffixes = c(".x", ".y")),
-    schema = compareschema(x, y),
-    equal = equaldata(x, y),
-    relationship = if (is.null(by)) NA_character_ else joinrelationship(x, y, by)
-  )
-  if (!is.null(by)) {
-    by <- bt_resolve_cols(x_df, by)
-    bt_resolve_cols(y_df, by)
-    x_keys <- unique(x_df[, by, drop = FALSE])
-    y_keys <- unique(y_df[, by, drop = FALSE])
-    out$key_overlap <- data.frame(x_unique = nrow(x_keys), y_unique = nrow(y_keys), common = nrow(merge(x_keys, y_keys, by = by)), stringsAsFactors = FALSE)
-  }
-  lapply(out, function(x) if (inherits(x, "data.frame")) bt_as_tibble(x) else x)
-}

@@ -4,7 +4,7 @@ test_that("updatemerge updates selected columns", {
 
   out <- updatemerge(x, y, by = "id", cols = "value")
 
-  expect_s3_class(out, "tbl_df")
+  expect_s3_class(out, "data.table")
   expect_equal(out$value, c("a", "z", "y"))
   expect_equal(out$other, c(1, 2, 3))
 })

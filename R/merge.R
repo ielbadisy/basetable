@@ -28,5 +28,5 @@ merge <- function(x,
     suffixes = suffixes
   )
 
-  bt_as_tibble(out)
+  out
 }
