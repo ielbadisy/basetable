@@ -1,0 +1,852 @@
+---
+title: "basetable: A Complete Function Reference"
+subtitle: "Every exported function, explained progressively with real examples"
+format:
+  pdf:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    fig-width: 6
+    fig-height: 4
+execute:
+  warning: false
+vignette: >
+  %\VignetteIndexEntry{basetable: A Complete Function Reference}
+  %\VignetteEngine{quarto::pdf}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup}
+#| include: false
+library(basetable)
+library(data.table)
+options(width = 90, digits = 4)
+```
+
+# Introduction
+
+`basetable` is a compact R package for tabular data manipulation and
+exploratory data analysis. It has three design goals:
+
+- **Base-style naming and semantics.** Functions read like `subset()`,
+  `transform()`, `aggregate()`, `merge()`, and `split()` — the base R verbs
+  most R users already know — rather than inventing a new grammar.
+- **`data.table` as the execution backend.** Every operation that touches real
+  data routes through `data.table`, so the package is fast without asking you
+  to learn `data.table`'s `[i, j, by]` syntax.
+- **Explicit, standard-evaluation interfaces.** Column names are passed as
+  character strings, not bare symbols captured by non-standard evaluation
+  (with a few clearly-marked exceptions, like `filter()`'s and `transform()`'s
+  expression arguments, which mirror base R's own `subset()`/`transform()`
+  behavior).
+
+This document walks through **every function `basetable` exports**, grouped
+into sections that build on each other: start with the core verbs, move
+through aggregation, joining, reshaping, and exploration, then into the
+lower-level data-cleaning, string, date, and numeric utility functions. Read
+it top to bottom to learn the package, or jump to a section as a reference.
+
+Every example below is real, runnable code — the output shown is the actual
+output `basetable` produces.
+
+# Core verbs {#sec-core-verbs}
+
+These are the everyday functions: subsetting rows, picking columns, and
+creating new columns. If you know `mtcars`, you know enough to follow along.
+
+## Subsetting rows and columns: `subset()`
+
+`subset()` mirrors `base::subset()` exactly: a logical condition for rows, and
+an optional `select` for columns.
+
+```{r}
+subset(mtcars, cyl == 6, select = c("mpg", "hp", "wt"))
+```
+
+## Picking and dropping columns: `pick()`, `drop()`
+
+`pick()` keeps only the named columns; `drop()` removes them.
+
+```{r}
+pick(mtcars, c("mpg", "hp"))
+drop(mtcars, c("vs", "am"))
+```
+
+## Creating and modifying columns: `transform()`, `within()`
+
+`transform()` adds or replaces columns using named expressions, exactly like
+`base::transform()`. Later expressions in the same call can refer to columns
+created earlier in that call.
+
+```{r}
+transform(mtcars, power = hp / wt, power_sq = power^2)
+```
+
+`within()` instead evaluates a whole block of code against the data's columns
+and returns whatever new/changed variables come out — this is `basetable`'s
+version of `base::within()`.
+
+```{r}
+within(mtcars, {
+  power <- hp / wt
+  heavy <- wt > 3.5
+})
+```
+
+## dplyr-style aliases: `filter()`, `select()`, `mutate()`, `transmute()`, `rename()`, `arrange()`
+
+For readers coming from `dplyr`, `basetable` provides familiar verb names.
+These are thin wrappers: `filter()` is `subset()`'s row logic, `select()` is
+`pick()`, `mutate()`/`transmute()` are `transform()`, and `arrange()` is
+`reorder()` (below).
+
+```{r}
+mtcars |>
+  filter(cyl == 6, mpg > 18) |>
+  select(c("mpg", "cyl", "hp")) |>
+  mutate(ratio = hp / mpg) |>
+  arrange("ratio", decreasing = TRUE)
+```
+
+```{r}
+transmute(mtcars, ratio = hp / mpg)
+rename(mtcars, horsepower = hp) |> pick(c("horsepower", "mpg"))
+```
+
+## Sorting rows: `reorder()`, `arrange()`
+
+`reorder()` sorts a table by one or more columns, ascending by default.
+`arrange()` is an identical alias.
+
+```{r}
+reorder(mtcars, by = c("cyl", "mpg"), decreasing = c(FALSE, TRUE)) |> headtail(3)
+```
+
+# Aggregation and grouping {#sec-aggregation}
+
+## Grouped summaries: `aggregate()`
+
+`aggregate()` computes one summary function over one or more value columns,
+per group — the `data.table`-backed analogue of `stats::aggregate()`. Note it
+returns a `data.table` directly (not a tibble), since it's meant to be fast and
+composable with further `data.table` operations.
+
+```{r}
+aggregate(mtcars, by = "cyl", value = c("mpg", "hp"), fun = mean)
+```
+
+## Counting rows: `count()`, `propcount()`
+
+`count()` counts rows per group; `propcount()` adds proportions, optionally
+computed within a `margin` of columns rather than over the whole table.
+
+```{r}
+count(iris, by = "Species")
+propcount(mtcars, by = c("cyl", "am"), margin = "cyl")
+```
+
+## Named summaries with `summarise()` / `summarize()` / `summaries()`
+
+`summarise()` (and its `summarize()` alias) take named summary expressions
+directly, dplyr-style, with `by` as a named argument:
+
+```{r}
+summarise(mtcars, mean_mpg = mean(mpg), n = length(mpg), by = "cyl")
+```
+
+`summaries()` is the same idea with `by` as the second positional argument —
+useful when you're calling it programmatically:
+
+```{r}
+summaries(mtcars, "cyl", mean_hp = mean(hp), sd_hp = sd(hp))
+```
+
+## Splitting into groups: `split()`, `by_apply()`, `applyby()`, `combine()`, `recombine()`
+
+`split()` breaks a table into a named list of tibbles, one per group:
+
+```{r}
+pieces <- split(iris, by = "Species")
+names(pieces)
+pieces$setosa |> headtail(2)
+```
+
+`by_apply()` (and its close relative `applyby()`) apply a function to each
+group and, if `bind = TRUE`, stitch the results back into one table via
+`combine()` (whose alias is `recombine()`):
+
+```{r}
+by_apply(mtcars, by = "cyl", fun = function(d) data.frame(mean_mpg = mean(d$mpg)), bind = TRUE, id = "cyl_group")
+```
+
+## First/last row per group: `firstby()`, `lastby()`
+
+```{r}
+df <- data.frame(id = c(1, 1, 2, 2, 2), visit = c(1, 2, 1, 2, 3), value = c(10, 12, 5, 6, 7))
+firstby(df, by = "id")
+lastby(df, by = "id")
+```
+
+# Joining tables {#sec-joins}
+
+`basetable` provides the full family of table joins, all `data.table`-backed.
+
+## Standard joins: `merge()`
+
+`merge()` mirrors `base::merge()`'s interface exactly (`by`, `all`, `all.x`,
+`all.y`, `suffixes`) while running on `data.table` internally.
+
+```{r}
+orders <- data.frame(id = c(1, 2, 3), customer = c("a", "b", "c"))
+payments <- data.frame(id = c(2, 3, 4), amount = c(50, 75, 20))
+
+merge(orders, payments, by = "id")
+merge(orders, payments, by = "id", all.x = TRUE)
+```
+
+## Semi- and anti-joins: `semimerge()`, `antimerge()`
+
+`semimerge()` keeps rows of `x` whose key exists in `y` (like `merge()` but
+without adding `y`'s columns); `antimerge()` keeps rows of `x` whose key does
+**not** exist in `y`.
+
+```{r}
+semimerge(orders, payments, by = "id")
+antimerge(orders, payments, by = "id")
+```
+
+## Key-matching helpers: `matchedkeys()`, `unmatchedkeys()`, `joinrelationship()`
+
+`matchedkeys()`/`unmatchedkeys()` return `x`'s distinct rows whose key is (or
+isn't) present in `y`. `joinrelationship()` classifies the cardinality of a
+join key between two tables.
+
+```{r}
+matchedkeys(orders, payments, by = "id")
+unmatchedkeys(orders, payments, by = "id")
+joinrelationship(orders, payments, by = "id")
+```
+
+## Cross joins: `crossmerge()`
+
+`crossmerge()` returns the full Cartesian product of two tables.
+
+```{r}
+crossmerge(data.frame(size = c("S", "M")), data.frame(color = c("red", "blue")))
+```
+
+## Rolling and nearest-key joins: `rollingmerge()`, `nearestmerge()`
+
+`rollingmerge()` matches each row of `x` to the nearest row of `y` **at or
+before** it (`direction = "backward"`), at or after it (`"forward"`), or
+whichever is numerically closest (`"nearest"`) — the classic "as-of" join used
+for time series and event logs. `nearestmerge()` is a convenience wrapper for
+`direction = "nearest"`.
+
+```{r}
+trades <- data.frame(id = 1L, time = c(5, 10, 15))
+quotes <- data.frame(id = 1L, time = c(3, 8, 14), price = c(100, 101, 99))
+
+rollingmerge(trades, quotes, by = c("id", "time"), direction = "backward")
+nearestmerge(trades, quotes, by = c("id", "time"))
+```
+
+## Interval overlap joins: `overlapmerge()`
+
+`overlapmerge()` matches rows whose `[startx, endx]` interval overlaps a
+`[starty, endy]` interval in `y` (optionally within an exact `by` key) — for
+example, matching events to the time windows they fall inside.
+
+```{r}
+events <- data.frame(id = 1L, start = c(1, 10), end = c(5, 15))
+windows <- data.frame(id = 1L, start = c(0, 8), end = c(6, 20), label = c("early", "late"))
+
+overlapmerge(events, windows, startx = "start", endx = "end", starty = "start", endy = "end", by = "id")
+```
+
+## Updating values from another table: `updatemerge()`
+
+`updatemerge()` overwrites `x`'s values with `y`'s wherever the join key
+matches (an in-place "upsert" of column values, not a column-adding merge).
+
+```{r}
+current <- data.frame(id = c(1, 2, 3), status = c("pending", "pending", "pending"))
+updates <- data.frame(id = c(2, 3), status = c("shipped", "cancelled"))
+
+updatemerge(current, updates, by = "id")
+```
+
+## `nonequimerge()` and `rangemerge()`: current behavior
+
+Both are named for conditional (non-equi / range) joins, but as currently
+implemented, they perform a plain equi-merge on `by` — `nonequimerge()`'s `...`
+and `rangemerge()`'s `lower`/`upper` arguments are validated but not yet
+applied as an actual non-equi or range condition. Treat these two as aliases
+for `merge()` today; a true conditional join is a documented gap, not a
+feature you should rely on.
+
+```{r}
+nonequimerge(orders, payments, by = "id")
+rangemerge(orders, payments, by = "id", lower = "id", upper = "id")
+```
+
+# Set operations and table comparison {#sec-sets}
+
+## Row-level set operations: `unionrows()`, `intersectrows()`, `diffrows()`
+
+```{r}
+a <- data.frame(id = c(1, 2, 3))
+b <- data.frame(id = c(2, 3, 4))
+
+unionrows(a, b)
+intersectrows(a, b, by = "id")
+diffrows(a, b, by = "id")
+```
+
+## Comparing two tables: `equalrows()`, `equaldata()`, `sameschema()`, `compareschema()`, `changedcols()`
+
+`equalrows()` compares two tables' rows by key (order-insensitive, duplicate-
+sensitive). `equaldata()` compares full table content. `sameschema()` and
+`compareschema()` (aliased for this purpose by `changedcols()`) compare column
+names and types.
+
+```{r}
+equalrows(a, data.frame(id = c(3, 2, 1)), by = "id")
+equaldata(a, a[nrow(a):1, , drop = FALSE], ignoreorder = TRUE)
+sameschema(mtcars, mtcars)
+compareschema(mtcars, iris)
+```
+
+## Comparing two snapshots of the same table: `addedrows()`, `removedrows()`, `changedrows()`
+
+```{r}
+old <- data.frame(id = c(1, 2, 3), status = c("a", "b", "c"))
+new <- data.frame(id = c(2, 3, 4), status = c("b", "c2", "d"))
+
+addedrows(old, new, by = "id")
+removedrows(old, new, by = "id")
+changedrows(old, new, by = "id")
+```
+
+## Row/column binding: `bind_rows()`, `bind_cols()`, `rbindfill()`
+
+`bind_rows()` stacks tables, filling missing columns with `NA`. `rbindfill()`
+is its lower-level building block. `bind_cols()` binds tables side by side.
+
+```{r}
+bind_rows(data.frame(x = 1), data.frame(x = 2, y = 3))
+bind_cols(data.frame(a = 1:2), data.frame(b = 3:4))
+```
+
+# Reshaping {#sec-reshape}
+
+## Long and wide formats: `tolong()`, `towide()`
+
+```{r}
+wide <- data.frame(id = 1:2, jan = c(10, 20), feb = c(11, 22))
+long <- tolong(wide, cols = c("jan", "feb"), names = "month", values = "sales")
+long
+towide(long, names = "month", values = "sales", idcols = "id", fun = sum)
+```
+
+## Base R reshape, stack, and unstack: `reshape()`, `stack()`, `unstack()`
+
+`reshape()`, `stack()`, and `unstack()` are `basetable`-native wrappers around
+`stats::reshape()`, `utils::stack()`, and `utils::unstack()`, kept for
+base-R-compatibility rather than reimplemented on `data.table`.
+
+```{r}
+wide2 <- data.frame(id = 1:2, t1 = c(10, 20), t2 = c(11, 22))
+reshape(wide2, varying = c("t1", "t2"), v.names = "value", timevar = "time", idvar = "id", direction = "long")
+
+stack(data.frame(a = 1:2, b = 3:4))
+```
+
+## Splitting and combining text columns: `separate()`, `unite()`
+
+```{r}
+codes <- data.frame(code = c("A-1-red", "B-2-blue"))
+parts <- separate(codes, column = "code", into = c("letter", "num", "color"), sep = "-")
+parts
+unite(parts, column = "code", cols = c("letter", "num", "color"), sep = "_")
+```
+
+## Transposing: `transpose()`
+
+```{r}
+transpose(data.frame(a = 1:2, b = 3:4))
+```
+
+# Exploration and EDA {#sec-eda}
+
+## Shape and types: `dims()`, `types()`, `nrows()`, `ncols()`
+
+```{r}
+dims(iris)
+types(iris)
+```
+
+## Peeking at data: `headtail()`, `glimpse()`
+
+```{r}
+headtail(iris, 2)
+glimpse(iris)
+```
+
+## Descriptive statistics: `describe()`, `profile()`
+
+`describe()` gives a per-column summary (mean, sd, quantiles for numeric
+columns; top values for others). `profile()` is an alias.
+
+```{r}
+describe(iris)
+```
+
+## Frequency tables: `freq()`
+
+```{r}
+freq(iris, column = "Species")
+freq(mtcars, column = "cyl", by = "am", prop = TRUE)
+```
+
+## Table 1-style summaries: `summarytab()`
+
+```{r}
+dat <- transform(mtcars, am = factor(am, labels = c("Automatic", "Manual")))
+summarytab(dat, vars = c("mpg", "cyl"), by = "am", p_value = TRUE)
+```
+
+## Missingness: `missingness()`
+
+```{r}
+with_na <- transform(iris, Sepal.Length = ifelse(Sepal.Length > 7, NA, Sepal.Length))
+missingness(with_na)
+```
+
+## Comparing two tables at a glance: `compare()`
+
+```{r}
+compare(iris, with_na, by = "Species")
+```
+
+# Data cleaning and validation {#sec-cleaning}
+
+## Assertions that stop on failure: `assert*()`
+
+Each `assert*()` function returns its input invisibly if the check passes, and
+throws an informative error otherwise — useful as a pipeline guard.
+
+```{r}
+mtcars |>
+  assertnames(c("mpg", "cyl")) |>
+  assertrows(mpg > 0) |>
+  assertrange("mpg", lower = 0, upper = 60) |>
+  asserttype("cyl", "numeric") |>
+  assertcomplete() |>
+  headtail(2)
+```
+
+```{r}
+tryCatch(assertkey(mtcars, "cyl"), error = function(e) conditionMessage(e))
+tryCatch(assertunique(mtcars, "cyl"), error = function(e) conditionMessage(e))
+tryCatch(assertvalues(mtcars, "am", allowed = c(0, 1)), error = function(e) "passes")
+```
+
+`assertcols()`/`assertkey()` are convenience aliases for the lower-level
+`assert_cols()`/`assert_key()`, which do the same checks and are what you'd
+call from code that doesn't need the `assert*` naming convention:
+
+```{r}
+assert_cols(mtcars, c("mpg", "cyl")) |> invisible()
+tryCatch(assert_key(mtcars, "cyl"), error = function(e) conditionMessage(e))
+```
+
+## Finding rows/values that fail a check: `invalidrows()`, `invalidvalues()`, `outofrange()`
+
+These are the non-throwing counterparts of the `assert*()` functions above —
+instead of stopping, they return the offending rows.
+
+```{r}
+invalidrows(mtcars, mpg > 15)
+outofrange(mtcars, "mpg", lower = 15, upper = 30)
+```
+
+## Missing-data helpers: `missingrows()`, `keepmissing()`, `omitmissing()`, `missingindicator()`
+
+```{r}
+d <- data.frame(a = c(1, NA, 3), b = c(NA, NA, 3))
+missingrows(d, mode = "any")
+keepmissing(d)
+omitmissing(d, mode = "any")
+missingindicator(d)
+```
+
+## Filling in missing combinations: `completegrid()`, `expandrows()`
+
+`completegrid()` fills in every combination of the named columns that's
+missing from the data (useful before time-series analysis). `expandrows()`
+repeats each row a given number of times.
+
+```{r}
+sparse <- data.frame(site = c("A", "A", "B"), year = c(2020, 2021, 2020), value = c(1, 2, 3))
+completegrid(sparse, cols = c("site", "year"), fill = list(value = 0))
+
+expandrows(data.frame(x = c(1, 2)), times = c(2, 1))
+```
+
+## Recoding values: `naif()`, `nato()`, `blanktona()`, `natoblank()`, `replacevalues()`, `replacewhere()`, `replacecols()`
+
+```{r}
+naif(c(1, 99, 2), 99)
+nato(c(1, NA, 2), 0)
+blanktona(c("a", "", "b"))
+replacevalues(c("a", "b", "c"), old = c("a", "b"), new = c("A", "B"))
+replacewhere(mtcars, cyl == 4, cols = "mpg", value = NA) |> headtail(2)
+```
+
+## Deduplication: `distinct()`, `removeduplicates()`, `duplicaterows()`, `duplicatekeys()`, `duplicatenames()`
+
+```{r}
+dup_df <- data.frame(id = c(1, 1, 2), v = c("a", "b", "c"))
+distinct(dup_df, cols = "id")
+removeduplicates(dup_df, by = "id", keep = "first")
+duplicaterows(data.frame(x = c(1, 1, 2)))
+duplicatekeys(dup_df, "id")
+```
+
+`duplicatekeys()` is a convenience alias for the lower-level `duplicated_keys()`:
+
+```{r}
+duplicated_keys(dup_df, "id")
+```
+
+## Column-name hygiene: `cleannames()`, `repairnames()`, `renamewith()`, `commonnames()`
+
+```{r}
+messy <- data.frame(`First Name` = 1, `2nd_col` = 2, check.names = FALSE)
+cleannames(messy)
+commonnames(mtcars, iris)
+```
+
+`commonnames()` is a convenience alias for the lower-level `common_names()`:
+
+```{r}
+common_names(mtcars, iris)
+```
+
+## Filling in missing values within groups: `filldown()`, `fillup()`, `fillboth()`
+
+`filldown()` carries the last non-missing value forward within each group
+(last observation carried forward); `fillup()` carries the next non-missing
+value backward; `fillboth()` does both, filling any remaining gaps from
+either direction.
+
+```{r}
+visits <- data.frame(
+  id = c(1, 1, 1, 2, 2),
+  visit = c(1, 2, 3, 1, 2),
+  treatment = c("A", NA, NA, NA, "B")
+)
+filldown(visits, cols = "treatment", by = "id")
+fillup(visits, cols = "treatment", by = "id")
+fillboth(visits, cols = "treatment", by = "id")
+```
+
+# Row and column utilities {#sec-row-col-utils}
+
+## Column metadata: `colnames()`, `rownames()`, `classes()`, `uniques()`, `cardinality()`, `constants()`, `emptycols()`
+
+```{r}
+colnames(iris)
+classes(iris)
+uniques(iris)
+cardinality(iris, cols = "Species")
+constants(data.frame(a = 1, b = 1:2))
+emptycols(data.frame(a = c(NA, NA), b = 1:2))
+```
+
+## Finding blank rows: `emptyrows()`
+
+```{r}
+emptyrows(data.frame(a = c(NA, "x", ""), b = c(NA, "y", NA)))
+```
+
+## Reordering columns: `move()`, `firstcols()`, `lastcols()`
+
+```{r}
+move(mtcars, "hp", before = "mpg") |> colnames()
+firstcols(mtcars, "wt") |> colnames()
+lastcols(mtcars, "mpg") |> colnames()
+```
+
+## Row subsets: `firstrows()`, `lastrows()`, `samplerows()`, `samplefrac()`, `slice()`, `reverse()`
+
+```{r}
+firstrows(mtcars, 3)
+lastrows(mtcars, 2)
+set.seed(1)
+samplerows(mtcars, 2)
+slice(mtcars, c(1, 3, 5))
+```
+
+## Sorting rows: `orderrows()`
+
+```{r}
+orderrows(mtcars, by = "mpg", decreasing = TRUE) |> headtail(2)
+```
+
+## Column reordering: `relocate()`
+
+```{r}
+relocate(mtcars, "hp", .before = "mpg") |> colnames()
+```
+
+## Row position helpers: `rownumber()`
+
+```{r}
+rownumber(c("a", "b", "c"))
+```
+
+## Row-wise reductions across columns: `rowmin()`, `rowmax()`, `rowany()`, `rowall()`, `rowcount()`, `rowfirst()`, `rowlast()`, `rowapply()`
+
+```{r}
+d <- data.frame(x = c(1, NA, 3), y = c(4, 5, NA), z = c(TRUE, FALSE, TRUE))
+rowmin(d, cols = c("x", "y"), na.rm = TRUE)
+rowmax(d, cols = c("x", "y"), na.rm = TRUE)
+rowfirst(d, cols = c("x", "y"), na.rm = TRUE)
+rowlast(d, cols = c("x", "y"), na.rm = TRUE)
+rowapply(d, cols = c("x", "y"), fun = function(row) sum(row, na.rm = TRUE))
+```
+
+## Applying a function to selected columns: `applycols()`, `convertcols()`
+
+```{r}
+applycols(mtcars, cols = "mpg", fun = round) |> headtail(2)
+convertcols(mtcars, cols = "cyl", fun = as.character) |> types()
+```
+
+# String manipulation {#sec-strings}
+
+## Whitespace and case: `trim()`, `squish()`, `lower()`, `upper()`, `titlecase()`, `sentencecase()`, `textlen()`
+
+```{r}
+trim("  hello  ")
+squish("  too   many   spaces ")
+lower("HELLO"); upper("hello")
+titlecase("hello world"); sentencecase("HELLO WORLD")
+textlen(c("abc", NA))
+```
+
+## Substrings and padding: `left()`, `right()`, `middle()`, `truncate()`, `padleft()`, `padright()`, `padcenter()`
+
+```{r}
+left("hello", 3); right("hello", 3); middle("hello", 2, 4)
+truncate("a long sentence", 10)
+padleft("7", 3, pad = "0"); padright("7", 3, pad = "0"); padcenter("hi", 6, pad = "*")
+```
+
+## Pattern matching: `contains()`, `matches()`, `startswith()`, `endswith()`, `countmatch()`, `locate()`, `locateall()`
+
+```{r}
+contains(c("apple", "banana"), "an")
+matches(c("cat", "cats"), "cat")
+startswith(c("apple", "banana"), "a")
+endswith(c("apple", "banana"), "a")
+countmatch("banana", "a")
+locate("banana", "an")
+```
+
+## Extraction: `extract()`, `extractall()`, `extractnum()`, `extractint()`, `extractbetween()`
+
+```{r}
+extract("order #4231", "[0-9]+")
+extractall("a1b2c3", "[0-9]")
+extractnum("total: -12.5 kg")
+extractbetween("[important]", "\\[", "\\]")
+```
+
+## Replace and remove: `replacetext()`, `removetext()`, `removeall()`, `replaceall()`
+
+```{r}
+replacetext("a-b-c", "-", "_")
+removetext("a-b-c", "-")
+replaceall(c("a", "b"), old = "a", new = "A")
+```
+
+## Split and join: `splittext()`, `splitfirst()`, `splitlast()`, `jointext()`, `collapsetext()`
+
+```{r}
+splittext("a-b-c", "-")
+splitfirst("a-b-c", "-"); splitlast("a-b-c", "-")
+jointext("a", "b", "c")
+collapsetext(c("a", "b", "c"), sep = ", ")
+```
+
+## Blank and encoding helpers: `isblank()`, `removeaccents()`, `normalizeunicode()`, `normalizeencoding()`, `transliterate()`
+
+```{r}
+isblank(c("", "  ", NA, "x"))
+removeaccents("café")
+```
+
+## String distance and similarity: `textdist()`, `nearesttext()`, `similartext()`
+
+```{r}
+textdist("cat", c("cat", "bat", "dog"))
+nearesttext("kat", c("cat", "dog", "bird"))
+```
+
+## Classification predicates: `isalpha()`, `isalphanumeric()`, `isnumerictext()`, `isintegertext()`, `isemail()`, `isurl()`
+
+```{r}
+isalpha(c("abc", "a1c"))
+isnumerictext(c("12.5", "abc"))
+isemail(c("a@b.com", "not-an-email"))
+isurl(c("https://example.com", "example.com"))
+```
+
+## Recoding and grouping values: `recode()`, `collapsevalues()`, `collapselevels()`, `lump()`, `reorderlevels()`, `expandlevels()`
+
+```{r}
+recode(c("a", "b", "c"), old = "a", new = "A")
+collapsevalues(c("cat", "dog", "bird"), groups = list(pet = c("cat", "dog")))
+
+x <- rep(c("a", "b", "c", "d"), c(10, 5, 3, 1))
+lump(x, n = 2, other = "Other") |> table()
+
+f <- factor(c("low", "high", "mid"), levels = c("low", "mid", "high"))
+reorderlevels(f, by = c("high", "mid", "low"))
+expandlevels(f, "extra")
+```
+
+# Parsing text into typed values {#sec-parsing}
+
+`parse*()` functions convert messy text into typed vectors, with an `na=` for
+sentinel missing-value strings and a `strict=` to error instead of silently
+returning `NA` on failure.
+
+```{r}
+parseint(c("1", "2", "NA"))
+parsenum("1.234,56", decimal = ",", grouping = ".")
+parselogical(c("TRUE", "false", "T", "0"))
+parsedate(c("2024-01-15", "15/01/2024"), formats = c("%Y-%m-%d", "%d/%m/%Y"))
+parsedatetime("2024-01-15 08:30:00", formats = "%Y-%m-%d %H:%M:%S")
+parsepercent("42%")
+parsecurrency("$1,234.50")
+parsefailures(c("1", "x", "3"), parseint)
+```
+
+# Dates and times {#sec-dates}
+
+## Extracting components
+
+```{r}
+d <- as.Date("2024-03-15")
+year(d); month(d); day(d); weekday(d); yearday(d); week(d); quarter(d)
+
+t <- as.POSIXct("2024-03-15 08:30:45", tz = "UTC")
+hour(t); minute(t); second(t)
+```
+
+## Arithmetic and sequences: `adddays()`, `addweeks()`, `addmonths()`, `addyears()`, `datediff()`, `dateseq()`, `betweendates()`
+
+`addmonths()`/`addyears()` handle end-of-month overflow explicitly via
+`invalid = c("previous", "next", "missing", "error")` — e.g. what should
+January 31st plus one month become, given February doesn't have 31 days?
+
+```{r}
+adddays(d, 10); addweeks(d, 2)
+addmonths(as.Date("2024-01-31"), 1, invalid = "previous")
+addmonths(as.Date("2024-01-31"), 1, invalid = "next")
+datediff(as.Date("2024-01-10"), as.Date("2024-01-01"), units = "days")
+dateseq(as.Date("2024-01-01"), as.Date("2024-01-05"))
+betweendates(d, "2024-01-01", "2024-12-31")
+```
+
+## Rounding dates: `floordate()`, `ceilingdate()`, `rounddate()`
+
+```{r}
+floordate(d, "month"); ceilingdate(d, "month"); rounddate(d, "month")
+floordate(d, "week")
+```
+
+# Numeric transforms and rolling windows {#sec-numeric}
+
+## Rescaling and standardizing: `rescale()`, `standardize()`, `center()`, `winsorize()`
+
+```{r}
+x <- c(1, 2, 3, 4, 100)
+rescale(x); standardize(x); center(x)
+winsorize(x, probs = c(0.1, 0.9))
+```
+
+## Binning: `quantilegroup()`
+
+```{r}
+quantilegroup(1:100, n = 4) |> table()
+```
+
+## Period-over-period change and rank: `percentchange()`, `percentrank()`, `denserank()`
+
+`denserank()` ranks values by sorted order with no gaps between ranks, tied
+values sharing a rank (the same semantics as SQL's `DENSE_RANK()`).
+
+```{r}
+percentchange(c(100, 110, 99))
+percentrank(c(10, 20, 20, 30))
+denserank(c(30, 10, 20, 10, 30))
+```
+
+## Cumulative helpers: `cumcount()`, `cumedist()`, `cummean()`
+
+```{r}
+cumcount(c("a", "b", "c"))
+cumedist(c("a", "a", "b"))
+cummean(c(1, 2, 3))
+```
+
+## Lag/lead and differencing: `difference()`, `lagvalue()`, `leadvalue()`
+
+```{r}
+difference(c(1, 3, 6, 10))
+lagvalue(1:5, n = 1)
+leadvalue(1:5, n = 1)
+```
+
+## Rolling window functions: `rollmean()`, `rollsum()`, `rollmin()`, `rollmax()`, `rollmedian()`, `rollsd()`, `rollvar()`, `rollprod()`, `rollapply()`
+
+All roll functions share the same interface: a `width`, an `align`
+("right"/"left"/"center"), a `fill` for incomplete windows, `partial` to allow
+incomplete boundary windows instead of `fill`, and (where numerically
+meaningful) `na.rm`.
+
+```{r}
+v <- c(1, 2, NA, 4, 5)
+rollmean(v, width = 3, na.rm = TRUE)
+rollsum(v, width = 3, na.rm = TRUE, partial = TRUE)
+rollmax(v, width = 2, na.rm = TRUE)
+rollapply(1:5, width = 3, FUN = sum, partial = TRUE)
+```
+
+# Functional helpers {#sec-functional}
+
+`map()`/`walk()`/`reduce()` are lightweight `functionals`-package-backed
+helpers for working with plain vectors and lists (not tables) — useful for the
+occasional loop-replacement inside a larger `basetable` pipeline.
+
+```{r}
+map(1:3, function(x) x + 0.5)
+map_dbl(1:3, function(x) x + 0.5)
+map_int(1:3, function(x) x * 2L)
+map_chr(1:3, as.character)
+map_lgl(1:3, function(x) x > 1)
+walk(c("a", "b"), function(x) invisible(x))
+reduce(1:4, `+`)
+```
+
+# Closing notes
+
+This document covers all of `basetable`'s exported functions. For the
+performance story (how the wrapper compares to raw `data.table`, and where
+its overhead was tracked down and fixed), see the companion `benchmarking`
+vignette.
