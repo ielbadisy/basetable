@@ -556,7 +556,7 @@ rownumber <- function(x) seq_along(x)
 #'
 #' @return An integer vector of dense ranks.
 #' @export
-denserank <- function(x) match(x, unique(x))
+denserank <- function(x) match(x, sort(unique(x)))
 
 #' Percentile rank of a vector
 #'
