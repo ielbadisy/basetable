@@ -7,6 +7,18 @@ test_that("dims, types, describe, missingness, and summarytab return data frames
   expect_s3_class(summarytab(iris, vars = c("Sepal.Length", "Species")), "data.frame")
 })
 
+test_that("missingness treats blank strings as missing, consistent with missingrows()/missingindicator()", {
+  df <- data.frame(a = c(1, NA, 3, NA), b = c("", "y", NA, "z"), stringsAsFactors = FALSE)
+
+  out <- missingness(df)
+  expect_equal(out$missing[out$column == "a"], 2)
+  expect_equal(out$missing[out$column == "b"], 2)
+
+  out_row <- missingness(df, margin = "row")
+  expect_equal(out_row$missing, c(1, 1, 1, 1))
+  expect_equal(out_row$complete, rep(FALSE, 4))
+})
+
 test_that("freq and compare provide stable outputs", {
   out <- freq(iris, column = "Species", prop = TRUE)
   expect_true(all(c("Species", "n", "prop") %in% names(out)))
