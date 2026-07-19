@@ -194,8 +194,8 @@ using data.table's compiled internals. `inst/benchmarks/benchmark-all.R`
 tracks these against their native data.table equivalents; the most dramatic
 fix was `rollingmerge()`, which reimplemented a rolling/nearest join with a
 hand-rolled per-group R loop and measured at roughly **1500x** the cost of
-data.table's native `roll=` join before being rewritten to use it directly —
-it now runs at parity. `count()`, `duplicated_keys()`, `freq()`, `filldown()`,
+data.table's native `roll=` join before being rewritten to use it directly,
+and it now runs at parity. `count()`, `duplicated_keys()`, `freq()`, `filldown()`,
 `fillup()`, `split()`, and `summarise()`/`summarize()`/`summaries()` all saw
 similar (smaller) reductions in overhead from the same kind of fix.
 

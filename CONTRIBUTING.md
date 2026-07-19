@@ -21,7 +21,7 @@ Open an issue with:
    `subset()`, `merge()`, `aggregate()`, etc., not introduce a new grammar.
 4. Prefer routing table operations through `data.table` (via
    `bt_as_data_table_ro()`/`bt_as_data_table()` in `R/helpers-internal.R`)
-   rather than looping in base R — see `inst/benchmarks/benchmark-all.R` for
+   rather than looping in base R; see `inst/benchmarks/benchmark-all.R` for
    the kind of overhead this avoids.
 5. Add or update tests under `tests/testthat/` for any behavior change.
 6. Run `devtools::test()` and `R CMD check` locally before opening a pull
@@ -40,5 +40,5 @@ Open an issue with:
 
 - Match the existing style in the file you're editing (explicit arguments,
   no non-standard evaluation beyond what the base-R equivalents already use).
-- No unnecessary abstractions — a small, direct fix is preferred over a
+- No unnecessary abstractions: a small, direct fix is preferred over a
   generalized one.

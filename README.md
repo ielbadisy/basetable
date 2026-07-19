@@ -51,7 +51,7 @@ row is the one that matters most: it isolates wrapper overhead from the
 backend's own performance. The `data.table` row above uses the idiomatic
 expression a user would hand-write for each operation (e.g. `.(value =
 mean(value))` for aggregation), which is not always exactly the code path
-`basetable`'s wrapper generates internally — so a basetable row at or below
+`basetable`'s wrapper generates internally, so a basetable row at or below
 1.00x relative to data.table (as aggregate shows here) reflects a different
 data.table idiom being used, not the wrapper beating its own backend at
 identical work. A stricter benchmark that forces both sides through the same
@@ -67,7 +67,7 @@ against native data.table equivalents, not shown in the chart above). The
 largest fix was `rollingmerge()`, which reimplemented a rolling/nearest join
 with a hand-rolled per-group R loop and measured at roughly **1500x** the
 cost of data.table's native `roll=` join before being rewritten to use it
-directly — it now runs at parity. `count()` (shown above as "Group count"),
+directly, and it now runs at parity. `count()` (shown above as "Group count"),
 `duplicated_keys()`, `freq()`, `filldown()`, `fillup()`, `split()`, and
 `summarise()`/`summarize()`/`summaries()` all saw similar (smaller)
 reductions in overhead from the same kind of fix.
