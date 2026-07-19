@@ -4,14 +4,12 @@
 \alias{changedcols}
 \title{Compare the columns of two tables}
 \usage{
-changedcols(old, new, by = NULL)
+changedcols(old, new)
 }
 \arguments{
 \item{old}{Baseline data.frame or data.table ("before" state).}
 
 \item{new}{Updated data.frame or data.table ("after" state), or replacement values when used for value substitution.}
-
-\item{by}{Character vector of column names identifying groups or join keys.}
 }
 \value{
 See \code{\link[=compareschema]{compareschema()}}.

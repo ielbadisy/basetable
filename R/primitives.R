@@ -351,7 +351,7 @@ removeduplicates <- function(data, by = NULL, keep = c("first", "last", "none"))
   keep <- match.arg(keep)
   if (is.null(by)) {
     df <- bt_as_data_frame(data)
-    return(bt_as_tibble(if (keep == "first") df[!duplicated(df), , drop = FALSE] else if (keep == "last") df[!duplicated(df, fromLast = TRUE), , drop = FALSE] else df[FALSE, , drop = FALSE]))
+    return(bt_as_tibble(if (keep == "first") df[!duplicated(df), , drop = FALSE] else if (keep == "last") df[!duplicated(df, fromLast = TRUE), , drop = FALSE] else df[!duplicated(df) & !duplicated(df, fromLast = TRUE), , drop = FALSE]))
   }
   if (keep == "first") return(distinct(data, cols = by, .keep_all = TRUE))
   if (keep == "last") return(lastby(data, by = by))
@@ -994,10 +994,12 @@ equalrows <- function(x, y, by = NULL) {
   x_df <- bt_as_data_frame(x); y_df <- bt_as_data_frame(y)
   if (is.null(by)) return(identical(x_df, y_df))
   by <- bt_resolve_cols(x_df, by); bt_resolve_cols(y_df, by)
-  x_dt <- data.table::as.data.table(x_df)[, by, with = FALSE]
-  y_dt <- data.table::as.data.table(y_df)[, by, with = FALSE]
-  data.table::setorderv(x_dt, by)
-  data.table::setorderv(y_dt, by)
+  x_dt <- data.table::as.data.table(x_df)
+  y_dt <- data.table::as.data.table(y_df)
+  data.table::setcolorder(x_dt, c(by, setdiff(names(x_dt), by)))
+  data.table::setcolorder(y_dt, c(by, setdiff(names(y_dt), by)))
+  data.table::setorderv(x_dt, names(x_dt))
+  data.table::setorderv(y_dt, names(y_dt))
   isTRUE(all.equal(x_dt, y_dt, check.attributes = FALSE))
 }
 
@@ -2321,14 +2323,28 @@ changedrows <- function(old, new, by = NULL) {
   old_df <- bt_as_data_frame(old); new_df <- bt_as_data_frame(new)
   if (is.null(by)) return(bt_as_tibble(setdiff(rbind(old_df, new_df), intersect(old_df, new_df))))
   by <- bt_resolve_cols(old_df, by); bt_resolve_cols(new_df, by)
-  bt_as_tibble(merge(old_df, new_df, by = by, suffixes = c(".old", ".new"), all = FALSE))
+
+  merged <- bt_as_data_frame(merge(old_df, new_df, by = by, suffixes = c(".old", ".new"), all = FALSE))
+  compare_cols <- intersect(setdiff(names(old_df), by), setdiff(names(new_df), by))
+
+  if (length(compare_cols) == 0L) {
+    return(bt_as_tibble(merged[0L, , drop = FALSE]))
+  }
+
+  changed <- rep(FALSE, nrow(merged))
+  for (col in compare_cols) {
+    old_vals <- merged[[paste0(col, ".old")]]
+    new_vals <- merged[[paste0(col, ".new")]]
+    changed <- changed | (!(is.na(old_vals) & is.na(new_vals)) & (is.na(old_vals) | is.na(new_vals) | old_vals != new_vals))
+  }
+
+  bt_as_tibble(merged[changed, , drop = FALSE])
 }
 #' Compare the columns of two tables
 #'
 #' @param old Baseline data.frame or data.table ("before" state).
 #' @param new Updated data.frame or data.table ("after" state), or replacement values when used for value substitution.
-#' @param by Character vector of column names identifying groups or join keys.
 #'
 #' @return See [compareschema()].
 #' @export
-changedcols <- function(old, new, by = NULL) compareschema(old, new)
+changedcols <- function(old, new) compareschema(old, new)
