@@ -34,6 +34,11 @@ test_that("cumcount/cumedist/cummean", {
   expect_equal(cummean(c(1, 2, 3)), c(1, 1.5, 2))
 })
 
+test_that("denserank ranks by sorted value with no gaps, ties sharing a rank", {
+  expect_equal(denserank(c(30, 10, 20, 10, 30)), c(3, 1, 2, 1, 3))
+  expect_equal(denserank(c(NA, 1, 2)), c(NA, 1, 2))
+})
+
 test_that("difference/lagvalue/leadvalue", {
   expect_equal(difference(c(1, 3, 6)), c(NA, 2, 3))
   expect_equal(difference(c(1, 3, 6, 10), lag = 2), c(NA, NA, 5, 7))
