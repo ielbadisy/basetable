@@ -276,18 +276,32 @@ updates <- data.frame(id = c(2, 3), status = c("shipped", "cancelled"))
 updatemerge(current, updates, by = "id")
 ```
 
-## `nonequimerge()` and `rangemerge()`: current behavior
+## Conditional joins: `nonequimerge()`, `rangemerge()`
 
-Both are named for conditional (non-equi / range) joins, but as currently
-implemented, they perform a plain equi-merge on `by` — `nonequimerge()`'s `...`
-and `rangemerge()`'s `lower`/`upper` arguments are validated but not yet
-applied as an actual non-equi or range condition. Treat these two as aliases
-for `merge()` today; a true conditional join is a documented gap, not a
-feature you should rely on.
+`nonequimerge()` supports genuine inequality conditions in `by`, written as
+`"xcol<op>ycol"` (the same convention `data.table` itself uses for `on=`),
+alongside any plain exact-match columns:
 
 ```{r}
-nonequimerge(orders, payments, by = "id")
-rangemerge(orders, payments, by = "id", lower = "id", upper = "id")
+events <- data.frame(id = 1, date = as.Date("2024-01-15"))
+periods <- data.frame(
+  id = 1,
+  start_date = as.Date(c("2024-01-01", "2024-02-01")),
+  end_date = as.Date(c("2024-01-31", "2024-02-28")),
+  period = c("Jan", "Feb")
+)
+nonequimerge(events, periods, by = c("id", "date>=start_date", "date<=end_date"))
+```
+
+`rangemerge()` keeps every row of `x` (a table of ranges), attaching the row(s)
+of `y` whose `value` column falls inside that range, matched within `by`. An
+`x` row with no `y` row in range still appears once, with `NA` for `y`'s
+columns.
+
+```{r}
+ranges <- data.frame(id = c(1, 1, 2), lower = c(0, 0, 0), upper = c(10, 10, 20))
+points <- data.frame(id = c(1, 1, 2), val = c(5, 15, 5), label = c("a", "b", "c"))
+rangemerge(ranges, points, by = "id", lower = "lower", upper = "upper", value = "val")
 ```
 
 # Set operations and table comparison {#sec-sets}
