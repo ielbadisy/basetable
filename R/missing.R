@@ -14,17 +14,18 @@ missingness <- function(data, margin = c("column", "row")) {
   if (margin == "column") {
     return(bt_as_tibble(data.frame(
       column = names(df),
-      missing = vapply(df, function(x) sum(is.na(x)), numeric(1)),
-      missing_prop = vapply(df, function(x) mean(is.na(x)), numeric(1)),
-      complete = vapply(df, function(x) sum(!is.na(x)), numeric(1)),
+      missing = vapply(df, function(x) sum(bt_is_blank(x)), numeric(1)),
+      missing_prop = vapply(df, function(x) mean(bt_is_blank(x)), numeric(1)),
+      complete = vapply(df, function(x) sum(!bt_is_blank(x)), numeric(1)),
       stringsAsFactors = FALSE
     )))
   }
 
+  miss_mat <- do.call(cbind, lapply(df, bt_is_blank))
   bt_as_tibble(data.frame(
     row = seq_len(nrow(df)),
-    missing = rowSums(is.na(df)),
-    complete = stats::complete.cases(df),
+    missing = rowSums(miss_mat),
+    complete = rowSums(miss_mat) == 0L,
     stringsAsFactors = FALSE
   ))
 }
