@@ -1,8 +1,13 @@
 nonequimerge <- function(x, y, by, ...) {
   x_dt <- bt_as_data_table_ro(x)
   y_dt <- bt_as_data_table_ro(y)
-  by <- bt_resolve_cols(x_dt, by)
-  bt_resolve_cols(y_dt, by)
 
-  data.table::merge.data.table(x_dt, y_dt, by = by, all = FALSE, sort = FALSE, ...)
+  is_condition <- grepl("[<>=!]", by)
+  plain <- by[!is_condition]
+  if (length(plain) > 0L) {
+    bt_resolve_cols(x_dt, plain)
+    bt_resolve_cols(y_dt, plain)
+  }
+
+  x_dt[y_dt, on = by, nomatch = NULL, allow.cartesian = TRUE, ...]
 }
