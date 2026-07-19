@@ -6,3 +6,4 @@
 ^.*\.Rcheck$
 ^CONTRIBUTING\.md$
 ^cran-comments\.md$
+^\.github$
