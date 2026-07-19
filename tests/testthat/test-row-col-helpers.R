@@ -72,4 +72,5 @@ test_that("removeduplicates honors by= and keep=", {
   expect_equal(removeduplicates(df, by = "id", keep = "last")$v, c("b", "c"))
   expect_equal(nrow(removeduplicates(df, by = "id", keep = "none")), 1L)
   expect_equal(nrow(removeduplicates(data.frame(x = c(1, 1, 2)))), 2L)
+  expect_equal(removeduplicates(data.frame(x = c(1, 1, 2, 3, 3, 3)), keep = "none")$x, 2)
 })

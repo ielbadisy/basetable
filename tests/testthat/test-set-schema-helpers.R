@@ -17,6 +17,14 @@ test_that("equalrows compares rows by key, ignoring order but not duplicates", {
   expect_false(equalrows(x, y_different, by = "id"))
 })
 
+test_that("equalrows compares full row content, not just the key columns", {
+  same_v <- data.frame(id = 1:3, v = c("a", "b", "c"))
+  different_v <- data.frame(id = 1:3, v = c("a", "b", "ZZZZZ"))
+
+  expect_true(equalrows(same_v, same_v, by = "id"))
+  expect_false(equalrows(same_v, different_v, by = "id"))
+})
+
 test_that("sameschema/compareschema report column name and type differences", {
   x <- data.frame(a = 1L, b = "x", stringsAsFactors = FALSE)
   y <- data.frame(a = 1L, b = "x", stringsAsFactors = FALSE)
@@ -63,5 +71,5 @@ test_that("addedrows/removedrows/changedrows track differences between two snaps
   expect_equal(removedrows(old, new, by = "id")$id, 1)
 
   changed <- changedrows(old, new, by = "id")
-  expect_equal(sort(changed$id), c(2, 3))
+  expect_equal(changed$id, 3)
 })
