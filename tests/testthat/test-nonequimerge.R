@@ -37,3 +37,9 @@ test_that("nonequimerge drops x rows with no matching y row (inner join)", {
 
   expect_equal(nrow(out), 0L)
 })
+
+test_that("nonequimerge errors clearly on an empty by=", {
+  x <- data.frame(id = 1:2)
+  y <- data.frame(id = 1:2)
+  expect_error(nonequimerge(x, y, by = character(0)), "must contain at least one column")
+})

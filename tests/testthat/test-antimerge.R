@@ -8,3 +8,9 @@ test_that("antimerge keeps non-matching rows from x", {
   expect_equal(out$id, c(1, 3))
   expect_equal(out$value, c("a", "c"))
 })
+
+test_that("antimerge errors clearly on an empty by=", {
+  x <- data.frame(id = 1:2)
+  y <- data.frame(id = 1:2)
+  expect_error(antimerge(x, y, by = character(0)), "must contain at least one column")
+})

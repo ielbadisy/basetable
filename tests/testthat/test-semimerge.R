@@ -8,3 +8,9 @@ test_that("semimerge keeps matching rows from x", {
   expect_equal(out$id, c(2, 3))
   expect_equal(out$value, c("b", "c"))
 })
+
+test_that("semimerge errors clearly on an empty by=", {
+  x <- data.frame(id = 1:2)
+  y <- data.frame(id = 1:2)
+  expect_error(semimerge(x, y, by = character(0)), "must contain at least one column")
+})
