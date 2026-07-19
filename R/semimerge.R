@@ -4,6 +4,10 @@ semimerge <- function(x, y, by) {
   by <- bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
 
+  if (length(by) < 1L) {
+    stop("`by` must contain at least one column.", call. = FALSE)
+  }
+
   y_keys <- unique(y_dt[, by, with = FALSE])
   x_dt[y_keys, on = by, nomatch = NULL]
 }

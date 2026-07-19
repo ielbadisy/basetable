@@ -2,6 +2,10 @@ nonequimerge <- function(x, y, by, ...) {
   x_dt <- bt_as_data_table_ro(x)
   y_dt <- bt_as_data_table_ro(y)
 
+  if (length(by) < 1L) {
+    stop("`by` must contain at least one column.", call. = FALSE)
+  }
+
   is_condition <- grepl("[<>=!]", by)
   plain <- by[!is_condition]
   if (length(plain) > 0L) {
