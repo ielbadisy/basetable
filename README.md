@@ -1,10 +1,9 @@
 # basetable
 
-`basetable` is a bridge for base-R users and base-R codebases: it gives you
-`data.table`'s speed without asking you to learn `data.table`'s `[i, j, by]`
-syntax or dplyr's tidy evaluation. If you already know `subset()`,
-`transform()`, `aggregate()`, `merge()`, and `split()`, you already know most
-of `basetable`'s API.
+`basetable` gives base-R users a `data.table` engine behind familiar syntax:
+you write `subset()`, `transform()`, `aggregate()`, `merge()`, and `split()`,
+and the package returns `data.table` objects without asking you to learn
+`data.table`'s `[i, j, by]` syntax or dplyr's tidy evaluation.
 
 This is a deliberately niche tool, not a dplyr/data.table competitor: it's
 aimed at
@@ -13,8 +12,8 @@ aimed at
   cognitive load of tidyverse's non-standard evaluation or data.table's terse
   syntax, and
 - migrating a codebase that's built on base R's `subset()`/`merge()`/
-  `aggregate()`/etc. to `data.table`-backed speed with minimal rewriting,
-  rather than a full rewrite onto dplyr or raw `data.table`.
+  `aggregate()`/etc. to `data.table` objects with minimal rewriting, rather
+  than a full rewrite onto dplyr or raw `data.table`.
 
 Design goals:
 

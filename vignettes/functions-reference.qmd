@@ -25,13 +25,13 @@ options(width = 90, digits = 4)
 
 # Introduction
 
-`basetable` is a bridge for people who already know base R and want
-`data.table`'s speed without learning `data.table`'s `[i, j, by]` syntax or
-dplyr's tidy evaluation. It is aimed specifically at two audiences: **teaching**
-table manipulation to people learning base R (without the extra cognitive load
-of non-standard evaluation or terse `[i, j, by]` syntax), and **migrating** a
+`basetable` is for people who already know base R and want `data.table`
+objects without learning `data.table`'s `[i, j, by]` syntax or dplyr's tidy
+evaluation. It is aimed specifically at two audiences: **teaching** table
+manipulation to people learning base R (without the extra cognitive load of
+non-standard evaluation or terse `[i, j, by]` syntax), and **migrating** a
 codebase already built on base-R table semantics (`subset()`, `merge()`,
-`aggregate()`, and friends) to `data.table`-backed speed without a rewrite.
+`aggregate()`, and friends) to `data.table`-backed results without a rewrite.
 It is not trying to replace dplyr or data.table for a new project that's free
 to pick any tool; both are more established choices with a larger ecosystem.
 

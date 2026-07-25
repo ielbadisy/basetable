@@ -32,7 +32,7 @@ The benchmarks below compare `basetable` with raw `data.table`, base R, and
 
 `basetable` wraps `data.table` as its execution backend, so the `data.table`
 comparison is the one that matters most here: it isolates the cost of the
-base-R-faithful wrapper itself, separate from the backend's own performance.
+base-R-style interface itself, separate from the backend's own performance.
 The goal is not to prove a universal winner over base R or dplyr. It is to
 show how close the wrapper gets to its own backend.
 
