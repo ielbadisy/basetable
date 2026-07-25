@@ -25,10 +25,6 @@ bt_as_data_frame <- function(data) {
   as.data.frame(data, stringsAsFactors = FALSE)
 }
 
-bt_as_tibble <- function(data) {
-  tibble::as_tibble(data)
-}
-
 # Vectorized last-observation-carried-forward, works for any atomic vector
 # type (unlike data.table::nafill(), which is numeric-only).
 bt_locf <- function(x) {
@@ -164,9 +160,9 @@ bt_split_by <- function(data, by, drop = FALSE, keepby = FALSE) {
   pieces <- base::split(df, key, drop = drop)
 
   if (!keepby) {
-    pieces <- lapply(pieces, function(piece) bt_as_tibble(piece[, setdiff(names(piece), by), drop = FALSE]))
+    pieces <- lapply(pieces, function(piece) bt_as_data_table(piece[, setdiff(names(piece), by), drop = FALSE]))
   } else {
-    pieces <- lapply(pieces, bt_as_tibble)
+    pieces <- lapply(pieces, bt_as_data_table)
   }
 
   pieces

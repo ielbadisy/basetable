@@ -13,5 +13,5 @@ filldown <- function(data, cols, by = NULL) {
     dt[, (cols) := lapply(.SD, bt_locf), by = by, .SDcols = cols]
   }
 
-  bt_as_tibble(dt)
+  bt_as_data_table(dt)
 }

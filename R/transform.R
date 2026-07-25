@@ -3,7 +3,7 @@ transform <- function(data, ..., .keep = TRUE) {
   dots <- as.list(substitute(list(...)))[-1L]
 
   if (length(dots) == 0L) {
-    return(bt_as_tibble(dt))
+    return(bt_as_data_table(dt))
   }
 
   nms <- names(dots)
@@ -23,7 +23,7 @@ transform <- function(data, ..., .keep = TRUE) {
     dt <- dt[, unique(created), with = FALSE]
   }
 
-  bt_as_tibble(dt)
+  bt_as_data_table(dt)
 }
 
 within <- function(data, expr) {
@@ -34,5 +34,5 @@ within <- function(data, expr) {
   out <- out[setdiff(names(out), c("expr", "data", "df", "env"))]
   out <- out[vapply(out, function(x) length(x) == nrow(df) || is.null(x), logical(1))]
   out <- out[!vapply(out, is.null, logical(1))]
-  bt_as_tibble(as.data.frame(out, stringsAsFactors = FALSE))
+  bt_as_data_table(as.data.frame(out, stringsAsFactors = FALSE))
 }

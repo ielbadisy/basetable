@@ -20,11 +20,11 @@ rownames <- function(data) base::rownames(bt_as_data_frame(data))
 #'
 #' @param data A data.frame or data.table.
 #'
-#' @return A tibble with one row per column giving its class.
+#' @return A data.table with one row per column giving its class.
 #' @export
 classes <- function(data) {
   df <- bt_as_data_frame(data)
-  bt_as_tibble(data.frame(column = names(df), class = vapply(df, bt_mode, character(1)), stringsAsFactors = FALSE))
+  bt_as_data_table(data.frame(column = names(df), class = vapply(df, bt_mode, character(1)), stringsAsFactors = FALSE))
 }
 
 #' Count of distinct values per column
@@ -145,7 +145,7 @@ commonnames <- function(x, y) {
 cleannames <- function(data) {
   df <- bt_as_data_frame(data)
   names(df) <- bt_clean_names(names(df), method = "unique")
-  bt_as_tibble(df)
+  bt_as_data_table(df)
 }
 
 #' Repair column names
@@ -158,7 +158,7 @@ cleannames <- function(data) {
 repairnames <- function(data, method = c("unique", "universal", "minimal")) {
   df <- bt_as_data_frame(data)
   names(df) <- bt_clean_names(names(df), method = match.arg(method))
-  bt_as_tibble(df)
+  bt_as_data_table(df)
 }
 
 #' Rename columns with a function
@@ -173,7 +173,7 @@ renamewith <- function(data, cols, fun) {
   df <- bt_as_data_frame(data)
   cols <- bt_resolve_cols(df, cols)
   names(df)[match(cols, names(df))] <- vapply(cols, function(x) fun(x), character(1))
-  bt_as_tibble(df)
+  bt_as_data_table(df)
 }
 
 #' Move columns before or after another column
@@ -213,7 +213,7 @@ move <- function(data, cols, before = NULL, after = NULL) {
     }
     order <- append(remaining, cols, after = pos)
   }
-  bt_as_tibble(df[, order, drop = FALSE])
+  bt_as_data_table(df[, order, drop = FALSE])
 }
 
 #' Move columns to the front
@@ -243,7 +243,7 @@ lastcols <- function(data, cols) move(data, cols, after = ncol(bt_as_data_frame(
 #' @export
 firstrows <- function(data, n = 1L) {
   df <- bt_as_data_frame(data)
-  bt_as_tibble(utils::head(df, n))
+  bt_as_data_table(utils::head(df, n))
 }
 
 #' Last `n` rows
@@ -255,7 +255,7 @@ firstrows <- function(data, n = 1L) {
 #' @export
 lastrows <- function(data, n = 1L) {
   df <- bt_as_data_frame(data)
-  bt_as_tibble(utils::tail(df, n))
+  bt_as_data_table(utils::tail(df, n))
 }
 
 #' Sample `n` rows without replacement
@@ -268,7 +268,7 @@ lastrows <- function(data, n = 1L) {
 samplerows <- function(data, n) {
   df <- bt_as_data_frame(data)
   idx <- sample.int(nrow(df), n)
-  bt_as_tibble(df[idx, , drop = FALSE])
+  bt_as_data_table(df[idx, , drop = FALSE])
 }
 
 #' Sample a fraction of rows without replacement
@@ -280,7 +280,7 @@ samplerows <- function(data, n) {
 #' @export
 samplefrac <- function(data, frac) {
   df <- bt_as_data_frame(data)
-  bt_as_tibble(df[sample.int(nrow(df), ceiling(nrow(df) * frac)), , drop = FALSE])
+  bt_as_data_table(df[sample.int(nrow(df), ceiling(nrow(df) * frac)), , drop = FALSE])
 }
 
 #' Order rows by one or more columns
@@ -294,7 +294,7 @@ samplefrac <- function(data, frac) {
 #' @export
 orderrows <- function(data, by, decreasing = FALSE, na.last = TRUE) {
   df <- bt_as_data_frame(data)
-  bt_as_tibble(bt_order_data(df, by, decreasing = decreasing, na.last = na.last))
+  bt_as_data_table(bt_order_data(df, by, decreasing = decreasing, na.last = na.last))
 }
 
 #' Reverse row order
@@ -305,7 +305,7 @@ orderrows <- function(data, by, decreasing = FALSE, na.last = TRUE) {
 #' @export
 reverse <- function(data) {
   df <- bt_as_data_frame(data)
-  bt_as_tibble(df[rev(seq_len(nrow(df))), , drop = FALSE])
+  bt_as_data_table(df[rev(seq_len(nrow(df))), , drop = FALSE])
 }
 
 #' First row within each group
@@ -320,7 +320,7 @@ firstby <- function(data, by, order = NULL) {
   df <- bt_as_data_frame(data)
   if (!is.null(order)) df <- bt_order_data(df, order)
   df <- df[!duplicated(df[, bt_resolve_cols(df, by), drop = FALSE]), , drop = FALSE]
-  bt_as_tibble(df)
+  bt_as_data_table(df)
 }
 
 #' Last row within each group
@@ -336,7 +336,7 @@ lastby <- function(data, by, order = NULL) {
   if (!is.null(order)) df <- bt_order_data(df, order)
   key <- bt_resolve_cols(df, by)
   keep <- !duplicated(df[, key, drop = FALSE], fromLast = TRUE)
-  bt_as_tibble(df[keep, , drop = FALSE])
+  bt_as_data_table(df[keep, , drop = FALSE])
 }
 
 #' Remove duplicate rows, optionally by key
@@ -351,13 +351,13 @@ removeduplicates <- function(data, by = NULL, keep = c("first", "last", "none"))
   keep <- match.arg(keep)
   if (is.null(by)) {
     df <- bt_as_data_frame(data)
-    return(bt_as_tibble(if (keep == "first") df[!duplicated(df), , drop = FALSE] else if (keep == "last") df[!duplicated(df, fromLast = TRUE), , drop = FALSE] else df[!duplicated(df) & !duplicated(df, fromLast = TRUE), , drop = FALSE]))
+    return(bt_as_data_table(if (keep == "first") df[!duplicated(df), , drop = FALSE] else if (keep == "last") df[!duplicated(df, fromLast = TRUE), , drop = FALSE] else df[!duplicated(df) & !duplicated(df, fromLast = TRUE), , drop = FALSE]))
   }
   if (keep == "first") return(distinct(data, cols = by, .keep_all = TRUE))
   if (keep == "last") return(lastby(data, by = by))
   df <- bt_as_data_frame(data)
   key <- bt_resolve_cols(df, by)
-  bt_as_tibble(df[!duplicated(df[, key, drop = FALSE]) & !duplicated(df[, key, drop = FALSE], fromLast = TRUE), , drop = FALSE])
+  bt_as_data_table(df[!duplicated(df[, key, drop = FALSE]) & !duplicated(df[, key, drop = FALSE], fromLast = TRUE), , drop = FALSE])
 }
 
 #' Row-wise minimum across columns
@@ -771,7 +771,7 @@ applycols <- function(data, cols, fun, ...) {
   df <- bt_as_data_frame(data)
   cols <- bt_resolve_cols(df, cols)
   for (nm in cols) df[[nm]] <- fun(df[[nm]], ...)
-  bt_as_tibble(df)
+  bt_as_data_table(df)
 }
 
 #' Replace selected columns with new values
@@ -788,7 +788,7 @@ replacecols <- function(data, cols, values) {
   if (length(values) == 1L && is.list(values[[1L]]) && !is.data.frame(values[[1L]])) values <- values[[1L]]
   if (length(values) != length(cols)) stop("`values` must match `cols`.", call. = FALSE)
   for (i in seq_along(cols)) df[[cols[[i]]]] <- values[[i]]
-  bt_as_tibble(df)
+  bt_as_data_table(df)
 }
 
 #' Replace values in selected columns where a condition holds
@@ -809,7 +809,7 @@ replacewhere <- function(data, condition, cols, value) {
     vec[cond] <- value
     df[[nm]] <- vec
   }
-  bt_as_tibble(df)
+  bt_as_data_table(df)
 }
 
 #' Grouped counts with proportions
@@ -818,7 +818,7 @@ replacewhere <- function(data, condition, cols, value) {
 #' @param by Character vector of column names identifying groups or join keys.
 #' @param margin Column(s) defining the totals used to compute proportions.
 #'
-#' @return A tibble of counts (and proportions when `margin` is supplied).
+#' @return A data.table of counts (and proportions when `margin` is supplied).
 #' @export
 propcount <- function(data, by, margin = NULL) {
   out <- count(data, by = by, sort = FALSE, name = "n")
@@ -829,7 +829,7 @@ propcount <- function(data, by, margin = NULL) {
   margin <- bt_resolve_cols(out, margin)
   out_dt <- data.table::as.data.table(out)
   out_dt[, prop := n / sum(n), by = margin]
-  bt_as_tibble(out_dt)
+  bt_as_data_table(out_dt)
 }
 
 #' Apply a function to each group
@@ -933,13 +933,13 @@ nearestmerge <- function(x, y, by, tolerance = Inf) {
 #' @param fill Value used for positions where no window/result is available.
 #' @param typeconflict How to handle conflicting column types across inputs.
 #'
-#' @return A combined tibble.
+#' @return A combined data.table.
 #' @export
 rbindfill <- function(..., id = NULL, fill = TRUE, typeconflict = c("error", "coerce")) {
   typeconflict <- match.arg(typeconflict)
   dots <- list(...)
   if (length(dots) == 1L && is.list(dots[[1L]]) && !inherits(dots[[1L]], "data.frame")) dots <- dots[[1L]]
-  bt_as_tibble(data.table::rbindlist(lapply(dots, bt_as_data_frame), fill = fill, idcol = id))
+  bt_as_data_table(data.table::rbindlist(lapply(dots, bt_as_data_frame), fill = fill, idcol = id))
 }
 
 #' Set union of rows
@@ -953,7 +953,7 @@ rbindfill <- function(..., id = NULL, fill = TRUE, typeconflict = c("error", "co
 unionrows <- function(x, y, by = NULL) {
   df <- rbindfill(x, y)
   if (!is.null(by)) df <- distinct(df, cols = by, .keep_all = TRUE)
-  bt_as_tibble(unique(bt_as_data_frame(df)))
+  bt_as_data_table(unique(bt_as_data_frame(df)))
 }
 
 #' Set intersection of rows
@@ -965,8 +965,8 @@ unionrows <- function(x, y, by = NULL) {
 #' @return Rows of `x` also present in `y`.
 #' @export
 intersectrows <- function(x, y, by = NULL) {
-  if (is.null(by)) return(bt_as_tibble(intersect(bt_as_data_frame(x), bt_as_data_frame(y))))
-  bt_as_tibble(matchedkeys(x, y, by))
+  if (is.null(by)) return(bt_as_data_table(intersect(bt_as_data_frame(x), bt_as_data_frame(y))))
+  bt_as_data_table(matchedkeys(x, y, by))
 }
 
 #' Set difference of rows
@@ -978,8 +978,8 @@ intersectrows <- function(x, y, by = NULL) {
 #' @return Rows of `x` absent from `y`.
 #' @export
 diffrows <- function(x, y, by = NULL) {
-  if (is.null(by)) return(bt_as_tibble(setdiff(bt_as_data_frame(x), bt_as_data_frame(y))))
-  bt_as_tibble(unmatchedkeys(x, y, by))
+  if (is.null(by)) return(bt_as_data_table(setdiff(bt_as_data_frame(x), bt_as_data_frame(y))))
+  bt_as_data_table(unmatchedkeys(x, y, by))
 }
 
 #' Compare two tables' rows for equality
@@ -1012,13 +1012,13 @@ equalrows <- function(x, y, by = NULL) {
 #' @param idcols Columns to keep as row identifiers.
 #' @param na.rm Drop missing values before computing the result.
 #'
-#' @return A long-format tibble.
+#' @return A long-format data.table.
 #' @export
 tolong <- function(data, cols, names = "variable", values = "value", idcols = NULL, na.rm = FALSE) {
   df <- bt_as_data_frame(data)
   cols <- bt_resolve_cols(df, cols)
   idcols <- if (is.null(idcols)) setdiff(names(df), cols) else bt_resolve_cols(df, idcols)
-  bt_as_tibble(data.table::melt(data.table::as.data.table(df), id.vars = idcols, measure.vars = cols, variable.name = names, value.name = values, na.rm = na.rm))
+  bt_as_data_table(data.table::melt(data.table::as.data.table(df), id.vars = idcols, measure.vars = cols, variable.name = names, value.name = values, na.rm = na.rm))
 }
 
 #' Reshape rows into columns
@@ -1030,13 +1030,13 @@ tolong <- function(data, cols, names = "variable", values = "value", idcols = NU
 #' @param fun Function applied to each element, column, or group.
 #' @param fill Value used for positions where no window/result is available.
 #'
-#' @return A wide-format tibble.
+#' @return A wide-format data.table.
 #' @export
 towide <- function(data, names, values, idcols = NULL, fun = NULL, fill = NA) {
   df <- bt_as_data_frame(data)
   idcols <- if (is.null(idcols)) setdiff(names(df), c(names, values)) else bt_resolve_cols(df, idcols)
   lhs <- if (length(idcols)) paste(idcols, collapse = " + ") else "."
-  bt_as_tibble(data.table::dcast(
+  bt_as_data_table(data.table::dcast(
     data.table::as.data.table(df),
     formula = stats::reformulate(names, response = lhs),
     value.var = values,
@@ -1070,7 +1070,7 @@ separate <- function(data, column, into, sep, remove = TRUE, extra = c("warn", "
   out <- as.data.frame(do.call(rbind, padded), stringsAsFactors = FALSE)
   names(out) <- into
   if (remove) df[[column]] <- NULL
-  bt_as_tibble(cbind(df, out, stringsAsFactors = FALSE))
+  bt_as_data_table(cbind(df, out, stringsAsFactors = FALSE))
 }
 
 #' Combine several columns into one
@@ -1095,18 +1095,18 @@ unite <- function(data, column, cols, sep = "_", remove = TRUE, na.rm = FALSE) {
   keep <- if (remove) setdiff(names(df), cols) else names(df)
   df <- df[, keep, drop = FALSE]
   df[[column]] <- new
-  bt_as_tibble(df)
+  bt_as_data_table(df)
 }
 
 #' Transpose a table
 #'
 #' @param data A data.frame or data.table.
 #'
-#' @return A transposed tibble.
+#' @return A transposed data.table.
 #' @export
 transpose <- function(data) {
   df <- bt_as_data_frame(data)
-  bt_as_tibble(as.data.frame(t(df), stringsAsFactors = FALSE))
+  bt_as_data_table(as.data.frame(t(df), stringsAsFactors = FALSE))
 }
 
 #' Recode matching values to `NA`
@@ -1638,12 +1638,12 @@ collapsevalues <- function(x, groups) {
 #' @param fun Function applied to each element, column, or group.
 #' @param ... Additional arguments (unused, or passed through depending on the function).
 #'
-#' @return A tibble of the failed indices and values.
+#' @return A data.table of the failed indices and values.
 #' @export
 parsefailures <- function(x, fun, ...) {
   parsed <- tryCatch(fun(x, ...), error = function(e) rep(NA, length(x)))
   failed <- is.na(parsed) & !is.na(x)
-  bt_as_tibble(data.frame(index = which(failed), value = x[failed], stringsAsFactors = FALSE))
+  bt_as_data_table(data.frame(index = which(failed), value = x[failed], stringsAsFactors = FALSE))
 }
 #' Parse text as integers
 #'
@@ -2212,7 +2212,7 @@ assertcomplete <- function(data, cols = NULL) {
 invalidrows <- function(data, condition) {
   df <- bt_as_data_frame(data)
   cond <- bt_eval_logical(substitute(condition), df, nrow(df))
-  bt_as_tibble(df[!cond, , drop = FALSE])
+  bt_as_data_table(df[!cond, , drop = FALSE])
 }
 #' Rows whose value is not in the allowed set
 #'
@@ -2225,7 +2225,7 @@ invalidrows <- function(data, condition) {
 invalidvalues <- function(data, column, allowed) {
   df <- bt_as_data_frame(data)
   column <- bt_resolve_cols(df, column)
-  bt_as_tibble(df[!df[[column]] %in% allowed & !is.na(df[[column]]), , drop = FALSE])
+  bt_as_data_table(df[!df[[column]] %in% allowed & !is.na(df[[column]]), , drop = FALSE])
 }
 #' Rows whose value falls outside a range
 #'
@@ -2239,7 +2239,7 @@ invalidvalues <- function(data, column, allowed) {
 outofrange <- function(data, column, lower, upper) {
   df <- bt_as_data_frame(data)
   column <- bt_resolve_cols(df, column)
-  bt_as_tibble(df[!is.na(df[[column]]) & (df[[column]] < lower | df[[column]] > upper), , drop = FALSE])
+  bt_as_data_table(df[!is.na(df[[column]]) & (df[[column]] < lower | df[[column]] > upper), , drop = FALSE])
 }
 #' Compare two tables for equality
 #'
@@ -2272,12 +2272,12 @@ sameschema <- function(x, y) identical(names(bt_as_data_frame(x)), names(bt_as_d
 #' @param x An atomic vector.
 #' @param y An atomic vector, data.frame, or data.table, depending on the function.
 #'
-#' @return A tibble describing shared and differing columns/types.
+#' @return A data.table describing shared and differing columns/types.
 #' @export
 compareschema <- function(x, y) {
   x_df <- bt_as_data_frame(x); y_df <- bt_as_data_frame(y)
   cols <- union(names(x_df), names(y_df))
-  bt_as_tibble(data.frame(
+  bt_as_data_table(data.frame(
     column = cols,
     in_x = cols %in% names(x_df),
     in_y = cols %in% names(y_df),
@@ -2296,11 +2296,11 @@ compareschema <- function(x, y) {
 #' @export
 addedrows <- function(old, new, by = NULL) {
   old_df <- bt_as_data_frame(old); new_df <- bt_as_data_frame(new)
-  if (is.null(by)) return(bt_as_tibble(setdiff(new_df, old_df)))
+  if (is.null(by)) return(bt_as_data_table(setdiff(new_df, old_df)))
   by <- bt_resolve_cols(old_df, by); bt_resolve_cols(new_df, by)
   old_dt <- bt_as_data_table(old_df); new_dt <- bt_as_data_table(new_df)
   old_keys <- unique(old_dt[, by, with = FALSE])
-  bt_as_tibble(new_dt[!old_keys, on = by])
+  bt_as_data_table(new_dt[!old_keys, on = by])
 }
 #' Rows present in `old` but not in `new`
 #'
@@ -2321,14 +2321,14 @@ removedrows <- function(old, new, by = NULL) addedrows(new, old, by = by)
 #' @export
 changedrows <- function(old, new, by = NULL) {
   old_df <- bt_as_data_frame(old); new_df <- bt_as_data_frame(new)
-  if (is.null(by)) return(bt_as_tibble(setdiff(rbind(old_df, new_df), intersect(old_df, new_df))))
+  if (is.null(by)) return(bt_as_data_table(setdiff(rbind(old_df, new_df), intersect(old_df, new_df))))
   by <- bt_resolve_cols(old_df, by); bt_resolve_cols(new_df, by)
 
   merged <- bt_as_data_frame(merge(old_df, new_df, by = by, suffixes = c(".old", ".new"), all = FALSE))
   compare_cols <- intersect(setdiff(names(old_df), by), setdiff(names(new_df), by))
 
   if (length(compare_cols) == 0L) {
-    return(bt_as_tibble(merged[0L, , drop = FALSE]))
+    return(bt_as_data_table(merged[0L, , drop = FALSE]))
   }
 
   changed <- rep(FALSE, nrow(merged))
@@ -2338,7 +2338,7 @@ changedrows <- function(old, new, by = NULL) {
     changed <- changed | (!(is.na(old_vals) & is.na(new_vals)) & (is.na(old_vals) | is.na(new_vals) | old_vals != new_vals))
   }
 
-  bt_as_tibble(merged[changed, , drop = FALSE])
+  bt_as_data_table(merged[changed, , drop = FALSE])
 }
 #' Compare the columns of two tables
 #'

@@ -1,5 +1,5 @@
 reshape <- function(data, ..., direction) {
-  bt_as_tibble(stats::reshape(bt_as_data_frame(data), ..., direction = direction))
+  bt_as_data_table(stats::reshape(bt_as_data_frame(data), ..., direction = direction))
 }
 
 stack <- function(data, select = NULL, drop = FALSE) {
@@ -8,9 +8,9 @@ stack <- function(data, select = NULL, drop = FALSE) {
     select <- names(df)
   }
   select <- bt_resolve_cols(df, select)
-  bt_as_tibble(utils::stack(df[, select, drop = drop]))
+  bt_as_data_table(utils::stack(df[, select, drop = drop]))
 }
 
 unstack <- function(data, form, ...) {
-  bt_as_tibble(utils::unstack(bt_as_data_frame(data), form = form, ...))
+  bt_as_data_table(utils::unstack(bt_as_data_frame(data), form = form, ...))
 }

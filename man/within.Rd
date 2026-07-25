@@ -10,7 +10,7 @@ within(data, expr)
 \item{expr}{An expression evaluated in the data's environment.}
 }
 \value{
-A tibble containing the modified table.
+A data.table containing the modified table.
 }
 \description{
 Evaluate expressions inside a table and return the modified result.

@@ -20,7 +20,7 @@ towide(data, names, values, idcols = NULL, fun = NULL, fill = NA)
 \item{fill}{Value used for positions where no window/result is available.}
 }
 \value{
-A wide-format tibble.
+A wide-format data.table.
 }
 \description{
 Reshape rows into columns

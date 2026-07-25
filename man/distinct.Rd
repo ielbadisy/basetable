@@ -12,7 +12,7 @@ distinct(data, cols = NULL, .keep_all = FALSE)
 \item{.keep_all}{Whether to keep all columns when `cols` is supplied.}
 }
 \value{
-A tibble containing distinct rows.
+A data.table containing distinct rows.
 }
 \description{
 Return unique rows, optionally using only selected columns to define

@@ -10,7 +10,7 @@ transpose(data)
 \item{data}{A data.frame or data.table.}
 }
 \value{
-A transposed tibble.
+A transposed data.table.
 }
 \description{
 Transpose a table

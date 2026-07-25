@@ -4,7 +4,7 @@ missingrows <- function(data, cols = NULL, mode = c("any", "all")) {
   mode <- match.arg(mode)
 
   if (length(cols) == 0L) {
-    return(bt_as_tibble(df[0, , drop = FALSE]))
+    return(bt_as_data_table(df[0, , drop = FALSE]))
   }
 
   miss <- do.call(cbind, lapply(df[cols], bt_is_blank))
@@ -18,5 +18,5 @@ missingrows <- function(data, cols = NULL, mode = c("any", "all")) {
     all = rowSums(miss) == ncol(miss)
   )
 
-  bt_as_tibble(df[keep, , drop = FALSE])
+  bt_as_data_table(df[keep, , drop = FALSE])
 }

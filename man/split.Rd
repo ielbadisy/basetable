@@ -14,7 +14,7 @@ split(data, by, drop = FALSE, keep.by = FALSE)
 \item{keep.by}{Whether to keep grouping columns in each piece.}
 }
 \value{
-A named list of tibbles.
+A named list of data.tables.
 }
 \description{
 Split a table into pieces by one or more grouping columns.

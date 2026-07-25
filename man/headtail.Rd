@@ -10,7 +10,7 @@ headtail(data, n = 3)
 \item{n}{Number of rows to show from the start and end.}
 }
 \value{
-A tibble containing the selected rows.
+A data.table containing the selected rows.
 }
 \description{
 Return the first and last `n` rows of a table.

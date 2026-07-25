@@ -4,7 +4,7 @@
 #' @param margin Summarize missingness `"column"`-wise (the default) or
 #'   `"row"`-wise.
 #'
-#' @return A tibble with one row per column (or per row) describing the count
+#' @return A data.table with one row per column (or per row) describing the count
 #'   and proportion of missing values.
 #' @export
 missingness <- function(data, margin = c("column", "row")) {
@@ -12,7 +12,7 @@ missingness <- function(data, margin = c("column", "row")) {
   df <- bt_as_data_frame(data)
 
   if (margin == "column") {
-    return(bt_as_tibble(data.frame(
+    return(bt_as_data_table(data.frame(
       column = names(df),
       missing = vapply(df, function(x) sum(bt_is_blank(x)), numeric(1)),
       missing_prop = vapply(df, function(x) mean(bt_is_blank(x)), numeric(1)),
@@ -22,7 +22,7 @@ missingness <- function(data, margin = c("column", "row")) {
   }
 
   miss_mat <- do.call(cbind, lapply(df, bt_is_blank))
-  bt_as_tibble(data.frame(
+  bt_as_data_table(data.frame(
     row = seq_len(nrow(df)),
     missing = rowSums(miss_mat),
     complete = rowSums(miss_mat) == 0L,

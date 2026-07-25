@@ -1,11 +1,11 @@
 dims <- function(data) {
   df <- bt_as_data_frame(data)
-  bt_as_tibble(data.frame(rows = nrow(df), cols = ncol(df), stringsAsFactors = FALSE))
+  bt_as_data_table(data.frame(rows = nrow(df), cols = ncol(df), stringsAsFactors = FALSE))
 }
 
 types <- function(data) {
   df <- bt_as_data_frame(data)
-  bt_as_tibble(data.frame(
+  bt_as_data_table(data.frame(
     column = names(df),
     class = vapply(df, bt_mode, character(1)),
     typeof = vapply(df, typeof, character(1)),
@@ -16,10 +16,10 @@ types <- function(data) {
 headtail <- function(data, n = 3) {
   df <- bt_as_data_frame(data)
   if (nrow(df) <= (2L * n)) {
-    return(bt_as_tibble(df))
+    return(bt_as_data_table(df))
   }
   idx <- c(seq_len(n), seq.int(nrow(df) - n + 1L, nrow(df)))
-  bt_as_tibble(df[idx, , drop = FALSE])
+  bt_as_data_table(df[idx, , drop = FALSE])
 }
 
 glimpse <- function(data, width = getOption("width")) {
@@ -64,7 +64,7 @@ describe <- function(data, cols = NULL, top_n = 3) {
     )
   })
 
-  bt_as_tibble(do.call(rbind, rows))
+  bt_as_data_table(do.call(rbind, rows))
 }
 
 profile <- function(data, cols = NULL, top_n = 3) {
@@ -94,7 +94,7 @@ freq <- function(data, column, by = NULL, prop = FALSE, sort = TRUE) {
     data.table::setorderv(out, "n", order = -1L)
   }
 
-  bt_as_tibble(out)
+  bt_as_data_table(out)
 }
 
 #' Table 1-style descriptive summary
@@ -110,7 +110,7 @@ freq <- function(data, column, by = NULL, prop = FALSE, sort = TRUE) {
 #' @param p_value Include a column of between-group p-values. Requires `by`.
 #' @param digits Number of decimal places used when formatting numbers.
 #'
-#' @return A tibble with one row per variable (or variable level), and one
+#' @return A data.table with one row per variable (or variable level), and one
 #'   column per stratum plus `Overall`/`p_value` as requested.
 #' @export
 summarytab <- function(data, vars = NULL, by = NULL, overall = TRUE, p_value = FALSE, digits = 1) {
@@ -223,7 +223,7 @@ summarytab <- function(data, vars = NULL, by = NULL, overall = TRUE, p_value = F
     }
   }
 
-  bt_as_tibble(do.call(rbind, rows))
+  bt_as_data_table(do.call(rbind, rows))
 }
 
 compare <- function(x, y, by = NULL) {
@@ -267,7 +267,7 @@ compare <- function(x, y, by = NULL) {
   }
 
   lapply(out, function(x) {
-    if (inherits(x, "data.frame")) bt_as_tibble(x) else x
+    if (inherits(x, "data.frame")) bt_as_data_table(x) else x
   })
 }
 
@@ -287,7 +287,7 @@ bt_summarytab_row <- function(variable, level, group_labels, group_values, overa
     out$p_value <- p_value_label
   }
 
-  bt_as_tibble(as.data.frame(out, stringsAsFactors = FALSE, check.names = FALSE))
+  bt_as_data_table(as.data.frame(out, stringsAsFactors = FALSE, check.names = FALSE))
 }
 
 bt_summarytab_numeric <- function(x, digits = 1) {

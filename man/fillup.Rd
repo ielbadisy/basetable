@@ -12,7 +12,7 @@ fillup(data, cols, by = NULL)
 \item{by}{Optional grouping columns.}
 }
 \value{
-A tibble with missing values filled upward.
+A data.table with missing values filled upward.
 }
 \description{
 Fill missing values in selected columns using the next observed value.

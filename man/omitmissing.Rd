@@ -12,7 +12,7 @@ omitmissing(data, cols = NULL, mode = c("any", "all"))
 \item{mode}{Whether any or all selected columns must be missing before a row is dropped.}
 }
 \value{
-A tibble without the omitted rows.
+A data.table without the omitted rows.
 }
 \description{
 Drop rows where selected columns are missing or blank.

@@ -12,7 +12,7 @@ filter(data, ...)
 \item{...}{Logical expressions evaluated in \code{data}.}
 }
 \value{
-A tibble.
+A data.table.
 }
 \description{
 Keep rows where all supplied logical expressions evaluate to \code{TRUE}.

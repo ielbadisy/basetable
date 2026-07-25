@@ -12,7 +12,7 @@ completegrid(data, cols, fill = list())
 \item{fill}{Named list of values used to fill missing cells.}
 }
 \value{
-A tibble containing the completed grid.
+A data.table containing the completed grid.
 }
 \description{
 Create all combinations of selected columns and merge them back to the input.

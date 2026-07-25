@@ -10,7 +10,7 @@ select(data, cols)
 \item{cols}{Character vector of column names.}
 }
 \value{
-A tibble containing the selected columns.
+A data.table containing the selected columns.
 }
 \description{
 Select columns by name.

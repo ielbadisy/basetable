@@ -7,6 +7,6 @@ test_that("unstack reshapes a stacked table", {
 
   out <- unstack(stacked, value ~ var)
 
-  expect_s3_class(out, "tbl_df")
+  expect_s3_class(out, "data.table")
   expect_true("a" %in% names(out))
 })

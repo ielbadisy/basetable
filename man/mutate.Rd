@@ -12,7 +12,7 @@ mutate(data, ..., .keep = TRUE)
 \item{.keep}{Whether to keep existing columns.}
 }
 \value{
-A tibble with the mutated columns.
+A data.table with the mutated columns.
 }
 \description{
 Add or replace columns using expressions evaluated in the data.

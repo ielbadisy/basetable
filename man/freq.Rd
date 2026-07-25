@@ -16,7 +16,7 @@ freq(data, column, by = NULL, prop = FALSE, sort = TRUE)
 \item{sort}{Whether to sort rows by descending frequency.}
 }
 \value{
-A tibble containing frequencies, and proportions when requested.
+A data.table containing frequencies, and proportions when requested.
 }
 \description{
 Count the occurrences of values in a column, optionally within groups.

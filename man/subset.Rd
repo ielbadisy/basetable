@@ -8,7 +8,7 @@
 \title{Core data manipulation operations}
 \description{
 Base-faithful table manipulation helpers built around explicit arguments and
-tibble returns. See \code{\link{aggregate}}, \code{\link{arrange}},
+data.table returns. See \code{\link{aggregate}}, \code{\link{arrange}},
 \code{\link{bind_cols}}, \code{\link{bind_rows}}, \code{\link{count}},
 \code{\link{distinct}}, \code{\link{drop}}, \code{\link{filter}},
 \code{\link{merge}}, \code{\link{mutate}}, \code{\link{pick}},
@@ -41,9 +41,9 @@ reshape(data, ..., direction)
   \item{id, direction}{Additional operation-specific controls.}
 }
 \value{
-Most functions return a tibble. \code{split()} returns a named list of
-tibbles and \code{combine()} binds compatible list elements back into a
-tibble.
+Most functions return a data.table. \code{split()} returns a named list of
+data.tables and \code{combine()} binds compatible list elements back into a
+data.table.
 }
 \examples{
 subset(mtcars, cyl == 6, select = c("mpg", "hp"))

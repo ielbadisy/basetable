@@ -13,7 +13,7 @@ missingness(data, margin = c("column", "row"))
 \code{"row"}-wise.}
 }
 \value{
-A tibble with one row per column (or per row) describing the count
+A data.table with one row per column (or per row) describing the count
 and proportion of missing values.
 }
 \description{

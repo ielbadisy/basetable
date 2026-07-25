@@ -10,7 +10,7 @@ rename(data, ...)
 \item{...}{Named rename expressions of the form `new_name = old_name`.}
 }
 \value{
-A tibble with renamed columns.
+A data.table with renamed columns.
 }
 \description{
 Rename one or more columns using `new = old` pairs.

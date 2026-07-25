@@ -15,5 +15,5 @@ missingindicator <- function(data, cols = NULL, prefix = "missing_") {
     df[[indicator_names[[i]]]] <- bt_is_blank(df[[cols[[i]]]])
   }
 
-  bt_as_tibble(df)
+  bt_as_data_table(df)
 }

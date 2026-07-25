@@ -16,7 +16,7 @@ rbindfill(..., id = NULL, fill = TRUE, typeconflict = c("error", "coerce"))
 \item{typeconflict}{How to handle conflicting column types across inputs.}
 }
 \value{
-A combined tibble.
+A combined data.table.
 }
 \description{
 Row-bind tables, filling missing columns

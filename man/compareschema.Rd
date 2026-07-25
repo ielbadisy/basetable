@@ -12,7 +12,7 @@ compareschema(x, y)
 \item{y}{An atomic vector, data.frame, or data.table, depending on the function.}
 }
 \value{
-A tibble describing shared and differing columns/types.
+A data.table describing shared and differing columns/types.
 }
 \description{
 Compare the schemas of two tables
