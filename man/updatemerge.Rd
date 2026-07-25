@@ -12,7 +12,7 @@ updatemerge(x, y, by, cols = NULL)
 \item{cols}{Optional columns to update.}
 }
 \value{
-A tibble with selected columns updated from \code{y}.
+A data.table with selected columns updated from \code{y}.
 }
 \description{
 Update matching rows in \code{x} from \code{y}.

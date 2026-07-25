@@ -14,7 +14,7 @@ propcount(data, by, margin = NULL)
 \item{margin}{Column(s) defining the totals used to compute proportions.}
 }
 \value{
-A tibble of counts (and proportions when \code{margin} is supplied).
+A data.table of counts (and proportions when \code{margin} is supplied).
 }
 \description{
 Grouped counts with proportions

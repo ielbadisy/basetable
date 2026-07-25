@@ -17,7 +17,7 @@ summarize(data, ..., by = NULL)
 \item{by}{Optional character vector of grouping columns.}
 }
 \value{
-A tibble.
+A data.table.
 }
 \description{
 Create one-row summaries, optionally by group.

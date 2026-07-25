@@ -26,5 +26,5 @@ count <- function(data, by, sort = TRUE, name = "n") {
   if (sort) {
     data.table::setorderv(out, name, order = -1L)
   }
-  bt_as_tibble(out)
+  bt_as_data_table(out)
 }

@@ -25,5 +25,5 @@ summaries <- function(data, by = NULL, ...) {
     stop("Each summary expression must return one value.", call. = FALSE)
   }
 
-  bt_as_tibble(out)
+  bt_as_data_table(out)
 }

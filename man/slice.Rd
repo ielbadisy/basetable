@@ -12,7 +12,7 @@ slice(data, rows)
 \item{rows}{Integer row positions.}
 }
 \value{
-A tibble.
+A data.table.
 }
 \description{
 Select rows by integer position.

@@ -10,7 +10,7 @@ transmute(data, ...)
 \item{...}{Named expressions that create new columns.}
 }
 \value{
-A tibble containing only the new columns.
+A data.table containing only the new columns.
 }
 \description{
 Create columns and keep only the new variables.

@@ -10,7 +10,7 @@ drop(data, cols)
 \item{cols}{Character vector of column names to remove.}
 }
 \value{
-A tibble with the selected columns removed.
+A data.table with the selected columns removed.
 }
 \description{
 Drop columns by name.

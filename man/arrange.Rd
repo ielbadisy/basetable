@@ -14,7 +14,7 @@ arrange(data, by, decreasing = FALSE, na.last = TRUE)
 \item{na.last}{Whether missing values sort last.}
 }
 \value{
-A tibble with rows sorted by the requested columns.
+A data.table with rows sorted by the requested columns.
 }
 \description{
 Sort rows by one or more columns.

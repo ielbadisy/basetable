@@ -1,11 +1,11 @@
-test_that("new verbs return tibbles and manipulate data", {
+test_that("new verbs return data.tables and manipulate data", {
   out <- mtcars |>
     filter(cyl == 6, mpg > 18) |>
     select(c("mpg", "cyl", "hp")) |>
     mutate(ratio = hp / mpg) |>
     arrange("ratio", decreasing = TRUE)
 
-  expect_s3_class(out, "tbl_df")
+  expect_s3_class(out, "data.table")
   expect_true(all(out$cyl == 6))
   expect_equal(names(out), c("mpg", "cyl", "hp", "ratio"))
 
@@ -18,7 +18,7 @@ test_that("new verbs return tibbles and manipulate data", {
 
 test_that("summarise, distinct, slice, relocate, and bind helpers work", {
   stats <- summarise(mtcars, mean_mpg = mean(mpg), n = length(mpg), by = "cyl")
-  expect_s3_class(stats, "tbl_df")
+  expect_s3_class(stats, "data.table")
   expect_equal(nrow(stats), length(unique(mtcars$cyl)))
   expect_true(all(c("cyl", "mean_mpg", "n") %in% names(stats)))
   expect_equal(summarize(mtcars, mean_mpg = mean(mpg), by = "cyl"), summarise(mtcars, mean_mpg = mean(mpg), by = "cyl"))

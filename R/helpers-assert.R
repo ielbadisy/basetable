@@ -11,7 +11,7 @@ duplicated_keys <- function(data, by) {
   dt <- bt_as_data_table_ro(data)
   by <- bt_resolve_cols(dt, by)
   out <- dt[, list(N = .N), by = by][N > 1L]
-  bt_as_tibble(out)
+  bt_as_data_table(out)
 }
 
 assert_key <- function(data, by) {

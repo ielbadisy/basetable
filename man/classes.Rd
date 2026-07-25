@@ -10,7 +10,7 @@ classes(data)
 \item{data}{A data.frame or data.table.}
 }
 \value{
-A tibble with one row per column giving its class.
+A data.table with one row per column giving its class.
 }
 \description{
 Column classes

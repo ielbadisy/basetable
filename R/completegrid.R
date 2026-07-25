@@ -26,5 +26,5 @@ completegrid <- function(data, cols, fill = list()) {
     }
   }
 
-  bt_as_tibble(out)
+  bt_as_data_table(out)
 }

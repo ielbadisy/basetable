@@ -14,7 +14,7 @@ parsefailures(x, fun, ...)
 \item{...}{Additional arguments (unused, or passed through depending on the function).}
 }
 \value{
-A tibble of the failed indices and values.
+A data.table of the failed indices and values.
 }
 \description{
 Rows where parsing failed

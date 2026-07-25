@@ -12,7 +12,7 @@ filldown(data, cols, by = NULL)
 \item{by}{Optional grouping columns.}
 }
 \value{
-A tibble with missing values filled downward.
+A data.table with missing values filled downward.
 }
 \description{
 Fill missing values in selected columns using the last observed value.

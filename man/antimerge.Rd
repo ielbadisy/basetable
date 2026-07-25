@@ -10,7 +10,7 @@ antimerge(x, y, by)
 \item{by}{Character vector of join columns.}
 }
 \value{
-A tibble containing rows from \code{x} without matches in \code{y}.
+A data.table containing rows from \code{x} without matches in \code{y}.
 }
 \description{
 Keep rows in \code{x} whose keys do not exist in \code{y}.

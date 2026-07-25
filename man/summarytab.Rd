@@ -28,7 +28,7 @@ column other than \code{by}.}
 \item{digits}{Number of decimal places used when formatting numbers.}
 }
 \value{
-A tibble with one row per variable (or variable level), and one
+A data.table with one row per variable (or variable level), and one
 column per stratum plus \code{Overall}/\code{p_value} as requested.
 }
 \description{

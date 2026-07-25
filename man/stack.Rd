@@ -12,7 +12,7 @@ stack(data, select = NULL, drop = FALSE)
 \item{drop}{Whether to drop rows with missing values.}
 }
 \value{
-A tibble with a stacked value column.
+A data.table with a stacked value column.
 }
 \description{
 Convert selected columns into long format with an indicator column.

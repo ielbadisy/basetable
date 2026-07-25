@@ -12,7 +12,7 @@ bind_rows(..., id = NULL)
 \item{id}{Optional name for a source identifier column.}
 }
 \value{
-A tibble.
+A data.table.
 }
 \description{
 Combine data frames by rows.

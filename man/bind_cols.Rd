@@ -10,7 +10,7 @@ bind_cols(...)
 \item{...}{Data frames.}
 }
 \value{
-A tibble.
+A data.table.
 }
 \description{
 Combine data frames by columns.

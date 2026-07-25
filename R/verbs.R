@@ -5,14 +5,14 @@
 #' @param data A data frame or data.table.
 #' @param ... Logical expressions evaluated in `data`.
 #'
-#' @return A tibble.
+#' @return A data.table.
 #' @export
 filter <- function(data, ...) {
   df <- bt_as_data_frame(data)
   dots <- as.list(substitute(list(...)))[-1L]
 
   if (length(dots) == 0L) {
-    return(bt_as_tibble(df))
+    return(bt_as_data_table(df))
   }
 
   env <- list2env(as.list(df), parent = parent.frame())
@@ -26,7 +26,7 @@ filter <- function(data, ...) {
     keep <- keep & value
   }
 
-  bt_as_tibble(df[keep, , drop = FALSE])
+  bt_as_data_table(df[keep, , drop = FALSE])
 }
 
 #' Select columns
@@ -36,7 +36,7 @@ filter <- function(data, ...) {
 #' @inheritParams filter
 #' @param cols Character vector of column names.
 #'
-#' @return A tibble.
+#' @return A data.table.
 #' @export
 select <- function(data, cols) {
   pick(data, cols)
@@ -50,14 +50,14 @@ select <- function(data, cols) {
 #' @inheritParams filter
 #' @param ... Named rename expressions.
 #'
-#' @return A tibble.
+#' @return A data.table.
 #' @export
 rename <- function(data, ...) {
   df <- bt_as_data_frame(data)
   dots <- as.list(substitute(list(...)))[-1L]
 
   if (length(dots) == 0L) {
-    return(bt_as_tibble(df))
+    return(bt_as_data_table(df))
   }
 
   new_names <- names(dots)
@@ -68,7 +68,7 @@ rename <- function(data, ...) {
   old_names <- vapply(dots, bt_rename_old_name, character(1), enclos = parent.frame())
   old_names <- bt_resolve_cols(df, old_names)
   names(df)[match(old_names, names(df))] <- new_names
-  bt_as_tibble(df)
+  bt_as_data_table(df)
 }
 
 #' Arrange rows
@@ -81,7 +81,7 @@ rename <- function(data, ...) {
 #'   matching column.
 #' @param na.last Place missing values last.
 #'
-#' @return A tibble.
+#' @return A data.table.
 #' @export
 arrange <- function(data, by, decreasing = FALSE, na.last = TRUE) {
   reorder(data, by = by, decreasing = decreasing, na.last = na.last)
@@ -94,7 +94,7 @@ arrange <- function(data, by, decreasing = FALSE, na.last = TRUE) {
 #' @inheritParams filter
 #' @param .keep Keep existing columns.
 #'
-#' @return A tibble.
+#' @return A data.table.
 #' @export
 mutate <- function(data, ..., .keep = TRUE) {
   transform(data, ..., .keep = .keep)
@@ -106,7 +106,7 @@ mutate <- function(data, ..., .keep = TRUE) {
 #'
 #' @inheritParams mutate
 #'
-#' @return A tibble.
+#' @return A data.table.
 #' @export
 transmute <- function(data, ...) {
   transform(data, ..., .keep = FALSE)
@@ -120,7 +120,7 @@ transmute <- function(data, ...) {
 #' @param ... Named summary expressions.
 #' @param by Optional character vector of grouping columns.
 #'
-#' @return A tibble.
+#' @return A data.table.
 #' @export
 summarise <- function(data, ..., by = NULL) {
   dt <- bt_as_data_table_ro(data)
@@ -149,7 +149,7 @@ summarise <- function(data, ..., by = NULL) {
     stop("Each summary expression must return exactly one value per group.", call. = FALSE)
   }
 
-  bt_as_tibble(out)
+  bt_as_data_table(out)
 }
 
 #' @rdname summarise
@@ -165,18 +165,18 @@ summarize <- summarise
 #'   uniqueness.
 #' @param .keep_all Keep all columns when `cols` is supplied.
 #'
-#' @return A tibble.
+#' @return A data.table.
 #' @export
 distinct <- function(data, cols = NULL, .keep_all = FALSE) {
   df <- bt_as_data_frame(data)
   if (is.null(cols)) {
-    return(bt_as_tibble(unique(df)))
+    return(bt_as_data_table(unique(df)))
   }
 
   cols <- bt_resolve_cols(df, cols)
   key <- !duplicated(df[, cols, drop = FALSE])
   out <- if (.keep_all) df[key, , drop = FALSE] else df[key, cols, drop = FALSE]
-  bt_as_tibble(out)
+  bt_as_data_table(out)
 }
 
 #' Slice rows
@@ -186,11 +186,11 @@ distinct <- function(data, cols = NULL, .keep_all = FALSE) {
 #' @inheritParams filter
 #' @param rows Integer row positions.
 #'
-#' @return A tibble.
+#' @return A data.table.
 #' @export
 slice <- function(data, rows) {
   df <- bt_as_data_frame(data)
-  bt_as_tibble(df[rows, , drop = FALSE])
+  bt_as_data_table(df[rows, , drop = FALSE])
 }
 
 #' Relocate columns
@@ -200,7 +200,7 @@ slice <- function(data, rows) {
 #' @inheritParams select
 #' @param .before,.after Optional single column name controlling placement.
 #'
-#' @return A tibble.
+#' @return A data.table.
 #' @export
 relocate <- function(data, cols, .before = NULL, .after = NULL) {
   df <- bt_as_data_frame(data)
@@ -229,7 +229,7 @@ relocate <- function(data, cols, .before = NULL, .after = NULL) {
     order <- append(remaining, cols, after = pos)
   }
 
-  bt_as_tibble(df[, order, drop = FALSE])
+  bt_as_data_table(df[, order, drop = FALSE])
 }
 
 #' Bind rows
@@ -239,7 +239,7 @@ relocate <- function(data, cols, .before = NULL, .after = NULL) {
 #' @param ... Data frames or a single list of data frames.
 #' @param id Optional name for a source identifier column.
 #'
-#' @return A tibble.
+#' @return A data.table.
 #' @export
 bind_rows <- function(..., id = NULL) {
   dots <- list(...)
@@ -255,18 +255,18 @@ bind_rows <- function(..., id = NULL) {
 #'
 #' @param ... Data frames.
 #'
-#' @return A tibble.
+#' @return A data.table.
 #' @export
 bind_cols <- function(...) {
   dots <- lapply(list(...), bt_as_data_frame)
   if (length(dots) == 0L) {
-    return(tibble::tibble())
+    return(data.table::data.table())
   }
   n <- vapply(dots, nrow, integer(1))
   if (length(unique(n)) > 1L) {
     stop("All inputs must have the same number of rows.", call. = FALSE)
   }
-  bt_as_tibble(do.call(cbind, c(dots, stringsAsFactors = FALSE)))
+  bt_as_data_table(do.call(cbind, c(dots, stringsAsFactors = FALSE)))
 }
 
 bt_rename_old_name <- function(expr, enclos) {

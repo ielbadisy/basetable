@@ -17,5 +17,5 @@ expandrows <- function(data, times) {
   }
 
   idx <- rep.int(seq_len(nrow(df)), as.integer(times))
-  bt_as_tibble(df[idx, , drop = FALSE])
+  bt_as_data_table(df[idx, , drop = FALSE])
 }

@@ -145,8 +145,8 @@ reorder(mtcars, by = c("cyl", "mpg"), decreasing = c(FALSE, TRUE)) |> headtail(3
 
 `aggregate()` computes one summary function over one or more value columns,
 per group, the `data.table`-backed analogue of `stats::aggregate()`. Note it
-returns a `data.table` directly (not a tibble), since it's meant to be fast and
-composable with further `data.table` operations.
+returns a `data.table` directly, since it's meant to be fast and composable
+with further `data.table` operations.
 
 ```{r}
 aggregate(mtcars, by = "cyl", value = c("mpg", "hp"), fun = mean)
@@ -180,7 +180,7 @@ summaries(mtcars, "cyl", mean_hp = mean(hp), sd_hp = sd(hp))
 
 ## Splitting into groups: `split()`, `by_apply()`, `applyby()`, `combine()`, `recombine()`
 
-`split()` breaks a table into a named list of tibbles, one per group:
+`split()` breaks a table into a named list of data.tables, one per group:
 
 ```{r}
 pieces <- split(iris, by = "Species")

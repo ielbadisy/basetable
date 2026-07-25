@@ -14,7 +14,7 @@ relocate(data, cols, .before = NULL, .after = NULL)
 \item{.before, .after}{Optional single column name controlling placement.}
 }
 \value{
-A tibble.
+A data.table.
 }
 \description{
 Move selected columns before or after another column.
