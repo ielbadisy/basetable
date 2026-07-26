@@ -6,22 +6,22 @@
 #' @param .f A function or function name.
 #' @param ... Additional arguments passed to `.f`.
 #'
-#' @return `map()` returns a list. `walk()` returns `.x` invisibly.
+#' @return `map()` returns a list.
 #' @export
 map <- function(.x, .f, ...) {
   f <- match.fun(.f)
   lapply(.x, function(x) f(x, ...))
 }
 
-#' Map over a list of arguments
+#' Traverse a list of arguments
 #'
 #' @param .l A list of vectors or lists with a common length.
 #' @param .f A function or function name.
 #' @param ... Additional arguments passed to `.f`.
 #'
-#' @return `pmap()` returns a list. `pwalk()` returns `.l` invisibly.
+#' @return `traverse()` returns a list.
 #' @export
-pmap <- function(.l, .f, ...) {
+traverse <- function(.l, .f, ...) {
   if (!is.list(.l)) {
     stop("`.l` must be a list.", call. = FALSE)
   }
@@ -42,34 +42,7 @@ pmap <- function(.l, .f, ...) {
   })
 }
 
-#' @rdname map
-#' @export
-walk <- function(.x, .f, ...) {
-  map(.x, .f, ...)
-  invisible(.x)
-}
-
-#' @rdname map
-#' @export
-pwalk <- function(.l, .f, ...) {
-  pmap(.l, .f, ...)
-  invisible(.l)
-}
-
-#' Reduce a vector or list
-#'
-#' Reduce a vector or list using base R's `Reduce()`.
-#'
-#' @param .x A vector or list.
-#' @param .f A two-argument reducing function.
-#' @param .init Optional initial value.
-#' @param .right Reduce from the right.
-#' @param .accumulate Return intermediate accumulated values.
-#' @param .simplify Simplify accumulated results when possible.
-#'
-#' @return The reduced value, or accumulated values when `.accumulate = TRUE`.
-#' @export
-reduce <- function(.x, .f, .init = NULL, .right = FALSE, .accumulate = FALSE, .simplify = TRUE) {
+bt_fold <- function(.x, .f, .init, .right, .accumulate, .simplify) {
   out <- if (is.null(.init)) {
     base::Reduce(
       f = match.fun(.f),
@@ -92,4 +65,18 @@ reduce <- function(.x, .f, .init = NULL, .right = FALSE, .accumulate = FALSE, .s
   }
 
   tryCatch(base::simplify2array(out), error = function(e) out)
+}
+
+#' Fold a vector or list from the right
+#'
+#' @param .x A vector or list.
+#' @param .f A two-argument reducing function.
+#' @param .init Optional initial value.
+#' @param .accumulate Return intermediate accumulated values.
+#' @param .simplify Simplify accumulated results when possible.
+#'
+#' @return The folded value, or accumulated values when `.accumulate = TRUE`.
+#' @export
+foldr <- function(.x, .f, .init = NULL, .accumulate = FALSE, .simplify = TRUE) {
+  bt_fold(.x, .f, .init = .init, .right = TRUE, .accumulate = .accumulate, .simplify = .simplify)
 }

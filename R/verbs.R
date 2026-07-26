@@ -246,7 +246,7 @@ bind_rows <- function(..., id = NULL) {
   if (length(dots) == 1L && is.list(dots[[1L]]) && !inherits(dots[[1L]], "data.frame")) {
     dots <- dots[[1L]]
   }
-  combine(dots, id = id)
+  bt_as_data_table(data.table::rbindlist(lapply(dots, bt_as_data_frame), fill = TRUE, idcol = id))
 }
 
 #' Bind columns

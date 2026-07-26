@@ -1,34 +1,40 @@
 \name{map}
 \alias{map}
-\alias{pmap}
-\alias{walk}
-\alias{pwalk}
-\title{Mapping helpers}
+\alias{traverse}
+\alias{foldr}
+\title{Functional helpers}
 \description{
-Small base-R-style mapping helpers with no external dependency. See
-\code{\link{reduce}} for the reducing counterpart, documented on its own
-page.
+Small base-R-style functional helpers with no external dependency.
 }
 \usage{
 map(.x, .f, ...)
 
-pmap(.l, .f, ...)
+traverse(.l, .f, ...)
 
-walk(.x, .f, ...)
-
-pwalk(.l, .f, ...)
+foldr(.x, .f, .init = NULL, .accumulate = FALSE, .simplify = TRUE)
 }
 \arguments{
-  \item{.x}{A vector or list.}
-  \item{.f}{A function or function name.}
-  \item{.l}{A list of vectors or lists with a common length.}
-  \item{...}{Additional arguments passed to \code{.f}.}
+\item{.x}{A vector or list, used by \code{map()} and \code{foldr()}.}
+
+\item{.f}{A function or function name.}
+
+\item{...}{Additional arguments passed to \code{.f}.}
+
+\item{.l}{A list of vectors or lists with a common length.}
+
+\item{.init}{Optional initial value.}
+
+\item{.accumulate}{Return intermediate accumulated values.}
+
+\item{.simplify}{Simplify accumulated results when possible.}
 }
 \value{
-\code{map()} and \code{pmap()} return lists.
-\code{walk()} and \code{pwalk()} return their input invisibly.
+\code{map()} and \code{traverse()} return lists.
+\code{foldr()} returns the folded value, or accumulated values when
+\code{.accumulate = TRUE}.
 }
 \examples{
 map(1:3, function(x) x + 1)
-pmap(list(a = 1:2, b = 10:11), function(a, b) a + b)
+traverse(list(a = 1:2, b = 10:11), function(a, b) a + b)
+foldr(1:4, `+`)
 }

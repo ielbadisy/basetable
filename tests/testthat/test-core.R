@@ -32,17 +32,14 @@ test_that("merge and key helpers behave consistently", {
   expect_equal(common_names(x, y), "id")
 })
 
-test_that("split, by_apply, and combine operate on ordinary frames", {
+test_that("split and applyby operate on ordinary frames", {
   pieces <- split(iris, by = "Species")
   expect_length(pieces, 3L)
 
-  stats <- by_apply(
+  stats <- applyby(
     iris,
     by = "Species",
     fun = function(d) data.frame(Species = d$Species[[1]], mean_sl = mean(d$Sepal.Length))
   )
   expect_length(stats, 3L)
-
-  bound <- combine(stats)
-  expect_equal(nrow(bound), 3L)
 })

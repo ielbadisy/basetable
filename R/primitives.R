@@ -847,18 +847,7 @@ applyby <- function(data, by, fun, ..., bind = FALSE, id = ".group") {
   pieces <- bt_split_by(data, by = by, keepby = TRUE)
   out <- lapply(pieces, function(piece) fun(piece, ...))
   if (!bind) return(out)
-  recombine(out, id = id)
-}
-
-#' Recombine a list of pieces into one table
-#'
-#' @param x An atomic vector.
-#' @param id Optional name for a source identifier column.
-#'
-#' @return See [combine()].
-#' @export
-recombine <- function(x, id = NULL) {
-  combine(x, id = id)
+  bt_as_data_table(data.table::rbindlist(out, fill = TRUE, idcol = id))
 }
 
 #' Distinct keys of `x` absent from `y`
