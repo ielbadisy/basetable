@@ -1,40 +1,34 @@
 \name{map}
 \alias{map}
-\alias{map_lgl}
-\alias{map_int}
-\alias{map_dbl}
-\alias{map_chr}
+\alias{pmap}
 \alias{walk}
-\title{Functionals-backed map helpers}
+\alias{pwalk}
+\title{Mapping helpers}
 \description{
-Small exported wrappers around the \pkg{functionals} mapping helpers. See
+Small base-R-style mapping helpers with no external dependency. See
 \code{\link{reduce}} for the reducing counterpart, documented on its own
 page.
 }
 \usage{
-map(.x, .f, ..., ncores = NULL, pb = FALSE)
+map(.x, .f, ...)
 
-map_lgl(.x, .f, ..., ncores = NULL, pb = FALSE)
+pmap(.l, .f, ...)
 
-map_int(.x, .f, ..., ncores = NULL, pb = FALSE)
+walk(.x, .f, ...)
 
-map_dbl(.x, .f, ..., ncores = NULL, pb = FALSE)
-
-map_chr(.x, .f, ..., ncores = NULL, pb = FALSE)
-
-walk(.x, .f, ..., ncores = NULL, pb = FALSE)
+pwalk(.l, .f, ...)
 }
 \arguments{
   \item{.x}{A vector or list.}
   \item{.f}{A function or function name.}
+  \item{.l}{A list of vectors or lists with a common length.}
   \item{...}{Additional arguments passed to \code{.f}.}
-  \item{ncores, pb}{Parallelism and progress controls passed to \pkg{functionals}.}
 }
 \value{
-\code{map()} returns a list. Typed map variants return atomic vectors.
-\code{walk()} returns \code{.x} invisibly.
+\code{map()} and \code{pmap()} return lists.
+\code{walk()} and \code{pwalk()} return their input invisibly.
 }
 \examples{
-map_dbl(1:3, function(x) x + 0.5)
-map_chr(1:3, as.character)
+map(1:3, function(x) x + 1)
+pmap(list(a = 1:2, b = 10:11), function(a, b) a + b)
 }

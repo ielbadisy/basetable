@@ -52,10 +52,10 @@ test_that("tolong/towide/transpose reshape a table", {
   expect_equal(dim(t_out), c(2L, 2L))
 })
 
-test_that("map/map_lgl/map_int/reduce/reorder work as expected", {
+test_that("map/pmap/reduce/reorder work as expected", {
   expect_equal(map(1:3, function(x) x + 1), list(2, 3, 4))
-  expect_equal(map_lgl(1:3, function(x) x > 1), c(FALSE, TRUE, TRUE))
-  expect_equal(map_int(1:3, function(x) x * 2L), c(2L, 4L, 6L))
+  expect_equal(pmap(list(a = 1:2, b = 10:11), function(a, b) a + b), list(11, 13))
+  expect_equal(reduce(1:4, `+`), 10L)
 
   df <- data.frame(x = c(3, 1, 2))
   expect_equal(reorder(df, "x")$x, c(1, 2, 3))

@@ -7,7 +7,7 @@ split <- function(data, by, drop = FALSE, keep.by = FALSE) {
 
 by_apply <- function(data, by, fun, ..., bind = FALSE, id = ".group") {
   pieces <- split(data, by = by, keep.by = TRUE)
-  out <- functionals::fmap(pieces, function(piece) fun(piece, ...))
+  out <- lapply(pieces, function(piece) fun(piece, ...))
 
   if (!bind) {
     return(out)
