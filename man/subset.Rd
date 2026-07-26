@@ -2,8 +2,6 @@
 \alias{subset}
 \alias{transform}
 \alias{reorder}
-\alias{by_apply}
-\alias{combine}
 \alias{reshape}
 \title{Core data manipulation operations}
 \description{
@@ -25,25 +23,18 @@ transform(data, ..., .keep = TRUE)
 
 reorder(data, by, decreasing = FALSE, na.last = TRUE)
 
-by_apply(data, by, fun, ..., bind = FALSE, id = ".group")
-
-combine(x, id = NULL)
-
 reshape(data, ..., direction)
 }
 \arguments{
-  \item{data, x}{A \code{data.frame} or \code{data.table}.}
+  \item{data}{A \code{data.frame} or \code{data.table}.}
   \item{subset}{A base-style expression evaluated against columns.}
   \item{select, by}{Character vectors naming columns.}
-  \item{drop, bind, na.last, .keep, decreasing}{Control flags.}
+  \item{drop, na.last, .keep, decreasing}{Control flags.}
   \item{...}{Additional expressions or arguments passed through to helpers.}
-  \item{fun}{A function used for split/apply work.}
-  \item{id, direction}{Additional operation-specific controls.}
+  \item{direction}{Additional operation-specific controls.}
 }
 \value{
-Most functions return a data.table. \code{split()} returns a named list of
-data.tables and \code{combine()} binds compatible list elements back into a
-data.table.
+Most functions return a data.table.
 }
 \examples{
 subset(mtcars, cyl == 6, select = c("mpg", "hp"))

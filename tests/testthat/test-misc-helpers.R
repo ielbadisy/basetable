@@ -16,16 +16,15 @@ test_that("applycols/convertcols/replacecols/replacewhere transform selected col
   expect_equal(out4$b, c(4, 0, 0))
 })
 
-test_that("applyby/recombine apply a function per group and stitch the results back", {
+test_that("applyby applies a function per group and can bind the results back", {
   df <- data.frame(g = c("a", "a", "b"), v = c(1, 2, 3))
 
   out <- applyby(df, "g", nrow)
   expect_equal(unname(unlist(out)), c(2, 1))
 
-  pieces <- list(data.frame(x = 1), data.frame(x = 2))
-  combined <- recombine(pieces, id = "src")
-  expect_equal(combined$x, c(1, 2))
-  expect_true("src" %in% names(combined))
+  bound <- applyby(df, "g", function(d) data.frame(n = nrow(d)), bind = TRUE, id = "src")
+  expect_equal(nrow(bound), 2L)
+  expect_true("src" %in% names(bound))
 })
 
 test_that("naif/nato/blanktona/natoblank/replacevalues recode values", {
@@ -52,10 +51,10 @@ test_that("tolong/towide/transpose reshape a table", {
   expect_equal(dim(t_out), c(2L, 2L))
 })
 
-test_that("map/pmap/reduce/reorder work as expected", {
+test_that("map/traverse/fold/reorder work as expected", {
   expect_equal(map(1:3, function(x) x + 1), list(2, 3, 4))
-  expect_equal(pmap(list(a = 1:2, b = 10:11), function(a, b) a + b), list(11, 13))
-  expect_equal(reduce(1:4, `+`), 10L)
+  expect_equal(traverse(list(a = 1:2, b = 10:11), function(a, b) a + b), list(11, 13))
+  expect_equal(foldr(1:4, `+`), 10L)
 
   df <- data.frame(x = c(3, 1, 2))
   expect_equal(reorder(df, "x")$x, c(1, 2, 3))

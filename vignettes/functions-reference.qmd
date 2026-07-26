@@ -178,9 +178,10 @@ useful when you're calling it programmatically:
 summaries(mtcars, "cyl", mean_hp = mean(hp), sd_hp = sd(hp))
 ```
 
-## Splitting into groups: `split()`, `by_apply()`, `applyby()`, `combine()`, `recombine()`
+## Splitting into groups: `split()` and `applyby()`
 
-`split()` breaks a table into a named list of data.tables, one per group:
+`split()` breaks a table into a named list of data.tables, one per group, using
+`data.table`'s grouped split machinery internally:
 
 ```{r}
 pieces <- split(iris, by = "Species")
@@ -188,12 +189,11 @@ names(pieces)
 pieces$setosa |> headtail(2)
 ```
 
-`by_apply()` (and its close relative `applyby()`) apply a function to each
-group and, if `bind = TRUE`, stitch the results back into one table via
-`combine()` (whose alias is `recombine()`):
+`applyby()` applies a function to each group through the same `data.table`
+split path and, if `bind = TRUE`, stitches the results back into one table:
 
 ```{r}
-by_apply(mtcars, by = "cyl", fun = function(d) data.frame(mean_mpg = mean(d$mpg)), bind = TRUE, id = "cyl_group")
+applyby(mtcars, by = "cyl", fun = function(d) data.frame(mean_mpg = mean(d$mpg)), bind = TRUE, id = "cyl_group")
 ```
 
 ## First/last row per group: `firstby()`, `lastby()`
@@ -864,18 +864,16 @@ rollmax(v, width = 2, na.rm = TRUE)
 rollapply(1:5, width = 3, FUN = sum, partial = TRUE)
 ```
 
-# Mapping helpers {#sec-functional}
+# Functional helpers {#sec-functional}
 
-`map()`/`pmap()`/`walk()`/`pwalk()`/`reduce()` are lightweight base-R helpers
-for working with plain vectors and lists (not tables), useful for the
-occasional loop-replacement inside a larger `basetable` pipeline.
+`map()`/`traverse()`/`foldr()` are lightweight base-R helpers for working with
+plain vectors and lists (not tables), useful for the occasional
+loop-replacement inside a larger `basetable` pipeline.
 
 ```{r}
 map(1:3, function(x) x + 0.5)
-pmap(list(a = 1:2, b = 10:11), function(a, b) a + b)
-walk(c("a", "b"), function(x) x)
-per <- pwalk(list(x = c("a", "b")), function(x) x)
-reduce(1:4, `+`)
+traverse(list(a = 1:2, b = 10:11), function(a, b) a + b)
+foldr(1:4, `+`)
 ```
 
 # Closing notes

@@ -154,18 +154,9 @@ bt_eval_logical <- function(expr, data, n) {
 }
 
 bt_split_by <- function(data, by, drop = FALSE, keepby = FALSE) {
-  df <- bt_as_data_frame(data)
-  by <- bt_resolve_cols(df, by)
-  key <- interaction(df[, by, drop = FALSE], drop = drop, lex.order = TRUE)
-  pieces <- base::split(df, key, drop = drop)
-
-  if (!keepby) {
-    pieces <- lapply(pieces, function(piece) bt_as_data_table(piece[, setdiff(names(piece), by), drop = FALSE]))
-  } else {
-    pieces <- lapply(pieces, bt_as_data_table)
-  }
-
-  pieces
+  dt <- bt_as_data_table_ro(data)
+  by <- bt_resolve_cols(dt, by)
+  base::split(dt, by = by, drop = drop, keep.by = keepby, sorted = TRUE)
 }
 
 bt_group_keys <- function(data, by) {
