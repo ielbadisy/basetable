@@ -40,13 +40,33 @@ test_that("summarise, distinct, slice, relocate, and bind helpers work", {
   expect_equal(names(col_bound), c("a", "b"))
 })
 
-test_that("functionals-backed map helpers work", {
-  expect_equal(map_dbl(1:3, function(x) x + 0.5), c(1.5, 2.5, 3.5))
-  expect_equal(map_chr(1:2, as.character), c("1", "2"))
+test_that("map helpers work", {
+  expect_equal(map(1:3, function(x) x + 1), list(2, 3, 4))
+  expect_equal(pmap(list(a = 1:3, b = 10:12), function(a, b) a + b), list(11, 13, 15))
   expect_equal(reduce(1:4, `+`), 10L)
 
   seen <- character()
   out <- walk(c("a", "b"), function(x) seen <<- c(seen, x))
   expect_equal(out, c("a", "b"))
   expect_equal(seen, c("a", "b"))
+
+  seen_p <- character()
+  p_out <- pwalk(list(x = c("a", "b")), function(x) seen_p <<- c(seen_p, x))
+  expect_equal(p_out, list(x = c("a", "b")))
+  expect_equal(seen_p, c("a", "b"))
+})
+
+test_that("setthreads forwards to data.table", {
+  old <- data.table::getDTthreads()
+  on.exit(data.table::setDTthreads(old), add = TRUE)
+
+  new <- if (old == 1L) 0L else 1L
+  data.table::setDTthreads(new)
+  expected <- data.table::getDTthreads()
+  data.table::setDTthreads(old)
+
+  prev <- setthreads(new)
+
+  expect_equal(prev, old)
+  expect_equal(data.table::getDTthreads(), expected)
 })

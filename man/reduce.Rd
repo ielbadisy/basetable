@@ -30,5 +30,5 @@ reduce(
 The reduced value, or accumulated values when \code{.accumulate = TRUE}.
 }
 \description{
-Reduce a vector or list using \code{functionals::freduce()}.
+Reduce a vector or list using base R's \code{Reduce()}.
 }

@@ -17,7 +17,6 @@ Depends:
     R (>= 4.2.0)
 Imports:
     data.table,
-    functionals,
     stats,
     utils
 Suggests:
