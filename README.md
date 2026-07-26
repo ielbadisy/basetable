@@ -57,22 +57,22 @@ uses 15 iterations per workload on this workspace.
 
 | Operation | Implementation | Median (ms) | Iterations / sec | Memory (MB) | Relative time |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Subset and select | basetable | 2.36 | 406.5 | 4.57 | 1.00 |
-| Subset and select | data.table | 1.98 | 470.9 | 3.27 | 0.84 |
-| Subset and select | base R | 1.67 | 596.6 | 3.10 | 0.71 |
-| Subset and select | dplyr | 2.56 | 370.8 | 4.98 | 1.08 |
-| Merge | basetable | 5.45 | 176.1 | 3.76 | 1.00 |
-| Merge | data.table | 5.57 | 178.5 | 3.35 | 1.02 |
-| Merge | base R | 5.51 | 175.2 | 3.35 | 1.01 |
-| Merge | dplyr | 4.65 | 204.2 | 5.81 | 0.85 |
-| Aggregate | basetable | 1.83 | 519.2 | 0.91 | 1.00 |
-| Aggregate | data.table | 2.16 | 406.5 | 3.12 | 1.18 |
-| Aggregate | base R | 34.75 | 30.3 | 28.55 | 19.02 |
-| Aggregate | dplyr | 2.61 | 369.7 | 7.01 | 1.43 |
-| Group count | basetable | 1.22 | 799.4 | 2.77 | 1.00 |
-| Group count | data.table | 0.88 | 1115.1 | 2.70 | 0.72 |
-| Group count | base R | 2.11 | 459.2 | 5.73 | 1.73 |
-| Group count | dplyr | 2.27 | 349.4 | 5.14 | 1.86 |
+| Subset and select | basetable | 2.01 | 526.1 | 4.57 | 1.00 |
+| Subset and select | data.table | 2.63 | 402.3 | 3.27 | 1.30 |
+| Subset and select | base R | 1.81 | 543.8 | 3.10 | 0.90 |
+| Subset and select | dplyr | 2.93 | 337.4 | 5.00 | 1.46 |
+| Merge | basetable | 5.62 | 174.1 | 3.65 | 1.00 |
+| Merge | data.table | 5.75 | 172.7 | 3.35 | 1.02 |
+| Merge | base R | 5.74 | 174.1 | 3.35 | 1.02 |
+| Merge | dplyr | 4.92 | 202.6 | 5.81 | 0.87 |
+| Aggregate | basetable | 1.56 | 595.8 | 0.91 | 1.00 |
+| Aggregate | data.table | 2.18 | 455.5 | 3.12 | 1.40 |
+| Aggregate | base R | 27.82 | 35.9 | 28.47 | 17.81 |
+| Aggregate | dplyr | 3.61 | 281.9 | 7.04 | 2.31 |
+| Group count | basetable | 1.02 | 883.7 | 2.81 | 1.00 |
+| Group count | data.table | 0.78 | 1226.1 | 2.70 | 0.76 |
+| Group count | base R | 2.49 | 401.9 | 5.73 | 2.44 |
+| Group count | dplyr | 3.12 | 324.3 | 5.14 | 3.04 |
 
 `basetable` wraps `data.table` as its execution backend, so the `data.table`
 row is the one that matters most: it isolates wrapper overhead from the
