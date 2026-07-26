@@ -161,7 +161,7 @@ summarytab(
 | Ordering | `reorder()` | `order()` |
 | Aggregation | `aggregate()`, `count()` | `aggregate()`, `table()` |
 | Joining | `merge()` | `merge()` |
-| Split/apply/combine | `split()`, `by_apply()`, `combine()` | `split()`, `by()` |
+| Split/apply | `split()`, `applyby()` | `split()` |
 | Reshaping | `reshape()`, `stack()`, `unstack()` | base equivalents |
 | Inspection | `glimpse()`, `dims()`, `types()`, `headtail()` | `str()`, `dim()`, `head()` |
 | EDA | `describe()`, `missingness()`, `profile()`, `freq()`, `summarytab()`, `compare()` | base summaries |
