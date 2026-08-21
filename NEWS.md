@@ -1,3 +1,15 @@
+# basetable 0.5.1
+
+## CRAN submission prep
+
+* Removed the hand-written `Author:`/`Maintainer:` fields from `DESCRIPTION`
+  (they had drifted out of sync with `Authors@R`, tripping an `R CMD check
+  --as-cran` NOTE); both are now derived from `Authors@R` as usual.
+* Added a GitHub Actions `R-CMD-check.yaml` workflow (macOS/Windows/Ubuntu,
+  release/devel/oldrel-1) and matching README badges.
+* `R CMD check --as-cran` is clean apart from the two expected first-submission
+  notes (new submission, unable to verify current time).
+
 # basetable 0.5.0
 
 Initial development cycle covering performance, correctness, documentation,

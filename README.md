@@ -1,5 +1,10 @@
 # basetable
 
+<!-- badges: start -->
+[![R-CMD-check](https://github.com/ielbadisy/basetable/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/ielbadisy/basetable/actions/workflows/R-CMD-check.yaml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<!-- badges: end -->
+
 `basetable` gives base-R users a `data.table` engine behind familiar syntax:
 you write `subset()`, `transform()`, `aggregate()`, `merge()`, and `split()`,
 and the package returns `data.table` objects without asking you to learn
