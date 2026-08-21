@@ -2,9 +2,9 @@ Package: basetable
 Title: Base R Tables Powered by Data.table
 Version: 0.5.0
 Authors@R:
-    person("Imad", "EL BADISY", email = "elbadisyimad@gmail.com", role = c("aut", "cre"))
-Author: Imad EL BADISY
-Maintainer: Imad EL BADISY <elbadisyimad@gmail.com>
+    person("Imad", "El Badisy", email = "elbadisyimad@gmail.com", role = c("aut", "cre"))
+Author: Imad El Badisy
+Maintainer: Imad El Badisy <elbadisyimad@gmail.com>
 Description: A tabular data manipulation toolkit with a base-R-faithful interface, a data.table execution backend,
     and explicit semantics.
 License: MIT + file LICENSE
