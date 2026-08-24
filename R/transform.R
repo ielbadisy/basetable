@@ -1,6 +1,10 @@
 transform <- function(data, ..., .keep = TRUE) {
-  dt <- bt_as_data_table(data)
   dots <- as.list(substitute(list(...)))[-1L]
+  bt_transform(data, dots, env = parent.frame(), keep = .keep)
+}
+
+bt_transform <- function(data, dots, env, keep = TRUE) {
+  dt <- bt_as_data_table(data)
 
   if (length(dots) == 0L) {
     return(bt_as_data_table(dt))
@@ -14,12 +18,12 @@ transform <- function(data, ..., .keep = TRUE) {
   created <- character()
   for (i in seq_along(dots)) {
     nm <- nms[[i]]
-    value <- eval(dots[[i]], envir = dt, enclos = parent.frame())
-    dt[, (nm) := value]
+    value <- eval(dots[[i]], envir = dt, enclos = env)
+    data.table::set(dt, j = nm, value = value)
     created <- c(created, nm)
   }
 
-  if (!isTRUE(.keep)) {
+  if (!isTRUE(keep)) {
     dt <- dt[, unique(created), with = FALSE]
   }
 
