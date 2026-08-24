@@ -47,14 +47,30 @@ Two ways to avoid it:
 
 ## Status
 
-This repository now contains the initial package scaffold, naming dictionary,
-semantic specification, first implementation pass, tests, vignettes, and
-benchmark scripts.
+Version 0.5.3 provides a tested in-memory manipulation, exploration, and
+validation toolkit with a compact canonical core. Every public function has
+direct test coverage, the package includes introductory, manipulation,
+exploration, complete-reference, and benchmark vignettes, and the CI matrix
+checks release R on Linux, macOS, and Windows plus oldrel and devel R.
+
+### Highlights in 0.5.3
+
+- `transform()`, `mutate()`, and `transmute()` resolve ordinary values from
+  their true calling function while retaining sequential-expression support.
+- Mixed ascending/descending multi-column ordering is supported by
+  `reorder()` and `orderrows()`.
+- Core verbs stay on data.table paths and preserve their input, avoiding
+  unnecessary data.frame round-trips and duplicate return copies.
+- A scalable benchmark measures runtime and allocated memory at 100,000,
+  1 million, and 10 million rows.
+- The vignettes define a compact canonical workflow designed to remain
+  predictable for people and program-generating tools such as language
+  models. No additional public alias layer is required.
 
 ## Benchmarks
 
-The `Benchmarks` vignette contains the reproducible report. The summary below
-uses 15 iterations per workload on this workspace.
+The `Benchmarks` vignette contains the reproducible report. The first summary
+below uses 15 iterations per workload on this workspace.
 
 ![Benchmark absolute time](man/figures/benchmark-absolute.png)
 
@@ -78,6 +94,21 @@ uses 15 iterations per workload on this workspace.
 | Group count | data.table | 0.78 | 1226.1 | 2.70 | 0.76 |
 | Group count | base R | 2.49 | 401.9 | 5.73 | 2.44 |
 | Group count | dplyr | 3.12 | 324.3 | 5.14 | 3.04 |
+
+The separate scale harness gives basetable and raw data.table the same
+input-immutability contract and measures allocated memory as well as time.
+At 10 million rows on the reference Linux system:
+
+| Operation | Time vs data.table | Memory vs data.table |
+| --- | ---: | ---: |
+| `filter()` | 0.97 | 1.00 |
+| `transform()` | 1.24 | 1.25 |
+| `count()` | 1.01 | 1.00 |
+| `orderrows()` | 1.09 | 1.00 |
+
+Timings are machine-specific; the benchmark vignette records the environment,
+absolute results, iteration counts, and interpretation. Run
+`inst/benchmarks/benchmark-scale.R` to reproduce all three size tiers.
 
 `basetable` wraps `data.table` as its execution backend, so the `data.table`
 row is the one that matters most: it isolates wrapper overhead from the
@@ -105,8 +136,8 @@ directly, and it now runs at parity. `count()` (shown above as "Group count"),
 `summarise()`/`summarize()`/`summaries()` all saw similar (smaller)
 reductions in overhead from the same kind of fix.
 
-Rerun `vignettes/benchmarking.Rmd` to refresh the report if the workload or
-implementation changes.
+Rerun `vignettes/benchmarking.Rmd` and the scale harness to refresh the report
+if the workload or implementation changes.
 
 ## Installation
 
