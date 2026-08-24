@@ -1,23 +1,22 @@
 ---
 title: "basetable: A Complete Function Reference"
 subtitle: "Every exported function, explained progressively with real examples"
-format:
-  pdf:
+output:
+  rmarkdown::pdf_document:
     toc: true
-    toc-depth: 2
-    number-sections: true
-    fig-width: 6
-    fig-height: 4
-execute:
-  warning: false
+    toc_depth: 2
+    number_sections: true
+    fig_width: 6
+    fig_height: 4
 vignette: >
   %\VignetteIndexEntry{basetable: A Complete Function Reference}
-  %\VignetteEngine{quarto::pdf}
+  %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
 ```{r setup}
 #| include: false
+knitr::opts_chunk$set(warning = FALSE)
 library(basetable)
 library(data.table)
 options(width = 90, digits = 4)
