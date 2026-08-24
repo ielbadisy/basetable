@@ -11,6 +11,12 @@ vignette: >
 library(basetable)
 ```
 
+`basetable` uses compact verbs with explicit arguments. The same functions
+work in nested expressions and native R pipelines, always returning a
+`data.table` without modifying the input.
+
+## A compact pipeline
+
 ```{r}
 mtcars |>
   subset(cyl >= 6, select = c("mpg", "hp", "wt", "cyl")) |>
@@ -18,9 +24,60 @@ mtcars |>
   reorder(by = c("cyl", "mpg"), decreasing = c(FALSE, TRUE))
 ```
 
+`reorder()` and `orderrows()` accept one direction per column. This makes a
+mixed ascending/descending order explicit without a descending-expression
+mini-language.
+
+```{r}
+orderrows(
+  mtcars,
+  by = c("cyl", "mpg"),
+  decreasing = c(FALSE, TRUE)
+) |>
+  firstrows(6)
+```
+
+## Values from the calling function
+
+Transformation expressions can combine table columns with ordinary values
+defined by the calling function. Newly created columns are available to later
+expressions in the same call.
+
+```{r}
+scorecars <- function(data, horsepowerweight = 0.7) {
+  data |>
+    mutate(
+      weightedhp = hp * horsepowerweight,
+      score = weightedhp / wt
+    ) |>
+    orderrows("score", decreasing = TRUE)
+}
+
+scorecars(mtcars) |>
+  pick(c("mpg", "hp", "wt", "score")) |>
+  firstrows(5)
+```
+
+## Grouped summaries
+
 ```{r}
 aggregate(airquality, by = "Month", value = c("Ozone", "Temp"), fun = mean, na.rm = TRUE)
 ```
+
+The expression-oriented equivalent stays compact when several summaries use
+different functions.
+
+```{r}
+summarise(
+  airquality,
+  ozone = mean(Ozone, na.rm = TRUE),
+  temperature = mean(Temp, na.rm = TRUE),
+  days = length(Temp),
+  by = "Month"
+)
+```
+
+## Joins
 
 ```{r}
 merge(
@@ -29,4 +86,32 @@ merge(
   by = "id",
   all = TRUE
 )
+```
+
+## Validation in a pipeline
+
+Assertions return the input invisibly when they pass, so a pipeline can fail
+close to the operation that violated its contract.
+
+```{r}
+cars <- mtcars |>
+  mutate(car = rownames(mtcars)) |>
+  firstcols("car")
+
+assertcomplete(cars, c("car", "mpg", "cyl"))
+assertunique(cars, "car")
+assertrows(cars, mpg > 0)
+```
+
+## Explicit package calls
+
+Several compact names intentionally match base R or other table packages.
+In scripts that attach multiple table packages, qualify the verb rather than
+changing the workflow grammar.
+
+```{r}
+mtcars |>
+  basetable::filter(cyl == 6) |>
+  basetable::pick(c("mpg", "hp", "wt")) |>
+  basetable::mutate(power = hp / wt)
 ```
