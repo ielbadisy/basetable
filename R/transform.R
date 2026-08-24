@@ -7,7 +7,7 @@ bt_transform <- function(data, dots, env, keep = TRUE) {
   dt <- bt_as_data_table(data)
 
   if (length(dots) == 0L) {
-    return(bt_as_data_table(dt))
+    return(dt)
   }
 
   nms <- names(dots)
@@ -27,7 +27,7 @@ bt_transform <- function(data, dots, env, keep = TRUE) {
     dt <- dt[, unique(created), with = FALSE]
   }
 
-  bt_as_data_table(dt)
+  dt
 }
 
 within <- function(data, expr) {
