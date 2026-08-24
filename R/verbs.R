@@ -15,14 +15,16 @@ filter <- function(data, ...) {
     return(data.table::copy(dt))
   }
 
-  keep <- rep(TRUE, nrow(dt))
+  keep <- NULL
   for (expr in dots) {
     value <- eval(expr, envir = dt, enclos = parent.frame())
     if (!is.logical(value) || length(value) != nrow(dt)) {
       stop("Each filter expression must evaluate to a logical vector with one value per row.", call. = FALSE)
     }
-    value[is.na(value)] <- FALSE
-    keep <- keep & value
+    if (anyNA(value)) {
+      value[is.na(value)] <- FALSE
+    }
+    keep <- if (is.null(keep)) value else keep & value
   }
 
   dt[keep]
