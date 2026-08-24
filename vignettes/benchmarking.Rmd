@@ -199,6 +199,45 @@ and it now runs at parity. `count()`, `duplicated_keys()`, `freq()`, `filldown()
 `fillup()`, `split()`, and `summarise()`/`summarize()`/`summaries()` all saw
 similar (smaller) reductions in overhead from the same kind of fix.
 
+## Scaling and allocated memory
+
+Microbenchmarks can hide copies that only matter once a table is large. The
+standalone `inst/benchmarks/benchmark-scale.R` harness therefore runs four
+representative operations at 100,000, 1 million, and 10 million rows. It
+measures allocated memory as well as median runtime and gives the basetable and
+raw data.table arms the same input-immutability contract.
+
+Run the complete matrix from the package root with:
+
+```{r scale-command, eval=FALSE}
+Sys.setenv(BASETABLE_BENCH_OUTPUT = "scale-results.csv")
+source("inst/benchmarks/benchmark-scale.R")
+```
+
+The following 10-million-row results were recorded on x86-64 Linux with R
+4.5.1, data.table 1.18.4, bench 1.1.4, and 16 logical cores. The large tier
+uses three iterations per expression. Runtime is machine-specific and short
+benchmarks remain sensitive to garbage collection; allocation is generally
+the more stable signal.
+
+| Operation | Implementation | Median (ms) | Memory (MB) | Time vs data.table | Memory vs data.table |
+|:--|:--|--:|--:|--:|--:|
+| Filter | basetable | 122.33 | 209.79 | 0.97 | 1.00 |
+| Filter | data.table | 126.71 | 209.79 | 1.00 | 1.00 |
+| Transform | basetable | 161.33 | 381.50 | 1.24 | 1.25 |
+| Transform | data.table | 130.32 | 305.22 | 1.00 | 1.00 |
+| Count | basetable | 65.13 | 267.09 | 1.01 | 1.00 |
+| Count | data.table | 64.77 | 267.06 | 1.00 | 1.00 |
+| Mixed ordering | basetable | 314.26 | 352.89 | 1.09 | 1.00 |
+| Mixed ordering | data.table | 287.26 | 352.88 | 1.00 | 1.00 |
+
+At this scale, filtering, grouped counting, and mixed-direction ordering reach
+allocation parity with their native data.table equivalents. Transform retains
+about 25% overhead because it evaluates and validates each named expression
+sequentially, allowing a later expression to use a column created earlier in
+the same call. This is an intentional semantic feature, but it is now isolated
+and measured rather than hidden by unrelated table copies.
+
 ## Absolute Time
 
 ```{r absolute-plot, fig.cap="Median runtime by implementation and operation."}
