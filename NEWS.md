@@ -1,3 +1,33 @@
+# basetable 0.5.3
+
+## Evaluation semantics
+
+* `transform()`, `mutate()`, and `transmute()` now resolve ordinary values
+  from their true calling function, including when used inside a helper.
+* Fixed transform assignment when an input column is literally named
+  `value`; the evaluated expression result is now assigned through a
+  standard-evaluation data.table setter.
+
+## Performance
+
+* Removed avoidable data.frame round-trips from `filter()`, `rename()`,
+  `distinct()`, `slice()`, `relocate()`, and `bind_rows()`.
+* Removed duplicate return copies from transformation and ordering paths.
+* Reduced `filter()` to one logical mask in the common one-expression case
+  and avoided allocating an NA mask when no missing values are present.
+* Added a reproducible runtime and allocated-memory benchmark at 100,000,
+  1 million, and 10 million rows. At 10 million rows, filtering, grouped
+  counting, and mixed ordering reach allocation parity with the equivalent
+  raw data.table paths on the reference system.
+
+## Documentation
+
+* Expanded the data-manipulation vignette with compact pipeline, mixed-order,
+  caller-scope, validation, grouped-summary, and namespace examples.
+* Defined the canonical compact core and the intentional in-memory package
+  boundary in the getting-started vignette.
+* Documented scale benchmark methodology and reference results.
+
 # basetable 0.5.2
 
 ## Correctness and performance
