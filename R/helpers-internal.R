@@ -136,7 +136,10 @@ bt_key_expr <- function(data, by) {
 bt_order_data <- function(df, by, decreasing = FALSE, na.last = TRUE) {
   by <- bt_resolve_cols(df, by)
   decreasing <- bt_recycle_flag(decreasing, length(by), "decreasing")
-  ord <- do.call(order, c(df[by], list(decreasing = decreasing, na.last = na.last)))
+  ord <- do.call(
+    order,
+    c(df[by], list(decreasing = decreasing, na.last = na.last, method = "radix"))
+  )
   df[ord, , drop = FALSE]
 }
 
