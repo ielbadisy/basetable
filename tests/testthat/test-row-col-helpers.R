@@ -58,6 +58,24 @@ test_that("firstrows/lastrows/samplerows/samplefrac/reverse/orderrows", {
   expect_equal(orderrows(df, "x", decreasing = TRUE)$x, rev(df$x))
 })
 
+test_that("orderrows supports a direction for each sort column", {
+  df <- data.frame(
+    group = c("b", "a", "b", "a"),
+    score = c(1, 1, 2, 2),
+    id = 1:4
+  )
+
+  out <- orderrows(
+    df,
+    by = c("group", "score"),
+    decreasing = c(FALSE, TRUE)
+  )
+
+  expect_equal(out$id, c(4, 2, 3, 1))
+  expect_s3_class(out, "data.table")
+  expect_equal(df$id, 1:4)
+})
+
 test_that("firstby/lastby pick one row per group", {
   df <- data.frame(g = c("a", "a", "b"), v = c(1, 2, 3))
 
