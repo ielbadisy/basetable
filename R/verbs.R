@@ -8,25 +8,24 @@
 #' @return A data.table.
 #' @export
 filter <- function(data, ...) {
-  df <- bt_as_data_frame(data)
+  dt <- bt_as_data_table_ro(data)
   dots <- as.list(substitute(list(...)))[-1L]
 
   if (length(dots) == 0L) {
-    return(bt_as_data_table(df))
+    return(data.table::copy(dt))
   }
 
-  env <- list2env(as.list(df), parent = parent.frame())
-  keep <- rep(TRUE, nrow(df))
+  keep <- rep(TRUE, nrow(dt))
   for (expr in dots) {
-    value <- eval(expr, envir = env, enclos = parent.frame())
-    if (!is.logical(value) || length(value) != nrow(df)) {
+    value <- eval(expr, envir = dt, enclos = parent.frame())
+    if (!is.logical(value) || length(value) != nrow(dt)) {
       stop("Each filter expression must evaluate to a logical vector with one value per row.", call. = FALSE)
     }
     value[is.na(value)] <- FALSE
     keep <- keep & value
   }
 
-  bt_as_data_table(df[keep, , drop = FALSE])
+  dt[keep]
 }
 
 #' Select columns
@@ -53,11 +52,11 @@ select <- function(data, cols) {
 #' @return A data.table.
 #' @export
 rename <- function(data, ...) {
-  df <- bt_as_data_frame(data)
+  dt <- bt_as_data_table(data)
   dots <- as.list(substitute(list(...)))[-1L]
 
   if (length(dots) == 0L) {
-    return(bt_as_data_table(df))
+    return(dt)
   }
 
   new_names <- names(dots)
@@ -66,9 +65,9 @@ rename <- function(data, ...) {
   }
 
   old_names <- vapply(dots, bt_rename_old_name, character(1), enclos = parent.frame())
-  old_names <- bt_resolve_cols(df, old_names)
-  names(df)[match(old_names, names(df))] <- new_names
-  bt_as_data_table(df)
+  old_names <- bt_resolve_cols(dt, old_names)
+  data.table::setnames(dt, old = old_names, new = new_names)
+  dt
 }
 
 #' Arrange rows
@@ -170,15 +169,17 @@ summarize <- summarise
 #' @return A data.table.
 #' @export
 distinct <- function(data, cols = NULL, .keep_all = FALSE) {
-  df <- bt_as_data_frame(data)
+  dt <- bt_as_data_table_ro(data)
   if (is.null(cols)) {
-    return(bt_as_data_table(unique(df)))
+    return(unique(dt))
   }
 
-  cols <- bt_resolve_cols(df, cols)
-  key <- !duplicated(df[, cols, drop = FALSE])
-  out <- if (.keep_all) df[key, , drop = FALSE] else df[key, cols, drop = FALSE]
-  bt_as_data_table(out)
+  cols <- bt_resolve_cols(dt, cols)
+  if (.keep_all) {
+    unique(dt, by = cols)
+  } else {
+    unique(dt[, cols, with = FALSE])
+  }
 }
 
 #' Slice rows
@@ -191,8 +192,8 @@ distinct <- function(data, cols = NULL, .keep_all = FALSE) {
 #' @return A data.table.
 #' @export
 slice <- function(data, rows) {
-  df <- bt_as_data_frame(data)
-  bt_as_data_table(df[rows, , drop = FALSE])
+  dt <- bt_as_data_table_ro(data)
+  dt[rows]
 }
 
 #' Relocate columns
@@ -205,25 +206,25 @@ slice <- function(data, rows) {
 #' @return A data.table.
 #' @export
 relocate <- function(data, cols, .before = NULL, .after = NULL) {
-  df <- bt_as_data_frame(data)
-  cols <- bt_resolve_cols(df, cols)
+  dt <- bt_as_data_table_ro(data)
+  cols <- bt_resolve_cols(dt, cols)
 
   if (!is.null(.before) && !is.null(.after)) {
     stop("Use only one of `.before` or `.after`.", call. = FALSE)
   }
 
-  remaining <- setdiff(names(df), cols)
+  remaining <- setdiff(names(dt), cols)
   if (is.null(.before) && is.null(.after)) {
     order <- c(cols, remaining)
   } else if (!is.null(.before)) {
-    .before <- bt_resolve_cols(df, .before)
+    .before <- bt_resolve_cols(dt, .before)
     if (length(.before) != 1L) {
       stop("`.before` must name exactly one column.", call. = FALSE)
     }
     pos <- match(.before, remaining)
     order <- append(remaining, cols, after = pos - 1L)
   } else {
-    .after <- bt_resolve_cols(df, .after)
+    .after <- bt_resolve_cols(dt, .after)
     if (length(.after) != 1L) {
       stop("`.after` must name exactly one column.", call. = FALSE)
     }
@@ -231,7 +232,7 @@ relocate <- function(data, cols, .before = NULL, .after = NULL) {
     order <- append(remaining, cols, after = pos)
   }
 
-  bt_as_data_table(df[, order, drop = FALSE])
+  dt[, order, with = FALSE]
 }
 
 #' Bind rows
@@ -248,7 +249,12 @@ bind_rows <- function(..., id = NULL) {
   if (length(dots) == 1L && is.list(dots[[1L]]) && !inherits(dots[[1L]], "data.frame")) {
     dots <- dots[[1L]]
   }
-  bt_as_data_table(data.table::rbindlist(lapply(dots, bt_as_data_frame), fill = TRUE, idcol = id))
+  data.table::rbindlist(
+    lapply(dots, bt_as_data_table_ro),
+    use.names = TRUE,
+    fill = TRUE,
+    idcol = id
+  )
 }
 
 #' Bind columns
