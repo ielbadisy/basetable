@@ -1511,7 +1511,7 @@ isblank <- function(x) bt_is_blank(x)
 #'
 #' @return A character vector.
 #' @export
-removeaccents <- function(x) iconv(x, from = "", to = "ASCII//TRANSLIT")
+removeaccents <- function(x) stringi::stri_trans_general(enc2utf8(x), "Latin-ASCII")
 #' Normalize Unicode text
 #'
 #' @param x An atomic vector.
@@ -1532,7 +1532,7 @@ normalizeencoding <- function(x) enc2utf8(x)
 #'
 #' @return A character vector.
 #' @export
-transliterate <- function(x) iconv(x, from = "", to = "ASCII//TRANSLIT")
+transliterate <- function(x) stringi::stri_trans_general(enc2utf8(x), "Any-Latin; Latin-ASCII")
 #' Pairwise string distances
 #'
 #' @param x An atomic vector.
