@@ -1,3 +1,14 @@
+# basetable 0.5.2
+
+## Correctness and performance
+
+* Fixed mixed-direction multi-column ordering in `orderrows()` and every
+  helper that uses the shared base ordering path.
+* Routed `orderrows()` through the package's data.table-backed ordering
+  implementation, removing an avoidable data.frame conversion while
+  preserving input immutability.
+* Added regression coverage for per-column sort directions.
+
 # basetable 0.5.1
 
 ## CRAN submission prep
