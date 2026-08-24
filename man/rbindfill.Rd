@@ -7,17 +7,23 @@
 rbindfill(..., id = NULL, fill = TRUE, typeconflict = c("error", "coerce"))
 }
 \arguments{
-\item{...}{Additional arguments (unused, or passed through depending on the function).}
+\item{...}{Data frames/data.tables to combine, or a single list of them.}
 
-\item{id}{Optional name for a source identifier column.}
+\item{id}{Optional name for a source identifier column recording which
+input each row came from.}
 
-\item{fill}{Value used for positions where no window/result is available.}
+\item{fill}{Fill missing columns with \code{NA} instead of erroring when inputs
+have different columns.}
 
-\item{typeconflict}{How to handle conflicting column types across inputs.}
+\item{typeconflict}{How to handle a column whose type differs across
+inputs. \code{"error"} (the default) stops with a message naming the column
+and the conflicting types before any coercion happens. \code{"coerce"} skips
+the check and lets \code{\link[data.table:rbindlist]{data.table::rbindlist()}} coerce as usual.}
 }
 \value{
 A combined data.table.
 }
 \description{
-Row-bind tables, filling missing columns
+Combine data frames or data.tables by row, filling columns that are
+missing from some inputs with \code{NA}.
 }

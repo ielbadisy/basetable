@@ -46,7 +46,7 @@ expressions in the same call.
 ```{r}
 scorecars <- function(data, horsepowerweight = 0.7) {
   data |>
-    mutate(
+    transform(
       weightedhp = hp * horsepowerweight,
       score = weightedhp / wt
     ) |>
@@ -68,7 +68,7 @@ The expression-oriented equivalent stays compact when several summaries use
 different functions.
 
 ```{r}
-summarise(
+summaries(
   airquality,
   ozone = mean(Ozone, na.rm = TRUE),
   temperature = mean(Temp, na.rm = TRUE),
@@ -95,7 +95,7 @@ close to the operation that violated its contract.
 
 ```{r}
 cars <- mtcars |>
-  mutate(car = rownames(mtcars)) |>
+  transform(car = rownames(mtcars)) |>
   firstcols("car")
 
 assertcomplete(cars, c("car", "mpg", "cyl"))
@@ -105,13 +105,16 @@ assertrows(cars, mpg > 0)
 
 ## Explicit package calls
 
-Several compact names intentionally match base R or other table packages.
-In scripts that attach multiple table packages, qualify the verb rather than
-changing the workflow grammar.
+A few compact names intentionally match base R or other table packages
+(`subset()`, `merge()`, `transform()`, `split()`). `basetable` does not ship
+dplyr-named verbs such as `filter()`, `select()`, or `mutate()`, so it can be
+attached alongside dplyr without shadowing its grammar. For the names it does
+share with other table packages, qualify the verb rather than changing the
+workflow grammar.
 
 ```{r}
 mtcars |>
-  basetable::filter(cyl == 6) |>
+  basetable::subset(cyl == 6) |>
   basetable::pick(c("mpg", "hp", "wt")) |>
-  basetable::mutate(power = hp / wt)
+  basetable::transform(power = hp / wt)
 ```

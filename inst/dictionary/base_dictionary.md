@@ -10,6 +10,8 @@
 | Rows | Row filtering | `subset()` | Direct base analogue | Evaluates rows then subsets through `data.table` | Keeps base semantics instead of `filter()` |
 | Columns | Keep columns | `pick()` | Mirrors positive column indexing | Validated column selection | `select()` is too strongly tied to dplyr |
 | Columns | Drop columns | `drop()` | Mirrors negative column indexing | Set difference over names | `select(-x)` is a dplyr idiom; `drop()` is explicit |
+| Columns | Rename columns | `renamecols()` | Extends `names<-()` with `new = old` pairs | `data.table::setnames()` | `rename()` is a dplyr verb name; `renamecols()` names the action explicitly |
+| Rows | Unique rows | `uniquerows()` | Direct extension of `unique()` | `data.table`'s `unique()` | `distinct()` is a dplyr verb name; pairs with `duplicaterows()` |
 | Transform | Add/modify columns | `transform()` | Direct base analogue | Mutable `data.table` assignment | Avoids `mutate()` grammar |
 | Transform | Block mutation/removal | `within()` | Direct base analogue | Evaluate then rebuild | Base name is already correct |
 | Order | Sort rows | `reorder()` | Extends `order()` to data frames | `setorderv()` handles multi-column ordering | Avoids SQL-flavored `arrange()` |

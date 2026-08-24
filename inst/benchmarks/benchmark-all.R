@@ -42,8 +42,8 @@ workloads <- list(
   split = function() basetable::split(dt, by = "grp"),
   split_dt = function() split(dt, by = "grp", keep.by = FALSE),
 
-  summarise = function() basetable::summarise(dt, m = mean(value), by = "grp"),
-  summarise_dt = function() dt[, .(m = mean(value)), keyby = grp],
+  summaries = function() basetable::summaries(dt, m = mean(value), by = "grp"),
+  summaries_dt = function() dt[, .(m = mean(value)), keyby = grp],
 
   filldown = function() basetable::filldown(na_dt, cols = "value", by = "grp"),
   filldown_dt = function() {

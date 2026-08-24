@@ -42,8 +42,8 @@ summarisebench <- function(result, size, operation) {
 }
 
 markscale <- function(data, size, iterations) {
-  filterresult <- bench::mark(
-    basetable = basetable::filter(data, value > 0),
+  subsetresult <- bench::mark(
+    basetable = basetable::subset(data, value > 0),
     data_table = data[value > 0],
     iterations = iterations,
     check = FALSE,
@@ -85,7 +85,7 @@ markscale <- function(data, size, iterations) {
   )
 
   rbindlist(list(
-    summarisebench(filterresult, size, "filter"),
+    summarisebench(subsetresult, size, "subset"),
     summarisebench(transformresult, size, "transform"),
     summarisebench(countresult, size, "count"),
     summarisebench(orderresult, size, "orderrows")

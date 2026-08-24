@@ -22,11 +22,11 @@ Most workflows need only a small set of regular verbs:
 | Task | Canonical functions |
 |:--|:--|
 | Inspect | `glimpse()`, `describe()`, `missingness()` |
-| Keep rows | `filter()`, `subset()` |
+| Keep rows | `subset()` |
 | Keep or remove columns | `pick()`, `drop()` |
-| Create columns | `transform()`, `mutate()` |
+| Create columns | `transform()` |
 | Order rows | `reorder()`, `orderrows()` |
-| Summarise | `aggregate()`, `summarise()`, `count()` |
+| Summarise | `aggregate()`, `summaries()`, `count()` |
 | Join | `merge()`, `antimerge()`, `semimerge()` |
 | Reshape | `tolong()`, `towide()` |
 | Validate | `assertcomplete()`, `assertunique()`, `assertrows()` |
@@ -61,7 +61,7 @@ alias or changing grammars mid-pipeline.
 
 ```{r}
 mtcars |>
-  basetable::filter(cyl == 6) |>
+  basetable::subset(cyl == 6) |>
   basetable::pick(c("mpg", "hp", "wt")) |>
-  basetable::mutate(power = hp / wt)
+  basetable::transform(power = hp / wt)
 ```

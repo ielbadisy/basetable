@@ -1,6 +1,15 @@
-test_that("rename changes column names", {
-  out <- rename(mtcars, miles = mpg, cylinders = cyl)
+test_that("renamecols changes column names", {
+  out <- renamecols(mtcars, miles = mpg, cylinders = cyl)
 
   expect_s3_class(out, "data.table")
   expect_true(all(c("miles", "cylinders") %in% names(out)))
+})
+
+test_that("renamecols does not mutate its input", {
+  input <- data.table::data.table(id = c(1L, 1L, 2L), value = c(3, 3, 1))
+  original <- data.table::copy(input)
+
+  renamecols(input, key = id)
+
+  expect_identical(input, original)
 })

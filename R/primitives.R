@@ -103,6 +103,31 @@ duplicaterows <- function(data) {
   df[duplicated(df) | duplicated(df, fromLast = TRUE), , drop = FALSE]
 }
 
+#' Unique rows
+#'
+#' Return unique rows, optionally considering only selected columns.
+#'
+#' @param data A data.frame or data.table.
+#' @param cols Optional character vector of columns used to determine
+#'   uniqueness.
+#' @param .keep_all Keep all columns when `cols` is supplied.
+#'
+#' @return A data.table of the unique rows.
+#' @export
+uniquerows <- function(data, cols = NULL, .keep_all = FALSE) {
+  dt <- bt_as_data_table_ro(data)
+  if (is.null(cols)) {
+    return(unique(dt))
+  }
+
+  cols <- bt_resolve_cols(dt, cols)
+  if (.keep_all) {
+    unique(dt, by = cols)
+  } else {
+    unique(dt[, cols, with = FALSE])
+  }
+}
+
 #' Duplicated key combinations
 #'
 #' @param data A data.frame or data.table.
@@ -174,6 +199,35 @@ renamewith <- function(data, cols, fun) {
   cols <- bt_resolve_cols(df, cols)
   names(df)[match(cols, names(df))] <- vapply(cols, function(x) fun(x), character(1))
   bt_as_data_table(df)
+}
+
+#' Rename columns
+#'
+#' Rename columns using `new = old` pairs. Old column names may be supplied
+#' as bare names or character strings.
+#'
+#' @param data A data.frame or data.table.
+#' @param ... Named rename expressions, as `new = old`.
+#'
+#' @return `data` with the named columns renamed.
+#' @export
+renamecols <- function(data, ...) {
+  dt <- bt_as_data_table(data)
+  dots <- as.list(substitute(list(...)))[-1L]
+
+  if (length(dots) == 0L) {
+    return(dt)
+  }
+
+  new_names <- names(dots)
+  if (is.null(new_names) || any(!nzchar(new_names))) {
+    stop("All rename expressions must be named as `new = old`.", call. = FALSE)
+  }
+
+  old_names <- vapply(dots, bt_renamecols_old_name, character(1), enclos = parent.frame())
+  old_names <- bt_resolve_cols(dt, old_names)
+  data.table::setnames(dt, old = old_names, new = new_names)
+  dt
 }
 
 #' Move columns before or after another column
@@ -352,7 +406,7 @@ removeduplicates <- function(data, by = NULL, keep = c("first", "last", "none"))
     df <- bt_as_data_frame(data)
     return(bt_as_data_table(if (keep == "first") df[!duplicated(df), , drop = FALSE] else if (keep == "last") df[!duplicated(df, fromLast = TRUE), , drop = FALSE] else df[!duplicated(df) & !duplicated(df, fromLast = TRUE), , drop = FALSE]))
   }
-  if (keep == "first") return(distinct(data, cols = by, .keep_all = TRUE))
+  if (keep == "first") return(uniquerows(data, cols = by, .keep_all = TRUE))
   if (keep == "last") return(lastby(data, by = by))
   df <- bt_as_data_frame(data)
   key <- bt_resolve_cols(df, by)
@@ -916,10 +970,18 @@ nearestmerge <- function(x, y, by, tolerance = Inf) {
 
 #' Row-bind tables, filling missing columns
 #'
-#' @param ... Additional arguments (unused, or passed through depending on the function).
-#' @param id Optional name for a source identifier column.
-#' @param fill Value used for positions where no window/result is available.
-#' @param typeconflict How to handle conflicting column types across inputs.
+#' Combine data frames or data.tables by row, filling columns that are
+#' missing from some inputs with `NA`.
+#'
+#' @param ... Data frames/data.tables to combine, or a single list of them.
+#' @param id Optional name for a source identifier column recording which
+#'   input each row came from.
+#' @param fill Fill missing columns with `NA` instead of erroring when inputs
+#'   have different columns.
+#' @param typeconflict How to handle a column whose type differs across
+#'   inputs. `"error"` (the default) stops with a message naming the column
+#'   and the conflicting types before any coercion happens. `"coerce"` skips
+#'   the check and lets [data.table::rbindlist()] coerce as usual.
 #'
 #' @return A combined data.table.
 #' @export
@@ -927,7 +989,9 @@ rbindfill <- function(..., id = NULL, fill = TRUE, typeconflict = c("error", "co
   typeconflict <- match.arg(typeconflict)
   dots <- list(...)
   if (length(dots) == 1L && is.list(dots[[1L]]) && !inherits(dots[[1L]], "data.frame")) dots <- dots[[1L]]
-  bt_as_data_table(data.table::rbindlist(lapply(dots, bt_as_data_frame), fill = fill, idcol = id))
+  dfs <- lapply(dots, bt_as_data_frame)
+  if (typeconflict == "error") bt_assert_no_type_conflicts(dfs)
+  bt_as_data_table(data.table::rbindlist(dfs, fill = fill, idcol = id))
 }
 
 #' Set union of rows
@@ -940,7 +1004,7 @@ rbindfill <- function(..., id = NULL, fill = TRUE, typeconflict = c("error", "co
 #' @export
 unionrows <- function(x, y, by = NULL) {
   df <- rbindfill(x, y)
-  if (!is.null(by)) df <- distinct(df, cols = by, .keep_all = TRUE)
+  if (!is.null(by)) df <- uniquerows(df, cols = by, .keep_all = TRUE)
   bt_as_data_table(unique(bt_as_data_frame(df)))
 }
 

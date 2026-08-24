@@ -25,6 +25,39 @@ bt_as_data_frame <- function(data) {
   as.data.frame(data, stringsAsFactors = FALSE)
 }
 
+# Errors when a shared column name carries different classes across inputs
+# instead of letting rbindlist() silently coerce it.
+bt_assert_no_type_conflicts <- function(dfs) {
+  seen <- list()
+  for (i in seq_along(dfs)) {
+    df <- dfs[[i]]
+    for (nm in names(df)) {
+      cls <- class(df[[nm]])[1L]
+      prior <- seen[[nm]]
+      if (is.null(prior)) {
+        seen[[nm]] <- list(class = cls, input = i)
+      } else if (!identical(prior$class, cls)) {
+        stop(sprintf(
+          "Column `%s` has conflicting types across inputs: `%s` (input %d) vs `%s` (input %d). Use typeconflict = \"coerce\" to allow automatic coercion.",
+          nm, prior$class, prior$input, cls, i
+        ), call. = FALSE)
+      }
+    }
+  }
+  invisible(TRUE)
+}
+
+bt_renamecols_old_name <- function(expr, enclos) {
+  if (is.symbol(expr)) {
+    return(as.character(expr))
+  }
+  value <- eval(expr, envir = parent.frame(), enclos = enclos)
+  if (!is.character(value) || length(value) != 1L) {
+    stop("Rename targets must be bare column names or single strings.", call. = FALSE)
+  }
+  value
+}
+
 # Vectorized last-observation-carried-forward, works for any atomic vector
 # type (unlike data.table::nafill(), which is numeric-only).
 bt_locf <- function(x) {

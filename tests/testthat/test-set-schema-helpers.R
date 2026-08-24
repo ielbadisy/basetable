@@ -63,6 +63,20 @@ test_that("unionrows/rbindfill combine rows", {
   expect_equal(out_fill$b, c(NA, 3))
 })
 
+test_that("rbindfill(typeconflict =) controls handling of mismatched column types", {
+  a <- data.frame(id = 1, v = "1", stringsAsFactors = FALSE)
+  b <- data.frame(id = 2, v = 2L)
+
+  expect_error(rbindfill(a, b), "conflicting types")
+  expect_error(rbindfill(a, b, typeconflict = "error"), "conflicting types")
+
+  out <- rbindfill(a, b, typeconflict = "coerce")
+  expect_equal(out$v, c("1", "2"))
+
+  same_type <- rbindfill(data.frame(v = 1), data.frame(v = 2))
+  expect_equal(same_type$v, c(1, 2))
+})
+
 test_that("addedrows/removedrows/changedrows track differences between two snapshots", {
   old <- data.frame(id = c(1, 2, 3), v = c("a", "b", "c"), stringsAsFactors = FALSE)
   new <- data.frame(id = c(2, 3, 4), v = c("b", "c2", "d"), stringsAsFactors = FALSE)

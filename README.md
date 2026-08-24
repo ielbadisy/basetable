@@ -30,35 +30,44 @@ Design goals:
 ## Using basetable alongside dplyr and data.table
 
 `basetable` deliberately reuses base-R verb names: `subset()`, `merge()`,
-`filter()`, `count()`, `transform()`, `split()`, and others, because that's
-the whole point (see above). The tradeoff: if you `library(dplyr)` or
-`library(data.table)` in the same session, whichever package was attached
-**last** wins for any shared name, silently shadowing the other. We hit this
-ourselves during development: attaching `dplyr` in one script shadowed
-`basetable::pick()` used later in the same session.
+`count()`, `transform()`, `split()`, and others, because that's the whole
+point (see above). It intentionally does **not** ship dplyr-named verbs
+(`filter()`, `select()`, `mutate()`, `arrange()`, `summarise()`, etc.) so
+that `basetable` and `dplyr` can be attached in the same session without one
+silently shadowing the other's verb grammar. The tradeoff: `basetable` still
+shares a handful of true base-R names (`subset()`, `merge()`, `transform()`,
+`split()`) with other packages, so if you `library(data.table)` in the same
+session, whichever package was attached **last** wins for any shared name.
+We hit this ourselves during development: attaching `dplyr` in one script
+shadowed `basetable::pick()` used later in the same session.
 
 Two ways to avoid it:
 
-- Call the function you mean explicitly: `basetable::filter(...)`,
-  `dplyr::filter(...)`.
+- Call the function you mean explicitly: `basetable::transform(...)`,
+  `dplyr::mutate(...)`.
 - If you already use the [`conflicted`](https://conflicted.r-lib.org/)
   package, declare a preference once per session:
-  `conflicted::conflict_prefer("filter", "basetable")`.
+  `conflicted::conflict_prefer("transform", "basetable")`.
 
 ## Status
 
-Version 0.5.4 provides a tested in-memory manipulation, exploration, and
+Version 0.6.0 provides a tested in-memory manipulation, exploration, and
 validation toolkit with a compact canonical core. Every public function has
 direct test coverage, the package includes introductory, manipulation,
 exploration, complete-reference, and benchmark vignettes, and the CI matrix
 checks release R on Linux, macOS, and Windows plus oldrel and devel R.
 
-### Highlights in 0.5.4
+### Highlights in 0.6.0
 
-- Accent removal and general transliteration are deterministic across Linux,
-  macOS, and Windows, and the complete PDF reference builds portably in CI.
-- `transform()`, `mutate()`, and `transmute()` resolve ordinary values from
-  their true calling function while retaining sequential-expression support.
+- Removed the dplyr-named wrapper verbs (`filter()`, `select()`, `rename()`,
+  `arrange()`, `mutate()`, `transmute()`, `summarise()`/`summarize()`,
+  `distinct()`, `slice()`, `relocate()`, `bind_rows()`, `bind_cols()`) so the
+  API is consistently base-R-flavored and doesn't mask dplyr. Use
+  `subset()`, `pick()`, `reorder()`, `transform()`, `summaries()`, `move()`,
+  and `rbindfill()` instead, plus two new base-flavored additions:
+  `renamecols()` and `uniquerows()`.
+- `transform()` resolves ordinary values from its true calling function
+  while retaining sequential-expression support.
 - Mixed ascending/descending multi-column ordering is supported by
   `reorder()` and `orderrows()`.
 - Core verbs stay on data.table paths and preserve their input, avoiding
@@ -103,7 +112,7 @@ At 10 million rows on the reference Linux system:
 
 | Operation | Time vs data.table | Memory vs data.table |
 | --- | ---: | ---: |
-| `filter()` | 0.97 | 1.00 |
+| `subset()` | 0.97 | 1.00 |
 | `transform()` | 1.24 | 1.25 |
 | `count()` | 1.01 | 1.00 |
 | `orderrows()` | 1.09 | 1.00 |
@@ -135,8 +144,12 @@ with a hand-rolled per-group R loop and measured at roughly **1500x** the
 cost of data.table's native `roll=` join before being rewritten to use it
 directly, and it now runs at parity. `count()` (shown above as "Group count"),
 `duplicated_keys()`, `freq()`, `filldown()`, `fillup()`, `split()`, and
-`summarise()`/`summarize()`/`summaries()` all saw similar (smaller)
-reductions in overhead from the same kind of fix.
+`summaries()` all saw similar (smaller) reductions in overhead from the
+same kind of fix.
+
+`basetable` does not ship dplyr-named wrapper verbs, so there is no
+`filter()`/`mutate()`/`summarise()` benchmarked here; the closest
+equivalents are `subset()`, `transform()`, and `summaries()`, shown above.
 
 Rerun `vignettes/benchmarking.Rmd` and the scale harness to refresh the report
 if the workload or implementation changes.
@@ -195,8 +208,10 @@ summarytab(
 | Row subsetting | `subset()` | `base::subset()` |
 | Column keeping | `pick()` | `[` column selection |
 | Column dropping | `drop()` | negative column indexing |
+| Column renaming | `renamecols()` | `names<-()` |
 | Transformation | `transform()`, `within()` | base equivalents |
 | Ordering | `reorder()` | `order()` |
+| Unique rows | `uniquerows()` | `unique()` |
 | Aggregation | `aggregate()`, `count()` | `aggregate()`, `table()` |
 | Joining | `merge()` | `merge()` |
 | Split/apply | `split()`, `applyby()` | `split()` |

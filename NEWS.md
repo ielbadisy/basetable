@@ -1,3 +1,35 @@
+# basetable 0.6.0
+
+## New features
+
+* `transform()` gained a `by` argument. When supplied, each expression in
+  `...` is evaluated within every group instead of across the whole table
+  (e.g. `transform(data, dev = x - mean(x), by = "g")` computes the
+  deviation from each group's own mean), so the result still has one row
+  per input row. Use `summaries()` when you want one row per group instead.
+* `rbindfill()`'s `typeconflict` argument now does something: `"error"`
+  (the default) checks every shared column across inputs up front and stops
+  with a message naming the column and the conflicting types before any
+  coercion happens; `"coerce"` skips the check and falls back to
+  `data.table::rbindlist()`'s usual coercion.
+
+## Breaking changes
+
+* Removed the dplyr-named wrapper verbs added in `R/verbs.R`: `filter()`,
+  `select()`, `rename()`, `arrange()`, `mutate()`, `transmute()`,
+  `summarise()`/`summarize()`, `distinct()`, `slice()`, `relocate()`,
+  `bind_rows()`, and `bind_cols()`. These duplicated dplyr's verb names
+  exactly, which meant attaching `basetable` and `dplyr` in the same session
+  could silently mask either package's verb grammar depending on load
+  order. The underlying functionality already existed under base-flavored
+  names and continues to be exported: use `subset()`, `pick()`, `reorder()`,
+  `transform()` (with `.keep = FALSE` in place of `transmute()`),
+  `summaries()`, `move()`, and `rbindfill()` instead. `bind_cols()` had no
+  package-specific behavior beyond base R's `cbind()`; use `cbind()`
+  directly. Two functions had no existing base-flavored equivalent and are
+  now available under new names: `renamecols()` (was `rename()`) and
+  `uniquerows()` (was `distinct()`).
+
 # basetable 0.5.4
 
 ## Portability
