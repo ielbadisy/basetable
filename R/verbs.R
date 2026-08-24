@@ -97,7 +97,8 @@ arrange <- function(data, by, decreasing = FALSE, na.last = TRUE) {
 #' @return A data.table.
 #' @export
 mutate <- function(data, ..., .keep = TRUE) {
-  transform(data, ..., .keep = .keep)
+  dots <- as.list(substitute(list(...)))[-1L]
+  bt_transform(data, dots, env = parent.frame(), keep = .keep)
 }
 
 #' Transmute columns
@@ -109,7 +110,8 @@ mutate <- function(data, ..., .keep = TRUE) {
 #' @return A data.table.
 #' @export
 transmute <- function(data, ...) {
-  transform(data, ..., .keep = FALSE)
+  dots <- as.list(substitute(list(...)))[-1L]
+  bt_transform(data, dots, env = parent.frame(), keep = FALSE)
 }
 
 #' Summarise columns
