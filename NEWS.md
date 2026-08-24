@@ -1,3 +1,14 @@
+# basetable 0.5.4
+
+## Portability
+
+* Made `removeaccents()` and `transliterate()` deterministic across Linux,
+  Windows, and macOS by using ICU transliteration instead of the
+  platform-dependent `iconv(..., "ASCII//TRANSLIT")` behavior.
+* Made the complete PDF function-reference vignette build in-process so it
+  can load the package from `R CMD build`'s temporary library on every
+  supported platform.
+
 # basetable 0.5.3
 
 ## Evaluation semantics
