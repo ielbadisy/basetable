@@ -40,6 +40,23 @@ test_that("summarise, distinct, slice, relocate, and bind helpers work", {
   expect_equal(names(col_bound), c("a", "b"))
 })
 
+test_that("data.table-backed core verbs do not mutate their input", {
+  input <- data.table::data.table(
+    id = c(1L, 1L, 2L),
+    value = c(3, 3, 1)
+  )
+  original <- data.table::copy(input)
+
+  filter(input, value > 1)
+  rename(input, key = id)
+  distinct(input)
+  slice(input, 1:2)
+  relocate(input, "value")
+  bind_rows(input, input)
+
+  expect_identical(input, original)
+})
+
 test_that("map, traverse, and fold helpers work", {
   expect_equal(map(1:3, function(x) x + 1), list(2, 3, 4))
   expect_equal(traverse(list(a = 1:3, b = 10:12), function(a, b) a + b), list(11, 13, 15))
