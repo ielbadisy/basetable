@@ -47,14 +47,16 @@ Two ways to avoid it:
 
 ## Status
 
-Version 0.5.3 provides a tested in-memory manipulation, exploration, and
+Version 0.5.4 provides a tested in-memory manipulation, exploration, and
 validation toolkit with a compact canonical core. Every public function has
 direct test coverage, the package includes introductory, manipulation,
 exploration, complete-reference, and benchmark vignettes, and the CI matrix
 checks release R on Linux, macOS, and Windows plus oldrel and devel R.
 
-### Highlights in 0.5.3
+### Highlights in 0.5.4
 
+- Accent removal and general transliteration are deterministic across Linux,
+  macOS, and Windows, and the complete PDF reference builds portably in CI.
 - `transform()`, `mutate()`, and `transmute()` resolve ordinary values from
   their true calling function while retaining sequential-expression support.
 - Mixed ascending/descending multi-column ordering is supported by
