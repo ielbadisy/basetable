@@ -63,13 +63,13 @@ checks release R on Linux, macOS, and Windows plus oldrel and devel R.
   `arrange()`, `mutate()`, `transmute()`, `summarise()`/`summarize()`,
   `distinct()`, `slice()`, `relocate()`, `bind_rows()`, `bind_cols()`) so the
   API is consistently base-R-flavored and doesn't mask dplyr. Use
-  `subset()`, `pick()`, `reorder()`, `transform()`, `summaries()`, `move()`,
+  `subset()`, `pick()`, `orderrows()`, `transform()`, `summaries()`, `move()`,
   and `rbindfill()` instead, plus two new base-flavored additions:
   `renamecols()` and `uniquerows()`.
 - `transform()` resolves ordinary values from its true calling function
   while retaining sequential-expression support.
 - Mixed ascending/descending multi-column ordering is supported by
-  `reorder()` and `orderrows()`.
+  `orderrows()`.
 - Core verbs stay on data.table paths and preserve their input, avoiding
   unnecessary data.frame round-trips and duplicate return copies.
 - A scalable benchmark measures runtime and allocated memory at 100,000,
@@ -210,7 +210,7 @@ summarytab(
 | Column dropping | `drop()` | negative column indexing |
 | Column renaming | `renamecols()` | `names<-()` |
 | Transformation | `transform()`, `within()` | base equivalents |
-| Ordering | `reorder()` | `order()` |
+| Ordering | `orderrows()` | `order()` |
 | Unique rows | `uniquerows()` | `unique()` |
 | Aggregation | `aggregate()`, `count()` | `aggregate()`, `table()` |
 | Joining | `merge()` | `merge()` |

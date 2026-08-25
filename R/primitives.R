@@ -347,7 +347,11 @@ samplefrac <- function(data, frac) {
 #' @return `data` sorted by `by`.
 #' @export
 orderrows <- function(data, by, decreasing = FALSE, na.last = TRUE) {
-  reorder(data, by = by, decreasing = decreasing, na.last = na.last)
+  dt <- bt_as_data_table(data)
+  by <- bt_resolve_cols(dt, by)
+  decreasing <- bt_recycle_flag(decreasing, length(by), "decreasing")
+  data.table::setorderv(dt, cols = by, order = ifelse(decreasing, -1L, 1L), na.last = na.last)
+  dt
 }
 
 #' Reverse row order

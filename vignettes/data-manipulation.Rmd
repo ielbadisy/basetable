@@ -21,10 +21,10 @@ work in nested expressions and native R pipelines, always returning a
 mtcars |>
   subset(cyl >= 6, select = c("mpg", "hp", "wt", "cyl")) |>
   transform(power = hp / wt) |>
-  reorder(by = c("cyl", "mpg"), decreasing = c(FALSE, TRUE))
+  orderrows(by = c("cyl", "mpg"), decreasing = c(FALSE, TRUE))
 ```
 
-`reorder()` and `orderrows()` accept one direction per column. This makes a
+`orderrows()` accepts one direction per column. This makes a
 mixed ascending/descending order explicit without a descending-expression
 mini-language.
 

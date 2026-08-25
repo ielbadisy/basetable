@@ -51,11 +51,11 @@ test_that("tolong/towide/transpose reshape a table", {
   expect_equal(dim(t_out), c(2L, 2L))
 })
 
-test_that("map/traverse/fold/reorder work as expected", {
+test_that("map/traverse/fold/orderrows work as expected", {
   expect_equal(map(1:3, function(x) x + 1), list(2, 3, 4))
   expect_equal(traverse(list(a = 1:2, b = 10:11), function(a, b) a + b), list(11, 13))
   expect_equal(foldr(1:4, `+`), 10L)
 
   df <- data.frame(x = c(3, 1, 2))
-  expect_equal(reorder(df, "x")$x, c(1, 2, 3))
+  expect_equal(orderrows(df, "x")$x, c(1, 2, 3))
 })

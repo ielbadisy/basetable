@@ -32,12 +32,12 @@ test_that("merge and key helpers behave consistently", {
   expect_equal(common_names(x, y), "id")
 })
 
-test_that("subset/pick/transform/reorder/renamecols compose into a pipeline", {
+test_that("subset/pick/transform/orderrows/renamecols compose into a pipeline", {
   out <- mtcars |>
     subset(cyl == 6 & mpg > 18) |>
     pick(c("mpg", "cyl", "hp")) |>
     transform(ratio = hp / mpg) |>
-    reorder(by = "ratio", decreasing = TRUE)
+    orderrows(by = "ratio", decreasing = TRUE)
 
   expect_s3_class(out, "data.table")
   expect_true(all(out$cyl == 6))

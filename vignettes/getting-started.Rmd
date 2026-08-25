@@ -25,7 +25,7 @@ Most workflows need only a small set of regular verbs:
 | Keep rows | `subset()` |
 | Keep or remove columns | `pick()`, `drop()` |
 | Create columns | `transform()` |
-| Order rows | `reorder()`, `orderrows()` |
+| Order rows | `orderrows()` |
 | Summarise | `aggregate()`, `summaries()`, `count()` |
 | Join | `merge()`, `antimerge()`, `semimerge()` |
 | Reshape | `tolong()`, `towide()` |

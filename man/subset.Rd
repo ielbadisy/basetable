@@ -1,24 +1,21 @@
 \name{subset}
 \alias{subset}
 \alias{transform}
-\alias{reorder}
 \alias{reshape}
 \title{Core data manipulation operations}
 \description{
 Base-faithful table manipulation helpers built around explicit arguments and
 data.table returns. See \code{\link{aggregate}}, \code{\link{count}},
 \code{\link{drop}}, \code{\link{merge}}, \code{\link{move}},
-\code{\link{pick}}, \code{\link{renamecols}}, \code{\link{split}},
-\code{\link{stack}}, \code{\link{summaries}}, \code{\link{uniquerows}},
-\code{\link{unstack}}, and \code{\link{within}} for the remaining core
-verbs, each documented on its own page.
+\code{\link{orderrows}}, \code{\link{pick}}, \code{\link{renamecols}},
+\code{\link{split}}, \code{\link{stack}}, \code{\link{summaries}},
+\code{\link{uniquerows}}, \code{\link{unstack}}, and \code{\link{within}}
+for the remaining core verbs, each documented on its own page.
 }
 \usage{
 subset(data, subset = NULL, select = NULL, drop = FALSE)
 
 transform(data, ..., .keep = TRUE, by = NULL)
-
-reorder(data, by, decreasing = FALSE, na.last = TRUE)
 
 reshape(data, ..., direction)
 }
@@ -31,7 +28,7 @@ reshape(data, ..., direction)
     \code{x - mean(x)} computed per group) instead of across the whole
     table, so the result still has one row per input row. Use
     \code{\link{summaries}} for one row per group instead.}
-  \item{drop, na.last, .keep, decreasing}{Control flags.}
+  \item{drop, .keep}{Control flags.}
   \item{...}{Additional expressions or arguments passed through to helpers.}
   \item{direction}{Additional operation-specific controls.}
 }

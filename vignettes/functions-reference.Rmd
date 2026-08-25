@@ -122,20 +122,12 @@ be supplied as bare names or character strings.
 mtcars |>
   subset(cyl == 6 & mpg > 18, select = c("mpg", "cyl", "hp")) |>
   transform(ratio = hp / mpg) |>
-  reorder(by = "ratio", decreasing = TRUE)
+  orderrows(by = "ratio", decreasing = TRUE)
 ```
 
 ```{r}
 transform(mtcars, ratio = hp / mpg, .keep = FALSE)
 renamecols(mtcars, horsepower = hp) |> pick(c("horsepower", "mpg"))
-```
-
-## Sorting rows: `reorder()`
-
-`reorder()` sorts a table by one or more columns, ascending by default.
-
-```{r}
-reorder(mtcars, by = c("cyl", "mpg"), decreasing = c(FALSE, TRUE)) |> headtail(3)
 ```
 
 # Aggregation and grouping {#sec-aggregation}
