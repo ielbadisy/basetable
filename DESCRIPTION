@@ -1,6 +1,6 @@
 Package: basetable
 Title: Base R Tables Powered by Data.table
-Version: 0.6.0
+Version: 0.7.0
 Authors@R:
     person("Imad", "El Badisy", email = "elbadisyimad@gmail.com", role = c("aut", "cre"))
 Description: A tabular data manipulation toolkit with a base R-style interface, a data.table execution backend,

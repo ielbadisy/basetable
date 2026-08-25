@@ -1,3 +1,24 @@
+# basetable 0.7.0
+
+## Breaking changes
+
+* Removed `reorder()`. It was an exact duplicate of `orderrows()` (added in
+  0.6.0 to replace the dplyr-named `arrange()`), and it masked
+  `stats::reorder()` the same way the removed dplyr verbs masked dplyr's,
+  which silently broke `ggplot2::aes(reorder(...))` for anyone with
+  `basetable` attached. Use `orderrows()` instead.
+* `split()`'s `keep.by` now defaults to `TRUE` (was `FALSE`), so the
+  grouping column is kept in each piece by default, matching base R's
+  `split()` behavior on data frames. Pass `keep.by = FALSE` for the old
+  default.
+
+## Bug fixes
+
+* `aggregate()` no longer forces `na.rm` onto every `fun`. A custom
+  summary function with no `na.rm` argument (and no `...`) previously
+  errored with "unused argument"; `na.rm` is now only forwarded when
+  `fun` actually accepts it.
+
 # basetable 0.6.0
 
 ## New features
