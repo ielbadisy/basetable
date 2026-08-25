@@ -15,6 +15,17 @@ test_that("subset and transform support nested and pipe style", {
   expect_equal(nested, piped)
 })
 
+test_that("subset supports base-style negative bare-symbol select", {
+  df <- data.frame(a = 1:3, b = 4:6, c = 7:9)
+
+  expect_equal(names(subset(df, select = -a)), c("b", "c"))
+  expect_equal(names(subset(df, select = -c(a, b))), "c")
+  expect_equal(names(subset(df, select = c(a, c))), c("a", "c"))
+
+  keep <- c("b", "c")
+  expect_equal(names(subset(df, select = keep)), keep)
+})
+
 test_that("aggregate and count summarize by groups", {
   agg <- aggregate(mtcars, by = "cyl", value = c("mpg", "hp"), fun = mean)
   expect_true(all(c("cyl", "mpg", "hp") %in% names(agg)))
