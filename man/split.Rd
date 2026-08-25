@@ -2,7 +2,7 @@
 \alias{split}
 \title{Split a table by groups}
 \usage{
-split(data, by, drop = FALSE, keep.by = FALSE)
+split(data, by, drop = FALSE, keep.by = TRUE)
 }
 \arguments{
 \item{data}{A data frame or data table.}
