@@ -9,7 +9,13 @@ aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TR
   }
 
   f <- match.fun(fun)
-  out <- dt[, lapply(.SD, function(x) f(x, ..., na.rm = na.rm)), by = by, .SDcols = value]
+  f_args <- names(formals(args(f)))
+  forward_na_rm <- "na.rm" %in% f_args || "..." %in% f_args
+  out <- if (forward_na_rm) {
+    dt[, lapply(.SD, function(x) f(x, ..., na.rm = na.rm)), by = by, .SDcols = value]
+  } else {
+    dt[, lapply(.SD, function(x) f(x, ...)), by = by, .SDcols = value]
+  }
 
   if (sort && length(by) > 0L) {
     data.table::setorderv(out, by)
