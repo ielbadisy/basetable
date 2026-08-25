@@ -1,3 +1,16 @@
+# basetable 0.7.1
+
+## Bug fixes
+
+* `subset(data, select = -colname)` — negative bare-symbol column selection,
+  a base R `subset()` idiom — errored with "object 'colname' not found"
+  instead of dropping the column. `select` was being force-evaluated as an
+  ordinary argument (via `is.null(select)`/`is.character(select)`) before
+  its NSE form ever got a chance to run, and the column-index mask used to
+  evaluate NSE selections was unnamed. Rewritten to defer evaluation and
+  build a proper named index mask, matching `select`/`subset` and
+  `select = -c(a, b)` style multi-column negative selection too.
+
 # basetable 0.7.0
 
 ## Breaking changes
