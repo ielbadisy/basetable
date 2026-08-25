@@ -13,13 +13,16 @@ subset <- function(data, subset = NULL, select = NULL, drop = FALSE) {
     rows <- rep(TRUE, nrow(dt))
   }
 
-  out <- if (is.null(select)) {
+  select_expr <- substitute(select)
+  out <- if (base::missing(select) || identical(select_expr, quote(NULL))) {
     dt[rows]
-  } else if (is.character(select)) {
-    cols <- bt_resolve_cols(dt, select)
-    dt[rows, cols, with = FALSE]
   } else {
-    sel <- eval(substitute(select), envir = as.list(seq_along(dt)), enclos = as.list(names(dt)))
+    col_idx <- as.list(seq_along(dt))
+    names(col_idx) <- names(dt)
+    sel <- eval(select_expr, envir = col_idx, enclos = parent.frame())
+    if (is.character(sel)) {
+      sel <- bt_resolve_cols(dt, sel)
+    }
     dt[rows, sel, with = FALSE]
   }
 
