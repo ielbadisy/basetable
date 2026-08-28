@@ -61,3 +61,22 @@ test_that("bt_count matches data.table .N", {
   expect_identical(merge(c2, d2, by = c("g", "k"))$n.x,
                    merge(c2, d2, by = c("g", "k"))$n.y)
 })
+
+test_that("bt_distinct and bt_freq", {
+  skip_if_not_installed("data.table")
+  set.seed(4); n <- 1e5L
+  df <- data.frame(g = sample(letters[1:4], n, TRUE), k = sample.int(15L, n, TRUE))
+  p <- tempfile(fileext = ".csv"); data.table::fwrite(df, p)
+  dt <- data.table::as.data.table(df)
+
+  d <- data.table::as.data.table(bt_distinct(p, cols = c("g", "k")))
+  u <- unique(dt[, .(g, k)])
+  expect_equal(nrow(d), nrow(u))
+  expect_equal(nrow(merge(d, u, by = c("g", "k"))), nrow(u))
+
+  f <- data.table::as.data.table(bt_freq(p, by = "g"))
+  ref <- dt[, .(n = .N), keyby = g]
+  expect_equal(f[order(g)]$n, ref$n)
+  expect_equal(sum(f$prop), 1)
+  expect_true(all(diff(f$n) <= 0))   # sorted desc
+})

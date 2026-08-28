@@ -160,6 +160,50 @@ bt_count <- function(file, by, where = NULL, delim = NULL, quote = "\"",
                n_threads = n_threads, as = match.arg(as))
 }
 
+#' Distinct key combinations straight off a delimited file
+#'
+#' One-pass unique combinations of `cols` (like `unique(x, by = cols)` but
+#' keeping only `cols`).
+#'
+#' @inheritParams bt_aggregate
+#' @param cols Columns whose distinct combinations to return.
+#' @return A data.frame (or data.table) of the distinct combinations.
+#' @export
+bt_distinct <- function(file, cols, where = NULL, delim = NULL, quote = "\"",
+                        comment = "", header = TRUE, skip = 0, n_max = Inf,
+                        na = c("NA", ""), n_threads = bt_default_threads(),
+                        as = c("data.frame", "data.table")) {
+  out <- bt_count(file, by = cols, where = where, delim = delim, quote = quote,
+                  comment = comment, header = header, skip = skip, n_max = n_max,
+                  na = na, n_threads = n_threads, as = "data.frame")
+  out[["n"]] <- NULL
+  if (match.arg(as) == "data.table") data.table::setDT(out)
+  out
+}
+
+#' Frequency table straight off a delimited file
+#'
+#' One-pass grouped counts plus proportions.
+#'
+#' @inheritParams bt_aggregate
+#' @param sort Logical; order rows by descending count.
+#' @return A data.frame (or data.table): the `by` columns, `n`, and `prop`.
+#' @export
+bt_freq <- function(file, by, where = NULL, sort = TRUE, delim = NULL,
+                    quote = "\"", comment = "", header = TRUE, skip = 0,
+                    n_max = Inf, na = c("NA", ""),
+                    n_threads = bt_default_threads(),
+                    as = c("data.frame", "data.table")) {
+  out <- bt_count(file, by = by, where = where, delim = delim, quote = quote,
+                  comment = comment, header = header, skip = skip, n_max = n_max,
+                  na = na, n_threads = n_threads, as = "data.frame")
+  out[["prop"]] <- out[["n"]] / sum(out[["n"]])
+  if (isTRUE(sort)) out <- out[order(-out[["n"]]), , drop = FALSE]
+  row.names(out) <- NULL
+  if (match.arg(as) == "data.table") data.table::setDT(out)
+  out
+}
+
 # read header + a small row sample for name resolution and key-type inference
 bt_peek_sample <- function(file, delim_chr, quote, skip, header, comment, n = 200L) {
   con <- file(file, "rt"); on.exit(close(con))
