@@ -1,3 +1,18 @@
+# basetable 0.8.0
+
+## New features
+
+* `btread()` and `btwrite()`: a from-scratch delimited-file reader and
+  writer implemented in C++ (`src/`). The reader memory-maps the file, scans
+  it once for row boundaries with RFC 4180 quoting, guesses column types from
+  a bounded sample, and materialises typed vectors with numeric columns
+  filled by a `std::thread` pool. `btread(lazy = TRUE)` returns integer and
+  double columns as ALTREP vectors that parse their column only on first
+  access, which pairs well with `col_select` for wide files. `btwrite()`
+  formats disjoint row ranges into private buffers in parallel. Supports
+  delimiter sniffing, `col_types`, `col_select`, `na`, `comment`, `skip`,
+  `n_max`, `trim_ws`, and `.gz` input. See `bench/benchmark-io.R`.
+
 # basetable 0.7.1
 
 ## Bug fixes

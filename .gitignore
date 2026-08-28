@@ -2,3 +2,8 @@
 .Rproj.user/
 *.Rcheck/
 *.tar.gz
+
+# compiled objects
+src/*.o
+src/*.so
+src/*.dll

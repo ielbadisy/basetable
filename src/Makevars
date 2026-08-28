@@ -1,0 +1,7 @@
+CXX_STD = CXX17
+
+# The reader and writer parse / format on a std::thread pool.
+# Optimisation level is left to R's default so the build stays portable;
+# set -O3 in your own ~/.R/Makevars if you want the last few percent.
+PKG_CPPFLAGS = -DBT_HAVE_THREADS
+PKG_LIBS = -lpthread
