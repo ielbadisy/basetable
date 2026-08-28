@@ -1080,21 +1080,35 @@ towide <- function(data, names, values, idcols = NULL, fun = NULL, fill = NA) {
   df <- bt_as_data_frame(data)
   idcols <- if (is.null(idcols)) setdiff(names(df), c(names, values)) else bt_resolve_cols(df, idcols)
   bt_resolve_cols(df, c(names, values, idcols))
-  keys <- if (length(idcols)) bt_engine_unique(df, by = idcols, keep_all = FALSE) else data.frame(.bt_row = 1L)
-  levels <- unique(df[[names]])
-  out <- bt_as_data_frame(keys)
-  for (lvl in levels) out[[as.character(lvl)]] <- fill
-  for (i in seq_len(nrow(out))) {
-    idx <- rep(TRUE, nrow(df))
-    for (id in idcols) idx <- idx & df[[id]] == out[[id]][[i]]
-    for (lvl in levels) {
-      hit <- idx & df[[names]] == lvl
-      vals <- df[[values]][hit]
-      out[[as.character(lvl)]][[i]] <- if (length(vals) == 0L) fill else (fun %||% length)(vals)
-    }
+  agg <- fun %||% length
+
+  name_vec <- as.character(df[[names]])
+  value_vec <- df[[values]]
+  lvls <- unique(name_vec)
+
+  if (length(idcols) > 0L) {
+    groups <- bt_engine_groups(df, idcols)
+    gid <- groups$id
+    out <- as.list(bt_as_data_frame(bt_engine_subset(df, rows = groups$first, cols = idcols)))
+    ng <- length(groups$first)
+  } else {
+    gid <- rep(1L, nrow(df))
+    out <- list()
+    ng <- 1L
   }
-  if (!length(idcols)) out$.bt_row <- NULL
-  bt_as_data_table(out)
+
+  for (lvl in lvls) {
+    col <- rep(fill, ng)
+    at <- which(name_vec == lvl)
+    if (length(at) > 0L) {
+      for (g in base::split(at, gid[at])) {
+        col[[gid[g[[1L]]]]] <- agg(value_vec[g])
+      }
+    }
+    out[[as.character(lvl)]] <- col
+  }
+
+  bt_as_data_table(as.data.frame(out, stringsAsFactors = FALSE, check.names = FALSE))
 }
 
 #' Split one column into several

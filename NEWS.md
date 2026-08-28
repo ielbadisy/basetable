@@ -32,6 +32,8 @@
   TRUE)`, and the long-reshape path now union columns, fill gaps with `NA`, and
   promote per-column types (logical < integer < double < character) in one C++
   pass instead of `do.call(rbind, ...)`.
+* `towide()` now groups its id columns through the native grouping engine and
+  buckets rows once, instead of an O(rows x levels x rows) triple loop.
 * Added a native expression kernel (`bt_expr_`): `subset()` now compiles a
   supported predicate (column and scalar references; `+ - * / ^ %%`;
   `< <= > >= == !=`; `& | !`; unary `-`; `ifelse()`) to stack-machine bytecode
