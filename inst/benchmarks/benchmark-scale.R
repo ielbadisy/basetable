@@ -1,120 +1,192 @@
-library(basetable)
-library(bench)
-library(data.table)
+# basetable scale benchmark
+# ---------------------------------------------------------------------------
+# Runtime + allocated memory for the core verbs across data size and key
+# cardinality, versus base R / data.table / dplyr / collapse / polars. Every
+# competitor is optional: an engine whose package is not installed is skipped.
+#
+# Config via environment variables (all comma-separated):
+#   BT_SIZES   row counts              default "1e6,1e7"   (add 1e8 if you have the RAM)
+#   BT_CARD    distinct group keys     default "10,1000,100000"
+#   BT_REPS    repetitions per cell    default "5"
+#   BT_ENGINES limit to these engines  default all installed
+#   BT_OUT     results CSV path        default "bt-bench-results.csv"
+#
+# Run from the package root:
+#   Rscript inst/benchmarks/benchmark-scale.R
+# ---------------------------------------------------------------------------
 
-# Reproducible scale benchmark for runtime and allocated memory. Override the
-# defaults with comma-separated values in BASETABLE_BENCH_SIZES when a smaller
-# development pass is useful.
-parsesizes <- function() {
-  configured <- Sys.getenv("BASETABLE_BENCH_SIZES", "1e5,1e6,1e7")
-  sizes <- as.numeric(strsplit(configured, ",", fixed = TRUE)[[1L]])
-  if (length(sizes) == 0L || any(!is.finite(sizes)) || any(sizes < 1)) {
-    stop("BASETABLE_BENCH_SIZES must contain positive comma-separated numbers.")
-  }
-  as.integer(sizes)
+suppressPackageStartupMessages(library(basetable))
+
+`%||%` <- function(a, b) if (is.null(a) || length(a) == 0L) b else a
+env_nums <- function(key, default) {
+  v <- Sys.getenv(key, default)
+  as.numeric(strsplit(v, ",", fixed = TRUE)[[1L]])
 }
 
-iterationsfor <- function(size) {
-  if (size <= 1e5) 15L else if (size <= 1e6) 7L else 3L
+SIZES <- as.numeric(env_nums("BT_SIZES", "1e6,1e7"))
+CARDS <- as.integer(env_nums("BT_CARD", "10,1000,100000"))
+REPS  <- as.integer(env_nums("BT_REPS", "5"))[1L]
+OUT   <- Sys.getenv("BT_OUT", "bt-bench-results.csv")
+
+has <- function(p) requireNamespace(p, quietly = TRUE)
+ENGINES <- c("basetable", "base", "data.table", "dplyr", "collapse", "polars")
+ENGINES <- ENGINES[ENGINES %in% c("basetable", "base") | vapply(ENGINES, has, logical(1))]
+want <- Sys.getenv("BT_ENGINES", "")
+if (nzchar(want)) ENGINES <- intersect(ENGINES, strsplit(want, ",", fixed = TRUE)[[1L]])
+message("engines: ", paste(ENGINES, collapse = ", "))
+
+# --- timing -----------------------------------------------------------------
+time_cell <- function(fun) {
+  fun()  # warm up / surface errors
+  gc(FALSE)
+  m0 <- sum(gc(FALSE)[, "used"] * c(NA, 8)[2], na.rm = TRUE)
+  base_mem <- sum(gc(FALSE)[, 2] * c(56, 8)[2])
+  t <- replicate(REPS, {
+    g0 <- gc(FALSE)
+    tt <- system.time(res <<- fun())[["elapsed"]]
+    g1 <- gc(FALSE)
+    attr(tt, "mem") <- sum((g1[, 1] - g0[, 1]) * c(56, 0)) + (g1[2, 1] - g0[2, 1]) * 8 * 1024
+    tt
+  }, simplify = FALSE)
+  ms <- median(vapply(t, as.numeric, numeric(1))) * 1000
+  mb <- median(vapply(t, function(z) attr(z, "mem"), numeric(1))) / 1024^2
+  list(ms = ms, mb = max(mb, 0), value = res)
 }
 
-makedata <- function(size, seed = 1L) {
+safe <- function(engine, fun) {
+  if (!engine %in% ENGINES) return(NULL)
+  tryCatch(time_cell(fun), error = function(e) {
+    message(sprintf("  ! %s: %s", engine, conditionMessage(e)))
+    list(ms = NA_real_, mb = NA_real_, value = NULL)
+  })
+}
+
+# --- data -----------------------------------------------------------------
+make_frame <- function(n, k, seed = 1L) {
   set.seed(seed)
-  data.table(
-    id = seq_len(size),
-    group = sample(letters[1:20], size, replace = TRUE),
-    score = sample.int(1000L, size, replace = TRUE),
-    value = rnorm(size)
+  data.frame(
+    id    = seq_len(n),
+    g     = sprintf("k%08d", sample.int(k, n, replace = TRUE)),
+    gi    = sample.int(k, n, replace = TRUE),
+    t     = sort(runif(n) * n),
+    x     = rnorm(n),
+    w     = runif(n),
+    stringsAsFactors = FALSE
   )
 }
 
-summarisebench <- function(result, size, operation) {
-  data.table::as.data.table(result)[, .(
-    rows = size,
-    operation = operation,
-    implementation = as.character(expression),
-    median_ms = as.numeric(median) * 1000,
-    iterations_per_sec = as.numeric(`itr/sec`),
-    memory_mb = as.numeric(mem_alloc) / 1024^2,
-    garbage_collections = n_gc,
-    iterations = n_itr
-  )]
+rows <- list()
+add <- function(...) rows[[length(rows) + 1L]] <<- data.frame(..., stringsAsFactors = FALSE)
+
+for (n in SIZES) {
+  for (k in CARDS) {
+    if (k > n) next
+    message(sprintf("n=%.0e  cardinality=%d", n, k))
+    df <- make_frame(as.integer(n), k)
+    dim_tbl <- df[!duplicated(df$gi), c("gi", "w")][seq_len(min(k, 1000L)), ]
+    # Rolling join inputs are pre-sorted once, outside every timer, so no arm
+    # pays for an ordering step the others skip.
+    df_sorted <- df[order(df$g, df$t), ]
+    y_roll <- df[sample(nrow(df), min(nrow(df), 100000L)), c("g", "t", "x")]
+    y_roll <- y_roll[order(y_roll$g, y_roll$t), ]
+
+    engines_data <- list(base = df, basetable = df)
+    if ("data.table" %in% ENGINES) engines_data$data.table <- data.table::as.data.table(df)
+    if ("dplyr" %in% ENGINES)      engines_data$dplyr <- df
+    if ("collapse" %in% ENGINES)   engines_data$collapse <- df
+    if ("polars" %in% ENGINES)     engines_data$polars <- tryCatch(polars::as_polars_df(df), error = function(e) NULL)
+
+    ops <- list(
+      filter = list(
+        basetable  = function() basetable::subset(df, x > 0.5),
+        base       = function() df[df$x > 0.5, , drop = FALSE],
+        data.table = function() engines_data$data.table[x > 0.5],
+        dplyr      = function() dplyr::filter(df, x > 0.5),
+        collapse   = function() collapse::fsubset(df, x > 0.5),
+        polars     = function() engines_data$polars$filter(polars::pl$col("x") > 0.5)
+      ),
+      sort_str = list(
+        basetable  = function() basetable::orderrows(df, by = c("g", "x")),
+        base       = function() df[order(df$g, df$x), , drop = FALSE],
+        data.table = function() data.table::setorder(data.table::copy(engines_data$data.table), g, x),
+        dplyr      = function() dplyr::arrange(df, g, x),
+        collapse   = function() collapse::roworder(df, g, x),
+        polars     = function() engines_data$polars$sort(c("g", "x"))
+      ),
+      distinct = list(
+        basetable  = function() basetable::uniquerows(df, cols = "g"),
+        base       = function() unique(df[, "g", drop = FALSE]),
+        data.table = function() unique(engines_data$data.table[, list(g)]),
+        dplyr      = function() dplyr::distinct(df, g),
+        collapse   = function() collapse::funique(df["g"]),
+        polars     = function() engines_data$polars$select("g")$unique()
+      ),
+      count_by = list(
+        basetable  = function() basetable::count(df, by = "g", sort = FALSE),
+        base       = function() as.data.frame(table(df$g)),
+        data.table = function() engines_data$data.table[, .N, by = g],
+        dplyr      = function() dplyr::count(df, g),
+        collapse   = function() collapse::fcount(df, g),
+        polars     = function() engines_data$polars$group_by("g")$agg(polars::pl$len())
+      ),
+      sum_by = list(
+        basetable  = function() basetable::aggregate(df, by = "g", value = "x", fun = sum, sort = FALSE),
+        base       = function() rowsum(df$x, df$g),
+        data.table = function() engines_data$data.table[, list(x = sum(x)), by = g],
+        dplyr      = function() dplyr::summarise(dplyr::group_by(df, g), x = sum(x), .groups = "drop"),
+        collapse   = function() collapse::fsum(df$x, df$g),
+        polars     = function() engines_data$polars$group_by("g")$agg(polars::pl$col("x")$sum())
+      ),
+      sd_by = list(
+        basetable  = function() basetable::aggregate(df, by = "g", value = "x", fun = sd, sort = FALSE),
+        base       = function() tapply(df$x, df$g, sd),
+        data.table = function() engines_data$data.table[, list(x = sd(x)), by = g],
+        dplyr      = function() dplyr::summarise(dplyr::group_by(df, g), x = sd(x), .groups = "drop"),
+        collapse   = function() collapse::fsd(df$x, df$g),
+        polars     = function() engines_data$polars$group_by("g")$agg(polars::pl$col("x")$std())
+      ),
+      join_id = list(
+        basetable  = function() basetable::merge(df, dim_tbl, by = "gi"),
+        base       = function() merge(df, dim_tbl, by = "gi"),
+        data.table = function() merge(engines_data$data.table, data.table::as.data.table(dim_tbl), by = "gi"),
+        dplyr      = function() dplyr::inner_join(df, dim_tbl, by = "gi"),
+        collapse   = function() collapse::join(df, dim_tbl, on = "gi", how = "inner", verbose = 0),
+        polars     = function() engines_data$polars$join(polars::as_polars_df(dim_tbl), on = "gi", how = "inner")
+      ),
+      roll_join = list(
+        basetable  = function() basetable::rollingmerge(df_sorted, y_roll, by = c("g", "t"), direction = "backward"),
+        data.table = function() {
+          a <- data.table::as.data.table(df_sorted); b <- data.table::as.data.table(y_roll)
+          data.table::setattr(a, "sorted", c("g", "t")); data.table::setattr(b, "sorted", c("g", "t"))
+          b[a, roll = TRUE, on = c("g", "t")]
+        }
+      )
+    )
+
+    for (op in names(ops)) {
+      arms <- ops[[op]]
+      for (eng in names(arms)) {
+        r <- safe(eng, arms[[eng]])
+        if (is.null(r)) next
+        add(rows = n, cardinality = k, operation = op, engine = eng,
+            median_ms = round(r$ms, 3), memory_mb = round(r$mb, 2))
+      }
+    }
+  }
 }
 
-markscale <- function(data, size, iterations) {
-  subsetresult <- bench::mark(
-    basetable = basetable::subset(data, value > 0),
-    data_table = data[value > 0],
-    iterations = iterations,
-    check = FALSE,
-    memory = TRUE
-  )
+res <- do.call(rbind, rows)
+write.csv(res, OUT, row.names = FALSE)
+message("wrote ", OUT, " (", nrow(res), " rows)")
 
-  transformresult <- bench::mark(
-    basetable = basetable::transform(data, adjusted = value * 2),
-    data_table = {
-      out <- data.table::copy(data)
-      out[, adjusted := value * 2]
-    },
-    iterations = iterations,
-    check = FALSE,
-    memory = TRUE
-  )
-
-  countresult <- bench::mark(
-    basetable = basetable::count(data, by = "group"),
-    data_table = data[, .N, by = group],
-    iterations = iterations,
-    check = FALSE,
-    memory = TRUE
-  )
-
-  orderresult <- bench::mark(
-    basetable = basetable::orderrows(
-      data,
-      by = c("group", "score"),
-      decreasing = c(FALSE, TRUE)
-    ),
-    data_table = {
-      out <- data.table::copy(data)
-      data.table::setorderv(out, c("group", "score"), c(1L, -1L))
-    },
-    iterations = iterations,
-    check = FALSE,
-    memory = TRUE
-  )
-
-  rbindlist(list(
-    summarisebench(subsetresult, size, "subset"),
-    summarisebench(transformresult, size, "transform"),
-    summarisebench(countresult, size, "count"),
-    summarisebench(orderresult, size, "orderrows")
-  ))
-}
-
-sizes <- parsesizes()
-results <- vector("list", length(sizes))
-
-for (i in seq_along(sizes)) {
-  size <- sizes[[i]]
-  message("Benchmarking ", format(size, big.mark = ","), " rows...")
-  data <- makedata(size)
-  results[[i]] <- markscale(data, size, iterationsfor(size))
-  rm(data)
-  gc()
-}
-
-results <- rbindlist(results)
-results[, `:=`(
-  time_overhead = median_ms / median_ms[implementation == "data_table"],
-  memory_overhead = memory_mb / memory_mb[implementation == "data_table"]
-), by = .(rows, operation)]
-setorder(results, rows, operation, implementation)
-
-output <- Sys.getenv("BASETABLE_BENCH_OUTPUT")
-if (nzchar(output)) {
-  data.table::fwrite(results, output)
-  message("Wrote ", output)
-} else {
-  print(results)
+# --- summary: ratio to data.table where present ---------------------------
+if (all(c("engine", "median_ms") %in% names(res))) {
+  w <- reshape(res[c("rows", "cardinality", "operation", "engine", "median_ms")],
+               idvar = c("rows", "cardinality", "operation"),
+               timevar = "engine", direction = "wide")
+  names(w) <- sub("^median_ms\\.", "", names(w))
+  if ("data.table" %in% names(w) && "basetable" %in% names(w)) {
+    w$bt_vs_dt <- round(w$basetable / w$`data.table`, 2)
+  }
+  print(w, row.names = FALSE)
 }

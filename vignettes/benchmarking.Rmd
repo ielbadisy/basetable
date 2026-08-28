@@ -158,7 +158,7 @@ knitr::kable(
 
 A value near 1.00 in the "Relative time vs basetable" column means the other
 implementation runs at roughly the same speed as basetable for that workload.
-The standalone `inst/benchmarks/benchmark-competitors.R` harness runs the same
+The standalone `inst/benchmarks/benchmark-scale.R` harness runs the same
 comparison at larger sizes.
 
 ## Absolute time
