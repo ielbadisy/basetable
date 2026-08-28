@@ -34,6 +34,15 @@
   pass instead of `do.call(rbind, ...)`.
 * `towide()` now groups its id columns through the native grouping engine and
   buckets rows once, instead of an O(rows x levels x rows) triple loop.
+* Replaced the byte-string composite key used by grouping, distinct, duplicate
+  detection and every join with a fixed-width integer key codec: numeric
+  columns fold into one value domain, character and factor columns are
+  dictionary encoded (interned once, matched by label so the two interoperate),
+  and joins share one dictionary across build and probe. A single character or
+  factor grouping column now takes a dedicated dense path. On the package
+  benchmark this cut grouped `aggregate()` from ~0.33x to ~1.1x of `data.table`
+  and grouped `count()` from ~0.22x to ~2x, with unchanged results and
+  near-zero allocation.
 * Added a native expression kernel (`bt_expr_`): `subset()` now compiles a
   supported predicate (column and scalar references; `+ - * / ^ %%`;
   `< <= > >= == !=`; `& | !`; unary `-`; `ifelse()`) to stack-machine bytecode

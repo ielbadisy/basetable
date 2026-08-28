@@ -12,6 +12,10 @@ base-style argument handling and NSE until expression compilation exists.
 - Native distinct and duplicate masks for `uniquerows()`, `duplicaterows()`,
   and `removeduplicates()`, including dense integer/logical fast paths.
 - Native grouped counts for `count()`.
+- Integer key codec for grouping / distinct / duplicates / joins: numeric
+  columns folded into one domain, character and factor dictionary encoded and
+  matched by label, joins sharing one dictionary across build and probe; a
+  single character/factor group column has a dedicated dense path.
 - Native in-memory grouped reducers for `aggregate()` when `fun` is `sum`,
   `mean`, `min`, `max`, `var`, `sd`, `"n"`, or `"length"`.
 - Native semi/anti membership masks for `semimerge()` and `antimerge()`.
@@ -34,14 +38,12 @@ base-style argument handling and NSE until expression compilation exists.
 
 ## Next engine tracks
 
-- Replace remaining serialized composite keys with typed composite key tables
-  that compare raw int/double/string/factor slots directly.
-- Add dictionary encoding for character columns so grouping, joins, distinct,
-  and sorting can operate on integer codes.
-- Replace the current hash-probe join kernels (string-serialised composite
-  keys, O(build + probe) with per-key match lists) with sorted-merge and
-  dictionary-encoded variants so range/non-equi joins stop scanning full key
-  buckets and rolling joins use binary search.
+- Extend the key codec to `orderrows()` so sorting can compare integer codes
+  instead of `strcmp` for character columns.
+- Range / non-equi joins still scan a whole equi-key bucket per x row, and
+  rolling joins scan the bucket linearly; add sorted-merge / binary-search
+  variants on top of the integer key codec.
+- Parallelise the dense grouping and hash-aggregation passes.
 - Extend the expression kernel to `transform()`: needs integer-result
   preservation (int op int stays int) and a grouped variant so
   `transform(by =)` stops looping groups in R.

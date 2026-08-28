@@ -252,50 +252,6 @@ SEXP key_str_or_coerce(SEXP col, R_xlen_t i) {
   }
 }
 
-void append_value_key(std::string& key, SEXP col, R_xlen_t i) {
-  if (Rf_isFactor(col)) {
-    SEXP levels = Rf_getAttrib(col, R_LevelsSymbol);
-    int code = INTEGER(col)[i];
-    key.push_back('S');
-    key.push_back(':');
-    if (code == NA_INTEGER || code < 1 || code > Rf_length(levels)) {
-      key.append("<NA>");
-    } else {
-      const char* p = CHAR(STRING_ELT(levels, code - 1));
-      key.append(p, std::strlen(p));
-    }
-    key.push_back('\037');
-    return;
-  }
-  switch (TYPEOF(col)) {
-    case LGLSXP:
-    case INTSXP:
-    case REALSXP: {
-      int kind = 0;
-      double v = key_num(col, i, kind);
-      key.push_back('N');
-      key.push_back(':');
-      key.push_back((char)kind);
-      if (kind == 0) key.append(reinterpret_cast<const char*>(&v), sizeof(double));
-      break;
-    }
-    case STRSXP: {
-      SEXP s = STRING_ELT(col, i);
-      key.push_back('S');
-      key.push_back(':');
-      if (s == NA_STRING) key.append("<NA>");
-      else {
-        const char* p = CHAR(s);
-        key.append(p, std::strlen(p));
-      }
-      break;
-    }
-    default:
-      Rf_error("basetable: unsupported key column type '%s'", Rf_type2char(TYPEOF(col)));
-  }
-  key.push_back('\037');
-}
-
 bool parse_agg_fun(SEXP s_fun, AggFun& fun) {
   if (TYPEOF(s_fun) != STRSXP || Rf_xlength(s_fun) != 1) return false;
   const char* f = CHAR(STRING_ELT(s_fun, 0));
@@ -391,11 +347,163 @@ void agg_update(AggState& s, AggFun fun, double x) {
   }
 }
 
-std::string row_key(SEXP df, const std::vector<int>& cols, R_xlen_t i) {
-  std::string key;
-  key.reserve(cols.size() * 16);
-  for (int j : cols) append_value_key(key, VECTOR_ELT(df, j), i);
-  return key;
+
+// ---- composite key codec ----------------------------------------------------
+//
+// Encodes the key columns of a row into a small fixed-width integer tuple so
+// grouping and joins use a plain hash map instead of hashing a fresh byte
+// string per row. Numeric columns (logical/integer/double) collapse into one
+// value domain; string and factor columns are dictionary encoded. A codec can
+// be reused across two frames (join build vs probe): after freeze(), a string
+// not seen on the build side gets a unique negative code that never matches.
+
+using KeyBuf = std::vector<int64_t>;
+
+struct KeyHash {
+  size_t operator()(const KeyBuf& k) const noexcept {
+    size_t h = 1469598103934665603ULL;
+    for (int64_t v : k) {
+      h ^= (size_t)(uint64_t)v;
+      h *= 1099511628211ULL;
+      h ^= h >> 29;
+    }
+    return h;
+  }
+};
+
+inline int64_t real_slot(double d) {
+  if (ISNA(d)) return (int64_t)0x7ff00000000007a2LL;
+  if (std::isnan(d)) return (int64_t)0x7ff00000000007a3LL;
+  if (d == 0.0) d = 0.0;  // fold -0.0
+  int64_t bits;
+  std::memcpy(&bits, &d, sizeof(bits));
+  return bits;
+}
+
+struct KeyCodec {
+  // per slot: false = numeric domain (lgl/int/real), true = string domain
+  // (character or factor, matched by label so the two interoperate)
+  std::vector<char> is_str;
+  std::vector<std::unordered_map<const void*, int>> dict;
+  bool frozen = false;
+  int miss_code = -2;
+
+  static bool str_kind(SEXP col) {
+    return Rf_isFactor(col) || TYPEOF(col) == STRSXP;
+  }
+  static bool num_kind(SEXP col) {
+    return !str_kind(col) &&
+      (TYPEOF(col) == LGLSXP || TYPEOF(col) == INTSXP || TYPEOF(col) == REALSXP);
+  }
+
+  KeyCodec(SEXP df, const std::vector<int>& cols) {
+    is_str.resize(cols.size());
+    dict.resize(cols.size());
+    for (size_t c = 0; c < cols.size(); ++c) {
+      SEXP col = VECTOR_ELT(df, cols[c]);
+      if (str_kind(col)) is_str[c] = 1;
+      else if (num_kind(col)) is_str[c] = 0;
+      else Rf_error("basetable: unsupported key column type '%s'", Rf_type2char(TYPEOF(col)));
+    }
+  }
+
+  // Widen the domain of each slot so a second frame's columns encode the same
+  // way (a string column on either side makes the slot a string slot).
+  void unify(SEXP df, const std::vector<int>& cols) {
+    for (size_t c = 0; c < cols.size() && c < is_str.size(); ++c) {
+      if (str_kind(VECTOR_ELT(df, cols[c]))) is_str[c] = 1;
+    }
+  }
+
+  void freeze() { frozen = true; }
+
+  int64_t str_slot(size_t c, SEXP s) {
+    if (s == NA_STRING) return -1;
+    const void* p = (const void*)s;
+    auto& d = dict[c];
+    auto it = d.find(p);
+    if (it != d.end()) return it->second;
+    if (frozen) return (int64_t)(miss_code--);
+    int code = (int)d.size();
+    d.emplace(p, code);
+    return code;
+  }
+
+  void encode(SEXP df, const std::vector<int>& cols, R_xlen_t i, KeyBuf& out) {
+    out.resize(cols.size());
+    for (size_t c = 0; c < cols.size(); ++c) {
+      SEXP col = VECTOR_ELT(df, cols[c]);
+      if (!is_str[c]) {
+        if (!num_kind(col)) { out[c] = (int64_t)(miss_code--); continue; }
+        int kd = 0;
+        double v = key_num(col, i, kd);
+        out[c] = kd == 0 ? real_slot(v) : (kd == 2 ? real_slot(R_NaN) : INT64_MIN);
+        continue;
+      }
+      SEXP s;
+      if (Rf_isFactor(col)) {
+        SEXP lv = Rf_getAttrib(col, R_LevelsSymbol);
+        int code = INTEGER(col)[i];
+        s = (code == NA_INTEGER || code < 1 || code > Rf_length(lv))
+          ? NA_STRING : STRING_ELT(lv, code - 1);
+      } else if (TYPEOF(col) == STRSXP) {
+        s = STRING_ELT(col, i);
+      } else {
+        out[c] = (int64_t)(miss_code--);
+        continue;
+      }
+      out[c] = str_slot(c, s);
+    }
+  }
+};
+
+// Single-column grouping: per-row 0-based group code plus the first row index
+// per group, in first-seen order. Strings hash by interned CHARSXP address and
+// factors by level code, so neither builds a byte key. Returns false for
+// column types the dense integer path in *_single already covers.
+bool group_single(SEXP col, R_xlen_t nrow, std::vector<int>& codes, std::vector<R_xlen_t>& first) {
+  codes.resize((size_t)nrow);
+  if (Rf_isFactor(col)) {
+    std::unordered_map<int, int> d;
+    d.reserve((size_t)nrow);
+    for (R_xlen_t i = 0; i < nrow; ++i) {
+      int lc = INTEGER(col)[i];
+      auto it = d.find(lc);
+      int c;
+      if (it == d.end()) { c = (int)first.size(); d.emplace(lc, c); first.push_back(i); }
+      else c = it->second;
+      codes[(size_t)i] = c;
+    }
+    return true;
+  }
+  if (TYPEOF(col) == STRSXP) {
+    std::unordered_map<const void*, int> d;
+    d.reserve((size_t)nrow);
+    for (R_xlen_t i = 0; i < nrow; ++i) {
+      const void* s = (const void*)STRING_ELT(col, i);
+      auto it = d.find(s);
+      int c;
+      if (it == d.end()) { c = (int)first.size(); d.emplace(s, c); first.push_back(i); }
+      else c = it->second;
+      codes[(size_t)i] = c;
+    }
+    return true;
+  }
+  if (TYPEOF(col) == REALSXP) {
+    std::unordered_map<int64_t, int> d;
+    d.reserve((size_t)nrow);
+    const double* p = REAL(col);
+    for (R_xlen_t i = 0; i < nrow; ++i) {
+      int64_t s = real_slot(p[i]);
+      auto it = d.find(s);
+      int c;
+      if (it == d.end()) { c = (int)first.size(); d.emplace(s, c); first.push_back(i); }
+      else c = it->second;
+      codes[(size_t)i] = c;
+    }
+    return true;
+  }
+  return false;
 }
 
 bool unique_int_dense(const int* p, R_xlen_t nrow, std::vector<R_xlen_t>& rows) {
@@ -1099,13 +1207,20 @@ extern "C" SEXP bt_unique_(SEXP df, SEXP s_by, SEXP s_keep_all) {
   std::vector<int> by = col_index(s_by, f.ncol);
   bool keep_all = Rf_asLogical(s_keep_all) == TRUE;
   std::vector<R_xlen_t> rows;
-  if (by.size() != 1 || !unique_single(VECTOR_ELT(df, by[0]), f.nrow, rows)) {
-    std::unordered_set<std::string> seen;
+  std::vector<int> codes;
+  if (by.size() == 1 && unique_single(VECTOR_ELT(df, by[0]), f.nrow, rows)) {
+    // dense integer fast path filled `rows`
+  } else if (by.size() == 1 && group_single(VECTOR_ELT(df, by[0]), f.nrow, codes, rows)) {
+    // group_single filled `rows` with the first index per distinct value
+  } else {
+    KeyCodec codec(df, by);
+    std::unordered_set<KeyBuf, KeyHash> seen;
     seen.reserve((size_t)f.nrow);
     rows.reserve((size_t)f.nrow);
+    KeyBuf buf;
     for (R_xlen_t i = 0; i < f.nrow; ++i) {
-      std::string key = row_key(df, by, i);
-      if (seen.emplace(std::move(key)).second) rows.push_back(i);
+      codec.encode(df, by, i, buf);
+      if (seen.insert(buf).second) rows.push_back(i);
     }
   }
   std::vector<int> cols = keep_all ? col_index(R_NilValue, f.ncol) : by;
@@ -1120,17 +1235,19 @@ extern "C" SEXP bt_duplicated_(SEXP df, SEXP s_by, SEXP s_from_last) {
   if (by.size() != 1 || !duplicated_single(VECTOR_ELT(df, by[0]), f.nrow, from_last, out)) {
     int* p = LOGICAL(out);
     std::fill(p, p + f.nrow, FALSE);
-    std::unordered_set<std::string> seen;
+    KeyCodec codec(df, by);
+    std::unordered_set<KeyBuf, KeyHash> seen;
     seen.reserve((size_t)f.nrow);
+    KeyBuf buf;
     if (from_last) {
       for (R_xlen_t i = f.nrow; i-- > 0;) {
-        std::string key = row_key(df, by, i);
-        p[i] = seen.emplace(std::move(key)).second ? FALSE : TRUE;
+        codec.encode(df, by, i, buf);
+        p[i] = seen.insert(buf).second ? FALSE : TRUE;
       }
     } else {
       for (R_xlen_t i = 0; i < f.nrow; ++i) {
-        std::string key = row_key(df, by, i);
-        p[i] = seen.emplace(std::move(key)).second ? FALSE : TRUE;
+        codec.encode(df, by, i, buf);
+        p[i] = seen.insert(buf).second ? FALSE : TRUE;
       }
     }
   }
@@ -1145,20 +1262,28 @@ extern "C" SEXP bt_count_(SEXP df, SEXP s_by, SEXP s_name) {
     SEXP out = R_NilValue;
     if (count_single(df, by[0], f.nrow, s_name, &out)) return out;
   }
-  std::unordered_map<std::string, int> pos;
-  pos.reserve((size_t)f.nrow);
   std::vector<R_xlen_t> first;
   std::vector<int> counts;
-  for (R_xlen_t i = 0; i < f.nrow; ++i) {
-    std::string key = row_key(df, by, i);
-    auto it = pos.find(key);
-    if (it == pos.end()) {
-      int p = (int)first.size();
-      pos.emplace(std::move(key), p);
-      first.push_back(i);
-      counts.push_back(1);
-    } else {
-      counts[(size_t)it->second]++;
+  std::vector<int> codes;
+  if (by.size() == 1 && group_single(VECTOR_ELT(df, by[0]), f.nrow, codes, first)) {
+    counts.assign(first.size(), 0);
+    for (R_xlen_t i = 0; i < f.nrow; ++i) counts[(size_t)codes[(size_t)i]]++;
+  } else {
+    KeyCodec codec(df, by);
+    std::unordered_map<KeyBuf, int, KeyHash> pos;
+    pos.reserve((size_t)f.nrow);
+    KeyBuf buf;
+    for (R_xlen_t i = 0; i < f.nrow; ++i) {
+      codec.encode(df, by, i, buf);
+      auto it = pos.find(buf);
+      if (it == pos.end()) {
+        int p = (int)first.size();
+        pos.emplace(buf, p);
+        first.push_back(i);
+        counts.push_back(1);
+      } else {
+        counts[(size_t)it->second]++;
+      }
     }
   }
   SEXP out = PROTECT(build_frame(df, first, by));
@@ -1195,23 +1320,34 @@ extern "C" SEXP bt_group_agg_(SEXP df, SEXP s_by, SEXP s_value, SEXP s_fun, SEXP
     if (group_agg_int_single(df, by[0], val, fun, na_rm, &fast)) return fast;
   }
 
-  std::unordered_map<std::string, int> pos;
-  pos.reserve((size_t)f.nrow);
   std::vector<R_xlen_t> first;
   std::vector<AggState> state;
   const int nv = (int)val.size();
 
+  std::vector<int> codes;
+  bool have_codes = by.size() == 1 && group_single(VECTOR_ELT(df, by[0]), f.nrow, codes, first);
+  if (have_codes) state.resize(first.size() * (size_t)nv);
+
+  KeyCodec codec(df, by);
+  std::unordered_map<KeyBuf, int, KeyHash> pos;
+  KeyBuf buf;
+  if (!have_codes) pos.reserve((size_t)f.nrow);
+
   for (R_xlen_t i = 0; i < f.nrow; ++i) {
-    std::string key = row_key(df, by, i);
-    auto it = pos.find(key);
     int g;
-    if (it == pos.end()) {
-      g = (int)first.size();
-      pos.emplace(std::move(key), g);
-      first.push_back(i);
-      state.resize(state.size() + nv);
+    if (have_codes) {
+      g = codes[(size_t)i];
     } else {
-      g = it->second;
+      codec.encode(df, by, i, buf);
+      auto it = pos.find(buf);
+      if (it == pos.end()) {
+        g = (int)first.size();
+        pos.emplace(buf, g);
+        first.push_back(i);
+        state.resize(state.size() + nv);
+      } else {
+        g = it->second;
+      }
     }
 
     for (int j = 0; j < nv; ++j) {
@@ -1267,20 +1403,26 @@ extern "C" SEXP bt_match_mask_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by) {
   if (x_by.size() != y_by.size())
     Rf_error("basetable: join key length mismatch");
 
-  std::unordered_set<std::string> keys;
-  keys.reserve((size_t)yf.nrow);
-  for (R_xlen_t i = 0; i < yf.nrow; ++i) {
-    keys.emplace(row_key(y, y_by, i));
-  }
-
   SEXP out = PROTECT(Rf_allocVector(LGLSXP, xf.nrow));
   if (x_by.size() == 1 && match_mask_int_single(x, y, x_by[0], y_by[0], out)) {
     UNPROTECT(1);
     return out;
   }
+
+  KeyCodec codec(y, y_by);
+  codec.unify(x, x_by);
+  std::unordered_set<KeyBuf, KeyHash> keys;
+  keys.reserve((size_t)yf.nrow);
+  KeyBuf buf;
+  for (R_xlen_t j = 0; j < yf.nrow; ++j) {
+    codec.encode(y, y_by, j, buf);
+    keys.insert(buf);
+  }
+  codec.freeze();
   int* p = LOGICAL(out);
   for (R_xlen_t i = 0; i < xf.nrow; ++i) {
-    p[i] = keys.find(row_key(x, x_by, i)) == keys.end() ? FALSE : TRUE;
+    codec.encode(x, x_by, i, buf);
+    p[i] = keys.find(buf) == keys.end() ? FALSE : TRUE;
   }
   UNPROTECT(1);
   return out;
@@ -1290,22 +1432,30 @@ extern "C" SEXP bt_group_id_(SEXP df, SEXP s_by) {
   Frame f = frame_from(df);
   std::vector<int> by = col_index(s_by, f.ncol);
   SEXP ids = PROTECT(Rf_allocVector(INTSXP, f.nrow));
-  std::unordered_map<std::string, int> pos;
-  pos.reserve((size_t)f.nrow);
   std::vector<R_xlen_t> first;
+  std::vector<int> codes;
 
-  for (R_xlen_t i = 0; i < f.nrow; ++i) {
-    std::string key = row_key(df, by, i);
-    auto it = pos.find(key);
-    int g;
-    if (it == pos.end()) {
-      g = (int)first.size() + 1;
-      pos.emplace(std::move(key), g);
-      first.push_back(i + 1);
-    } else {
-      g = it->second;
+  if (by.size() == 1 && group_single(VECTOR_ELT(df, by[0]), f.nrow, codes, first)) {
+    for (R_xlen_t i = 0; i < f.nrow; ++i) INTEGER(ids)[i] = codes[(size_t)i] + 1;
+    for (size_t g = 0; g < first.size(); ++g) first[g] += 1;  // to 1-based row index
+  } else {
+    KeyCodec codec(df, by);
+    std::unordered_map<KeyBuf, int, KeyHash> pos;
+    pos.reserve((size_t)f.nrow);
+    KeyBuf buf;
+    for (R_xlen_t i = 0; i < f.nrow; ++i) {
+      codec.encode(df, by, i, buf);
+      auto it = pos.find(buf);
+      int g;
+      if (it == pos.end()) {
+        g = (int)first.size() + 1;
+        pos.emplace(buf, g);
+        first.push_back(i + 1);
+      } else {
+        g = it->second;
+      }
+      INTEGER(ids)[i] = g;
     }
-    INTEGER(ids)[i] = g;
   }
 
   SEXP firsts = PROTECT(Rf_allocVector(INTSXP, (R_xlen_t)first.size()));
@@ -1348,15 +1498,21 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
   for (int j = 0; j < yf.ncol; ++j) if (!y_is_key[(size_t)j]) y_extra.push_back(j);
 
   bool cross = x_by.empty();
-  std::unordered_map<std::string, std::vector<R_xlen_t>> ymap;
+  std::unordered_map<KeyBuf, std::vector<R_xlen_t>, KeyHash> ymap;
   std::vector<R_xlen_t> all_y_rows;
+  KeyCodec codec(y, y_by);
+  KeyBuf buf;
   if (cross) {
     all_y_rows.reserve((size_t)yf.nrow);
     for (R_xlen_t j = 0; j < yf.nrow; ++j) all_y_rows.push_back(j);
   } else {
+    codec.unify(x, x_by);
     ymap.reserve((size_t)yf.nrow);
-    for (R_xlen_t j = 0; j < yf.nrow; ++j)
-      ymap[row_key(y, y_by, j)].push_back(j);
+    for (R_xlen_t j = 0; j < yf.nrow; ++j) {
+      codec.encode(y, y_by, j, buf);
+      ymap[buf].push_back(j);
+    }
+    codec.freeze();
   }
 
   std::vector<R_xlen_t> xrows, yrows;
@@ -1366,7 +1522,8 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
     if (cross) {
       matches = &all_y_rows;
     } else {
-      auto it = ymap.find(row_key(x, x_by, i));
+      codec.encode(x, x_by, i, buf);
+      auto it = ymap.find(buf);
       if (it != ymap.end()) matches = &it->second;
     }
     if (matches && !matches->empty()) {
@@ -1442,15 +1599,22 @@ extern "C" SEXP bt_first_match_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by) {
   if (x_by.size() != y_by.size())
     Rf_error("basetable: join key length mismatch");
 
-  std::unordered_map<std::string, int> first;
+  KeyCodec codec(y, y_by);
+  codec.unify(x, x_by);
+  std::unordered_map<KeyBuf, int, KeyHash> first;
   first.reserve((size_t)yf.nrow);
-  for (R_xlen_t j = 0; j < yf.nrow; ++j)
-    first.emplace(row_key(y, y_by, j), (int)(j + 1));
+  KeyBuf buf;
+  for (R_xlen_t j = 0; j < yf.nrow; ++j) {
+    codec.encode(y, y_by, j, buf);
+    first.emplace(buf, (int)(j + 1));
+  }
+  codec.freeze();
 
   SEXP out = PROTECT(Rf_allocVector(INTSXP, xf.nrow));
   int* p = INTEGER(out);
   for (R_xlen_t i = 0; i < xf.nrow; ++i) {
-    auto it = first.find(row_key(x, x_by, i));
+    codec.encode(x, x_by, i, buf);
+    auto it = first.find(buf);
     p[i] = it == first.end() ? NA_INTEGER : it->second;
   }
   UNPROTECT(1);
@@ -1479,12 +1643,18 @@ extern "C" SEXP bt_range_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
   bool all_x = Rf_asLogical(s_all_x) == TRUE;
 
   bool has_keys = !x_by.empty();
-  std::unordered_map<std::string, std::vector<R_xlen_t>> ymap;
+  std::unordered_map<KeyBuf, std::vector<R_xlen_t>, KeyHash> ymap;
   std::vector<R_xlen_t> all_y_rows;
+  KeyCodec codec(y, y_by);
+  KeyBuf buf;
   if (has_keys) {
+    codec.unify(x, x_by);
     ymap.reserve((size_t)yf.nrow);
-    for (R_xlen_t j = 0; j < yf.nrow; ++j)
-      ymap[row_key(y, y_by, j)].push_back(j);
+    for (R_xlen_t j = 0; j < yf.nrow; ++j) {
+      codec.encode(y, y_by, j, buf);
+      ymap[buf].push_back(j);
+    }
+    codec.freeze();
   } else {
     all_y_rows.reserve((size_t)yf.nrow);
     for (R_xlen_t j = 0; j < yf.nrow; ++j) all_y_rows.push_back(j);
@@ -1494,7 +1664,8 @@ extern "C" SEXP bt_range_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
   for (R_xlen_t i = 0; i < xf.nrow; ++i) {
     const std::vector<R_xlen_t>* bucket = nullptr;
     if (has_keys) {
-      auto it = ymap.find(row_key(x, x_by, i));
+      codec.encode(x, x_by, i, buf);
+      auto it = ymap.find(buf);
       if (it != ymap.end()) bucket = &it->second;
     } else {
       bucket = &all_y_rows;
@@ -1559,12 +1730,18 @@ extern "C" SEXP bt_rolling_join_(SEXP x, SEXP y, SEXP s_x_exact, SEXP s_y_exact,
   std::vector<int> y_cols = col_index(s_y_cols, yf.ncol);
 
   bool has_exact = !xe.empty();
-  std::unordered_map<std::string, std::vector<R_xlen_t>> ymap;
+  std::unordered_map<KeyBuf, std::vector<R_xlen_t>, KeyHash> ymap;
   std::vector<R_xlen_t> all_y_rows;
+  KeyCodec codec(y, ye);
+  KeyBuf buf;
   if (has_exact) {
+    codec.unify(x, xe);
     ymap.reserve((size_t)yf.nrow);
-    for (R_xlen_t j = 0; j < yf.nrow; ++j)
-      ymap[row_key(y, ye, j)].push_back(j);
+    for (R_xlen_t j = 0; j < yf.nrow; ++j) {
+      codec.encode(y, ye, j, buf);
+      ymap[buf].push_back(j);
+    }
+    codec.freeze();
   } else {
     all_y_rows.reserve((size_t)yf.nrow);
     for (R_xlen_t j = 0; j < yf.nrow; ++j) all_y_rows.push_back(j);
@@ -1576,7 +1753,8 @@ extern "C" SEXP bt_rolling_join_(SEXP x, SEXP y, SEXP s_x_exact, SEXP s_y_exact,
   for (R_xlen_t i = 0; i < xf.nrow; ++i) {
     const std::vector<R_xlen_t>* bucket = nullptr;
     if (has_exact) {
-      auto it = ymap.find(row_key(x, xe, i));
+      codec.encode(x, xe, i, buf);
+      auto it = ymap.find(buf);
       if (it != ymap.end()) bucket = &it->second;
     } else {
       bucket = &all_y_rows;

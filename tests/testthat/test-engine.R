@@ -151,3 +151,34 @@ test_that("native row-bind unions columns, fills gaps and promotes types", {
   expect_equal(tagged$src, c("one", "two"))
   expect_equal(names(tagged)[[1]], "src")
 })
+
+test_that("composite key codec groups multi-column and mixed-type keys", {
+  df <- data.frame(
+    g1 = c("a", "a", "b", "a", "b"),
+    g2 = c(1L, 2L, 1L, 1L, 1L),
+    g3 = factor(c("x", "x", "y", "x", "y")),
+    v = c(10, 20, 30, 40, 50),
+    stringsAsFactors = FALSE
+  )
+
+  cnt <- count(df, by = c("g1", "g2", "g3"), sort = FALSE)
+  expect_equal(nrow(cnt), 3L)
+  expect_equal(cnt$n[cnt$g1 == "a" & cnt$g2 == 1L], 2L)
+
+  agg <- aggregate(df, by = c("g1", "g3"), value = "v", fun = sum, sort = TRUE)
+  expect_equal(agg$g1, c("a", "b"))
+  expect_equal(agg$v, c(10 + 20 + 40, 30 + 50))
+
+  u <- uniquerows(df, cols = c("g1", "g3"))
+  expect_equal(nrow(u), 2L)
+
+  dbl <- duplicaterows(df[c("g1", "g3")])
+  expect_equal(dbl$g1, c("a", "a", "b", "a", "b"))
+})
+
+test_that("grouping a single numeric double key works through the codec", {
+  df <- data.frame(k = c(1.5, 2.5, 1.5, 2.5, 1.5), v = 1:5)
+  agg <- aggregate(df, by = "k", value = "v", fun = sum, sort = TRUE)
+  expect_equal(agg$k, c(1.5, 2.5))
+  expect_equal(agg$v, c(1 + 3 + 5, 2 + 4))
+})
