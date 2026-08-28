@@ -17,7 +17,7 @@ merge(x, y, by = NULL, all = FALSE, all.x = all, all.y = all,
 \item{suffixes}{Suffixes used for overlapping column names.}
 }
 \value{
-A data.table containing the merged rows.
+A basetable containing the merged rows.
 }
 \description{
 Merge two tables using shared keys.

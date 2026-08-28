@@ -14,7 +14,7 @@ count(data, by, sort = TRUE, name = "n")
 \item{name}{Name of the count column.}
 }
 \value{
-A data.table with one row per group.
+A basetable with one row per group.
 }
 \description{
 Count rows in a table by one or more grouping columns.

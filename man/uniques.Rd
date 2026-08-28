@@ -7,7 +7,7 @@
 uniques(data)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 }
 \value{
 A named integer vector of distinct-value counts.

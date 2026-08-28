@@ -2,7 +2,7 @@
 
 #' Column names
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #'
 #' @return A character vector of column names.
 #' @export
@@ -10,7 +10,7 @@ colnames <- function(data) names(bt_as_data_frame(data))
 
 #' Row names
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #'
 #' @return A character vector of row names.
 #' @export
@@ -18,9 +18,9 @@ rownames <- function(data) base::rownames(bt_as_data_frame(data))
 
 #' Column classes
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #'
-#' @return A data.table with one row per column giving its class.
+#' @return A basetable with one row per column giving its class.
 #' @export
 classes <- function(data) {
   df <- bt_as_data_frame(data)
@@ -29,7 +29,7 @@ classes <- function(data) {
 
 #' Count of distinct values per column
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #'
 #' @return A named integer vector of distinct-value counts.
 #' @export
@@ -40,7 +40,7 @@ uniques <- function(data) {
 
 #' Distinct-value count (or proportion) per column
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #' @param prop Return the proportion of distinct values instead of the count.
 #'
@@ -58,7 +58,7 @@ cardinality <- function(data, cols, prop = FALSE) {
 
 #' Columns with a single distinct non-missing value
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #'
 #' @return A character vector of constant column names.
 #' @export
@@ -70,7 +70,7 @@ constants <- function(data) {
 
 #' Columns that are entirely blank or missing
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #'
 #' @return A character vector of column names.
 #' @export
@@ -81,7 +81,7 @@ emptycols <- function(data) {
 
 #' Rows that are entirely blank or missing
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #'
 #' @return A data.frame of the fully blank rows.
 #' @export
@@ -94,7 +94,7 @@ emptyrows <- function(data) {
 
 #' Rows involved in a duplicate
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #'
 #' @return A data.frame of the duplicated rows.
 #' @export
@@ -108,12 +108,12 @@ duplicaterows <- function(data) {
 #'
 #' Return unique rows, optionally considering only selected columns.
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Optional character vector of columns used to determine
 #'   uniqueness.
 #' @param .keep_all Keep all columns when `cols` is supplied.
 #'
-#' @return A data.table of the unique rows.
+#' @return A basetable of the unique rows.
 #' @export
 uniquerows <- function(data, cols = NULL, .keep_all = FALSE) {
   bt_engine_unique(data, by = cols, keep_all = .keep_all || is.null(cols))
@@ -121,7 +121,7 @@ uniquerows <- function(data, cols = NULL, .keep_all = FALSE) {
 
 #' Duplicated key combinations
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
 #' @return See [duplicated_keys()].
@@ -132,7 +132,7 @@ duplicatekeys <- function(data, by) {
 
 #' Duplicated column names
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #'
 #' @return A character vector of the duplicated names.
 #' @export
@@ -144,7 +144,7 @@ duplicatenames <- function(data) {
 #' Column names shared by two tables
 #'
 #' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or data.table, depending on the function.
+#' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #'
 #' @return See [common_names()].
 #' @export
@@ -154,7 +154,7 @@ commonnames <- function(x, y) {
 
 #' Clean column names to a unique, syntactic form
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #'
 #' @return `data` with cleaned column names.
 #' @export
@@ -166,7 +166,7 @@ cleannames <- function(data) {
 
 #' Repair column names
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param method Cleaning strategy to apply to names.
 #'
 #' @return `data` with repaired column names.
@@ -179,7 +179,7 @@ repairnames <- function(data, method = c("unique", "universal", "minimal")) {
 
 #' Rename columns with a function
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #' @param fun Function applied to each element, column, or group.
 #'
@@ -197,7 +197,7 @@ renamewith <- function(data, cols, fun) {
 #' Rename columns using `new = old` pairs. Old column names may be supplied
 #' as bare names or character strings.
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param ... Named rename expressions, as `new = old`.
 #'
 #' @return `data` with the named columns renamed.
@@ -223,7 +223,7 @@ renamecols <- function(data, ...) {
 
 #' Move columns before or after another column
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #' @param before Column identifying where to insert `cols` before.
 #' @param after Column identifying where to insert `cols` after.
@@ -263,7 +263,7 @@ move <- function(data, cols, before = NULL, after = NULL) {
 
 #' Move columns to the front
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #'
 #' @return `data` with `cols` moved first.
@@ -272,7 +272,7 @@ firstcols <- function(data, cols) move(data, cols, before = 1L)
 
 #' Move columns to the back
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #'
 #' @return `data` with `cols` moved last.
@@ -281,7 +281,7 @@ lastcols <- function(data, cols) move(data, cols, after = ncol(bt_as_data_frame(
 
 #' First `n` rows
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param n Integer count.
 #'
 #' @return The first `n` rows of `data`.
@@ -295,7 +295,7 @@ firstrows <- function(data, n = 1L) {
 
 #' Last `n` rows
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param n Integer count.
 #'
 #' @return The last `n` rows of `data`.
@@ -309,7 +309,7 @@ lastrows <- function(data, n = 1L) {
 
 #' Sample `n` rows without replacement
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param n Integer count.
 #'
 #' @return A random sample of `n` rows.
@@ -322,7 +322,7 @@ samplerows <- function(data, n) {
 
 #' Sample a fraction of rows without replacement
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param frac Fraction of rows to sample.
 #'
 #' @return A random sample of rows.
@@ -334,7 +334,7 @@ samplefrac <- function(data, frac) {
 
 #' Order rows by one or more columns
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param by Character vector of column names identifying groups or join keys.
 #' @param decreasing Sort in decreasing order.
 #' @param na.last Placement of missing values when sorting.
@@ -347,7 +347,7 @@ orderrows <- function(data, by, decreasing = FALSE, na.last = TRUE) {
 
 #' Reverse row order
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #'
 #' @return `data` with rows in reverse order.
 #' @export
@@ -359,7 +359,7 @@ reverse <- function(data) {
 
 #' First row within each group
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param by Character vector of column names identifying groups or join keys.
 #' @param order Optional column(s) used to break ties before picking first/last rows.
 #'
@@ -374,7 +374,7 @@ firstby <- function(data, by, order = NULL) {
 
 #' Last row within each group
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param by Character vector of column names identifying groups or join keys.
 #' @param order Optional column(s) used to break ties before picking first/last rows.
 #'
@@ -390,7 +390,7 @@ lastby <- function(data, by, order = NULL) {
 
 #' Remove duplicate rows, optionally by key
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param by Character vector of column names identifying groups or join keys.
 #' @param keep Which duplicate to keep.
 #'
@@ -411,7 +411,7 @@ removeduplicates <- function(data, by = NULL, keep = c("first", "last", "none"))
 
 #' Row-wise minimum across columns
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #' @param na.rm Drop missing values before computing the result.
 #'
@@ -425,7 +425,7 @@ rowmin <- function(data, cols = NULL, na.rm = FALSE) {
 
 #' Row-wise maximum across columns
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #' @param na.rm Drop missing values before computing the result.
 #'
@@ -439,7 +439,7 @@ rowmax <- function(data, cols = NULL, na.rm = FALSE) {
 
 #' Row-wise `any()` across columns
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #' @param na.rm Drop missing values before computing the result.
 #'
@@ -462,7 +462,7 @@ rowany <- function(data, cols = NULL, na.rm = FALSE) {
 
 #' Row-wise `all()` across columns
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #' @param na.rm Drop missing values before computing the result.
 #'
@@ -485,7 +485,7 @@ rowall <- function(data, cols = NULL, na.rm = FALSE) {
 
 #' Count matches of a value across columns, per row
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #' @param value Value to test, assign, or match against.
 #' @param na.rm Drop missing values before computing the result.
@@ -502,7 +502,7 @@ rowcount <- function(data, cols = NULL, value = TRUE, na.rm = FALSE) {
 
 #' First non-missing value across columns, per row
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #' @param na.rm Drop missing values before computing the result.
 #'
@@ -522,7 +522,7 @@ rowfirst <- function(data, cols = NULL, na.rm = FALSE) {
 
 #' Last non-missing value across columns, per row
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #' @param na.rm Drop missing values before computing the result.
 #'
@@ -543,7 +543,7 @@ rowlast <- function(data, cols = NULL, na.rm = FALSE) {
 
 #' Apply a function row-wise
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #' @param fun Function applied to each element, column, or group.
 #' @param ... Additional arguments (unused, or passed through depending on the function).
@@ -800,7 +800,7 @@ rollapply <- function(x, width, FUN, ..., align = c("right", "left", "center"), 
 
 #' Apply a function to selected columns
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #' @param fun Function applied to each element, column, or group.
 #' @param ... Additional arguments (unused, or passed through depending on the function).
@@ -816,7 +816,7 @@ applycols <- function(data, cols, fun, ...) {
 
 #' Replace selected columns with new values
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #' @param values Vector or list of replacement values.
 #'
@@ -833,7 +833,7 @@ replacecols <- function(data, cols, values) {
 
 #' Replace values in selected columns where a condition holds
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param condition A logical expression evaluated in the context of `data`.
 #' @param cols Character vector of column names.
 #' @param value Value to test, assign, or match against.
@@ -854,11 +854,11 @@ replacewhere <- function(data, condition, cols, value) {
 
 #' Grouped counts with proportions
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param by Character vector of column names identifying groups or join keys.
 #' @param margin Column(s) defining the totals used to compute proportions.
 #'
-#' @return A data.table of counts (and proportions when `margin` is supplied).
+#' @return A basetable of counts (and proportions when `margin` is supplied).
 #' @export
 propcount <- function(data, by, margin = NULL) {
   out <- count(data, by = by, sort = FALSE, name = "n")
@@ -875,7 +875,7 @@ propcount <- function(data, by, margin = NULL) {
 
 #' Apply a function to each group
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param by Character vector of column names identifying groups or join keys.
 #' @param fun Function applied to each element, column, or group.
 #' @param ... Additional arguments (unused, or passed through depending on the function).
@@ -894,7 +894,7 @@ applyby <- function(data, by, fun, ..., bind = FALSE, id = ".group") {
 #' Distinct keys of `x` absent from `y`
 #'
 #' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or data.table, depending on the function.
+#' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
 #' @return Rows of `x` whose key is not present in `y`.
@@ -910,7 +910,7 @@ unmatchedkeys <- function(x, y, by) {
 #' Rows of `x` whose key is present in `y`
 #'
 #' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or data.table, depending on the function.
+#' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
 #' @return Rows of `x` whose key is present in `y`.
@@ -926,7 +926,7 @@ matchedkeys <- function(x, y, by) {
 #' Cardinality of a join key relationship
 #'
 #' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or data.table, depending on the function.
+#' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
 #' @return One of `"one-to-one"`, `"one-to-many"`, `"many-to-one"`, `"many-to-many"`.
@@ -944,7 +944,7 @@ joinrelationship <- function(x, y, by) {
 #' Nearest-key join
 #'
 #' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or data.table, depending on the function.
+#' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #' @param by Character vector of column names identifying groups or join keys.
 #' @param tolerance Numeric join/comparison tolerance.
 #'
@@ -956,10 +956,10 @@ nearestmerge <- function(x, y, by, tolerance = Inf) {
 
 #' Row-bind tables, filling missing columns
 #'
-#' Combine data frames or data.tables by row, filling columns that are
+#' Combine data frames by row, filling columns that are
 #' missing from some inputs with `NA`.
 #'
-#' @param ... Data frames/data.tables to combine, or a single list of them.
+#' @param ... Data frames to combine, or a single list of them.
 #' @param id Optional name for a source identifier column recording which
 #'   input each row came from.
 #' @param fill Fill missing columns with `NA` instead of erroring when inputs
@@ -969,7 +969,7 @@ nearestmerge <- function(x, y, by, tolerance = Inf) {
 #'   and the conflicting types before any coercion happens. `"coerce"` skips
 #'   the check and allows ordinary vector coercion while binding.
 #'
-#' @return A combined data.table.
+#' @return A combined basetable.
 #' @export
 rbindfill <- function(..., id = NULL, fill = TRUE, typeconflict = c("error", "coerce")) {
   typeconflict <- match.arg(typeconflict)
@@ -983,7 +983,7 @@ rbindfill <- function(..., id = NULL, fill = TRUE, typeconflict = c("error", "co
 #' Set union of rows
 #'
 #' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or data.table, depending on the function.
+#' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
 #' @return The union of `x` and `y`.
@@ -997,7 +997,7 @@ unionrows <- function(x, y, by = NULL) {
 #' Set intersection of rows
 #'
 #' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or data.table, depending on the function.
+#' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
 #' @return Rows of `x` also present in `y`.
@@ -1010,7 +1010,7 @@ intersectrows <- function(x, y, by = NULL) {
 #' Set difference of rows
 #'
 #' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or data.table, depending on the function.
+#' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
 #' @return Rows of `x` absent from `y`.
@@ -1023,7 +1023,7 @@ diffrows <- function(x, y, by = NULL) {
 #' Compare two tables' rows for equality
 #'
 #' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or data.table, depending on the function.
+#' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
 #' @return A single logical value.
@@ -1041,14 +1041,14 @@ equalrows <- function(x, y, by = NULL) {
 
 #' Reshape columns into key/value rows
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #' @param names Name for the resulting key/value column, depending on the function.
 #' @param values Vector or list of replacement values.
 #' @param idcols Columns to keep as row identifiers.
 #' @param na.rm Drop missing values before computing the result.
 #'
-#' @return A long-format data.table.
+#' @return A long-format basetable.
 #' @export
 tolong <- function(data, cols, names = "variable", values = "value", idcols = NULL, na.rm = FALSE) {
   df <- bt_as_data_frame(data)
@@ -1067,14 +1067,14 @@ tolong <- function(data, cols, names = "variable", values = "value", idcols = NU
 
 #' Reshape rows into columns
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param names Name for the resulting key/value column, depending on the function.
 #' @param values Vector or list of replacement values.
 #' @param idcols Columns to keep as row identifiers.
 #' @param fun Function applied to each element, column, or group.
 #' @param fill Value used for positions where no window/result is available.
 #'
-#' @return A wide-format data.table.
+#' @return A wide-format basetable.
 #' @export
 towide <- function(data, names, values, idcols = NULL, fun = NULL, fill = NA) {
   df <- bt_as_data_frame(data)
@@ -1099,7 +1099,7 @@ towide <- function(data, names, values, idcols = NULL, fun = NULL, fill = NA) {
 
 #' Split one column into several
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param column Name of a single column.
 #' @param into Names of the columns produced by splitting.
 #' @param sep Separator string.
@@ -1127,7 +1127,7 @@ separate <- function(data, column, into, sep, remove = TRUE, extra = c("warn", "
 
 #' Combine several columns into one
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param column Name of a single column.
 #' @param cols Character vector of column names.
 #' @param sep Separator string.
@@ -1152,9 +1152,9 @@ unite <- function(data, column, cols, sep = "_", remove = TRUE, na.rm = FALSE) {
 
 #' Transpose a table
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #'
-#' @return A transposed data.table.
+#' @return A transposed basetable.
 #' @export
 transpose <- function(data) {
   df <- bt_as_data_frame(data)
@@ -1210,8 +1210,8 @@ natoblank <- function(x) {
 #' Recode values by lookup
 #'
 #' @param x An atomic vector.
-#' @param old Baseline data.frame or data.table ("before" state).
-#' @param new Updated data.frame or data.table ("after" state), or replacement values when used for value substitution.
+#' @param old Baseline data.frame ("before" state).
+#' @param new Updated data.frame ("after" state), or replacement values when used for value substitution.
 #'
 #' @return `x` with matched values replaced.
 #' @export
@@ -1226,7 +1226,7 @@ replacevalues <- function(x, old, new) {
 
 #' Fill missing values both forward and backward within groups
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
@@ -1600,7 +1600,7 @@ transliterate <- function(x) stringi::stri_trans_general(enc2utf8(x), "Any-Latin
 #' Pairwise string distances
 #'
 #' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or data.table, depending on the function.
+#' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #'
 #' @return A numeric distance matrix (see [utils::adist()]).
 #' @export
@@ -1666,8 +1666,8 @@ isurl <- function(x) grepl("^(https?|ftp)://", x)
 #' Recode values by lookup (alias)
 #'
 #' @param x An atomic vector.
-#' @param old Baseline data.frame or data.table ("before" state).
-#' @param new Updated data.frame or data.table ("after" state), or replacement values when used for value substitution.
+#' @param old Baseline data.frame ("before" state).
+#' @param new Updated data.frame ("after" state), or replacement values when used for value substitution.
 #'
 #' @return See [replacevalues()].
 #' @export
@@ -1690,7 +1690,7 @@ collapsevalues <- function(x, groups) {
 #' @param fun Function applied to each element, column, or group.
 #' @param ... Additional arguments (unused, or passed through depending on the function).
 #'
-#' @return A data.table of the failed indices and values.
+#' @return A basetable of the failed indices and values.
 #' @export
 parsefailures <- function(x, fun, ...) {
   parsed <- tryCatch(fun(x, ...), error = function(e) rep(NA, length(x)))
@@ -1802,7 +1802,7 @@ parsepercent <- function(x, strict = FALSE) parsenum(sub("%$", "", x), strict = 
 parsecurrency <- function(x, strict = FALSE) parsenum(gsub("[$,]", "", x), strict = strict)
 #' Convert selected columns with a function
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #' @param fun Function applied to each element, column, or group.
 #' @param ... Additional arguments (unused, or passed through depending on the function).
@@ -2060,7 +2060,7 @@ addyears <- function(x, n, invalid = c("previous", "next", "missing", "error")) 
 #' Difference between two dates
 #'
 #' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or data.table, depending on the function.
+#' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #' @param units Unit used to express the difference.
 #'
 #' @return A numeric vector of differences.
@@ -2146,7 +2146,7 @@ quantilegroup <- function(x, n = 5) cut(x, breaks = stats::quantile(x, probs = s
 percentchange <- function(x) c(NA, diff(x) / utils::head(x, -1L) * 100)
 #' Assert that required column names are present
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param names Required column names.
 #'
 #' @return `data`, invisibly, if the assertion passes.
@@ -2157,7 +2157,7 @@ assertnames <- function(data, names) {
 }
 #' Assert that columns exist (alias)
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #'
 #' @return See [assert_cols()].
@@ -2165,7 +2165,7 @@ assertnames <- function(data, names) {
 assertcols <- function(data, cols) assert_cols(data, cols)
 #' Assert that a key is unique (alias)
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
 #' @return See [assert_key()].
@@ -2173,7 +2173,7 @@ assertcols <- function(data, cols) assert_cols(data, cols)
 assertkey <- function(data, by) assert_key(data, by)
 #' Assert that a row-wise condition holds for every row
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param condition A logical expression evaluated in the context of `data`.
 #'
 #' @return `data`, invisibly, if the assertion passes.
@@ -2186,7 +2186,7 @@ assertrows <- function(data, condition) {
 }
 #' Assert that a column only contains allowed values
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param column Name of a single column.
 #' @param allowed Vector of permitted values.
 #'
@@ -2202,7 +2202,7 @@ assertvalues <- function(data, column, allowed) {
 }
 #' Assert that a column falls within a numeric range
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param column Name of a single column.
 #' @param lower Lower bound.
 #' @param upper Upper bound.
@@ -2218,7 +2218,7 @@ assertrange <- function(data, column, lower, upper) {
 }
 #' Assert that a column has an expected class
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param column Name of a single column.
 #' @param class Class name to check against.
 #'
@@ -2232,7 +2232,7 @@ asserttype <- function(data, column, class) {
 }
 #' Assert that selected columns are unique
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #'
 #' @return `data`, invisibly, if the assertion passes.
@@ -2243,7 +2243,7 @@ assertunique <- function(data, cols) {
 }
 #' Assert that there are no missing values
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param cols Character vector of column names.
 #'
 #' @return `data`, invisibly, if the assertion passes.
@@ -2256,7 +2256,7 @@ assertcomplete <- function(data, cols = NULL) {
 }
 #' Rows that fail a condition
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param condition A logical expression evaluated in the context of `data`.
 #'
 #' @return The rows of `data` for which `condition` is not `TRUE`.
@@ -2268,7 +2268,7 @@ invalidrows <- function(data, condition) {
 }
 #' Rows whose value is not in the allowed set
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param column Name of a single column.
 #' @param allowed Vector of permitted values.
 #'
@@ -2281,7 +2281,7 @@ invalidvalues <- function(data, column, allowed) {
 }
 #' Rows whose value falls outside a range
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param column Name of a single column.
 #' @param lower Lower bound.
 #' @param upper Upper bound.
@@ -2296,7 +2296,7 @@ outofrange <- function(data, column, lower, upper) {
 #' Compare two tables for equality
 #'
 #' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or data.table, depending on the function.
+#' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #' @param ignoreorder Ignore row order when comparing.
 #' @param ignorerownames Ignore row names when comparing.
 #' @param tolerance Numeric join/comparison tolerance.
@@ -2314,7 +2314,7 @@ equaldata <- function(x, y, ignoreorder = FALSE, ignorerownames = TRUE, toleranc
 #' Test whether two tables share the same column names
 #'
 #' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or data.table, depending on the function.
+#' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #'
 #' @return A single logical value.
 #' @export
@@ -2322,9 +2322,9 @@ sameschema <- function(x, y) identical(names(bt_as_data_frame(x)), names(bt_as_d
 #' Compare the schemas of two tables
 #'
 #' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or data.table, depending on the function.
+#' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #'
-#' @return A data.table describing shared and differing columns/types.
+#' @return A basetable describing shared and differing columns/types.
 #' @export
 compareschema <- function(x, y) {
   x_df <- bt_as_data_frame(x); y_df <- bt_as_data_frame(y)
@@ -2340,8 +2340,8 @@ compareschema <- function(x, y) {
 }
 #' Rows present in `new` but not in `old`
 #'
-#' @param old Baseline data.frame or data.table ("before" state).
-#' @param new Updated data.frame or data.table ("after" state), or replacement values when used for value substitution.
+#' @param old Baseline data.frame ("before" state).
+#' @param new Updated data.frame ("after" state), or replacement values when used for value substitution.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
 #' @return The added rows.
@@ -2354,8 +2354,8 @@ addedrows <- function(old, new, by = NULL) {
 }
 #' Rows present in `old` but not in `new`
 #'
-#' @param old Baseline data.frame or data.table ("before" state).
-#' @param new Updated data.frame or data.table ("after" state), or replacement values when used for value substitution.
+#' @param old Baseline data.frame ("before" state).
+#' @param new Updated data.frame ("after" state), or replacement values when used for value substitution.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
 #' @return The removed rows.
@@ -2363,8 +2363,8 @@ addedrows <- function(old, new, by = NULL) {
 removedrows <- function(old, new, by = NULL) addedrows(new, old, by = by)
 #' Rows whose key appears in both tables
 #'
-#' @param old Baseline data.frame or data.table ("before" state).
-#' @param new Updated data.frame or data.table ("after" state), or replacement values when used for value substitution.
+#' @param old Baseline data.frame ("before" state).
+#' @param new Updated data.frame ("after" state), or replacement values when used for value substitution.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
 #' @return The matched rows from both tables, suffixed `.old`/`.new`.
@@ -2392,8 +2392,8 @@ changedrows <- function(old, new, by = NULL) {
 }
 #' Compare the columns of two tables
 #'
-#' @param old Baseline data.frame or data.table ("before" state).
-#' @param new Updated data.frame or data.table ("after" state), or replacement values when used for value substitution.
+#' @param old Baseline data.frame ("before" state).
+#' @param new Updated data.frame ("after" state), or replacement values when used for value substitution.
 #'
 #' @return See [compareschema()].
 #' @export

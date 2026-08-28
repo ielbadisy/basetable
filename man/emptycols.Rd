@@ -7,7 +7,7 @@
 emptycols(data)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 }
 \value{
 A character vector of column names.

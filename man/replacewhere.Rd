@@ -7,7 +7,7 @@
 replacewhere(data, condition, cols, value)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 
 \item{condition}{A logical expression evaluated in the context of \code{data}.}
 

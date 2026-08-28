@@ -6,6 +6,6 @@ test_that("keepmissing returns rows with missing values", {
 
   out <- keepmissing(data)
 
-  expect_s3_class(out, "data.table")
+  expect_s3_class(out, "basetable")
   expect_equal(out$id, c(2, 3))
 })

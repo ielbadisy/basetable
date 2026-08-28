@@ -14,7 +14,7 @@ tolong(
 )
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 
 \item{cols}{Character vector of column names.}
 
@@ -27,7 +27,7 @@ tolong(
 \item{na.rm}{Drop missing values before computing the result.}
 }
 \value{
-A long-format data.table.
+A long-format basetable.
 }
 \description{
 Reshape columns into key/value rows

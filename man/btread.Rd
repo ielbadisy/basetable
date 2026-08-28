@@ -20,7 +20,7 @@ btread(
   guess_max = 10000,
   lazy = FALSE,
   n_threads = bt_default_threads(),
-  as = c("data.frame", "data.table")
+  as = c("data.frame", "basetable")
 )
 }
 \arguments{
@@ -62,10 +62,10 @@ fields.}
 
 \item{n_threads}{Number of worker threads for the eager numeric fill.}
 
-\item{as}{Return \code{"data.frame"} (default) or \code{"data.table"}.}
+\item{as}{Return \code{"data.frame"} (default) or \code{"basetable"}.}
 }
 \value{
-A data.frame (or data.table).
+A data.frame.
 }
 \description{
 A from-scratch delimited-file reader written in C++: the file is memory

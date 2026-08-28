@@ -7,7 +7,7 @@
 samplefrac(data, frac)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 
 \item{frac}{Fraction of rows to sample.}
 }

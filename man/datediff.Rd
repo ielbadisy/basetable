@@ -9,7 +9,7 @@ datediff(x, y, units = "days")
 \arguments{
 \item{x}{An atomic vector.}
 
-\item{y}{An atomic vector, data.frame, or data.table, depending on the function.}
+\item{y}{An atomic vector, data.frame, or basetable, depending on the function.}
 
 \item{units}{Unit used to express the difference.}
 }

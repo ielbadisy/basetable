@@ -3,5 +3,5 @@ test_that("split returns a list of table pieces", {
 
   expect_type(out, "list")
   expect_equal(length(out), 3L)
-  expect_s3_class(out[[1]], "data.table")
+  expect_s3_class(out[[1]], "basetable")
 })

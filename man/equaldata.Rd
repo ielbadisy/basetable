@@ -15,7 +15,7 @@ equaldata(
 \arguments{
 \item{x}{An atomic vector.}
 
-\item{y}{An atomic vector, data.frame, or data.table, depending on the function.}
+\item{y}{An atomic vector, data.frame, or basetable, depending on the function.}
 
 \item{ignoreorder}{Ignore row order when comparing.}
 

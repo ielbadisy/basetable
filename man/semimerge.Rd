@@ -10,7 +10,7 @@ semimerge(x, y, by)
 \item{by}{Character vector of join columns.}
 }
 \value{
-A data.table containing rows from \code{x} with matches in \code{y}.
+A basetable containing rows from \code{x} with matches in \code{y}.
 }
 \description{
 Keep rows in \code{x} whose keys exist in \code{y}.

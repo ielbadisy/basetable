@@ -1,12 +1,10 @@
+# Wrap a frame as the basetable result class (see R/bt-table.R). The name is
+# kept for its many call sites; the output no longer has any data.table class.
 bt_as_data_table <- function(data) {
-  if (!inherits(data, c("data.frame", "data.table"))) {
-    stop("`data` must be a data.frame or data.table.", call. = FALSE)
+  if (!is.data.frame(data) && !is.list(data)) {
+    stop("`data` must be a data.frame or list of equal-length columns.", call. = FALSE)
   }
-
-  out <- as.data.frame(data, stringsAsFactors = FALSE)
-  class(out) <- unique(c("data.table", "data.frame"))
-  attr(out, "row.names") <- c(NA_integer_, -nrow(out))
-  out
+  new_basetable(data)
 }
 
 bt_data_mask <- function(data, parent = parent.frame()) {
@@ -18,18 +16,20 @@ bt_data_mask <- function(data, parent = parent.frame()) {
 # place.
 bt_as_data_table_ro <- function(data) {
   if (!inherits(data, "data.frame")) {
-    stop("`data` must be a data.frame or data.table.", call. = FALSE)
+    stop("`data` must be a data.frame.", call. = FALSE)
   }
 
   bt_as_data_frame(data)
 }
 
 bt_as_data_frame <- function(data) {
-  out <- as.data.frame(data, stringsAsFactors = FALSE)
-  if (inherits(out, "data.table")) {
-    class(out) <- setdiff(class(out), "data.table")
+  if (is.data.frame(data)) {
+    if (!identical(class(data), "data.frame")) {
+      class(data) <- "data.frame"
+    }
+    return(data)
   }
-  out
+  as.data.frame(data, stringsAsFactors = FALSE)
 }
 
 bt_group_rows <- function(group_id) {
@@ -45,23 +45,15 @@ bt_rbind_fill <- function(dfs, fill = TRUE, id = NULL) {
   if (length(dfs) == 0L) {
     return(bt_as_data_table(data.frame()))
   }
-  dfs <- lapply(dfs, bt_as_data_frame)
-  cols <- if (fill) unique(unlist(lapply(dfs, names), use.names = FALSE)) else names(dfs[[1L]])
-  rows <- vector("list", length(dfs))
   id_values <- names(dfs)
-  for (i in seq_along(dfs)) {
-    df <- dfs[[i]]
-    out <- vector("list", length(cols))
-    names(out) <- cols
-    for (nm in cols) {
-      out[[nm]] <- if (nm %in% names(df)) df[[nm]] else rep(NA, nrow(df))
-    }
-    rows[[i]] <- as.data.frame(out, stringsAsFactors = FALSE)
-    if (!is.null(id)) {
-      rows[[i]][[id]] <- if (!is.null(id_values) && nzchar(id_values[[i]])) id_values[[i]] else i
-    }
-  }
-  bt_as_data_table(do.call(rbind, rows))
+  dfs <- lapply(unname(dfs), bt_as_data_frame)
+  bt_as_data_table(.Call(
+    bt_rbind_,
+    dfs,
+    isTRUE(fill),
+    if (is.null(id)) NULL else as.character(id)[[1L]],
+    if (is.null(id_values)) NULL else as.character(id_values)
+  ))
 }
 
 # Comparison-operator codes shared with the native range-join kernel.

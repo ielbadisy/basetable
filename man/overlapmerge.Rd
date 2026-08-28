@@ -14,7 +14,7 @@ overlapmerge(x, y, startx, endx, starty, endy, by = NULL)
 \item{by}{Optional character vector of exact-match grouping columns.}
 }
 \value{
-A data.table containing the overlap matches.
+A basetable containing the overlap matches.
 }
 \description{
 Join tables by overlapping interval ranges.

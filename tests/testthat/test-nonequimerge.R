@@ -4,7 +4,7 @@ test_that("nonequimerge still does a plain equi-merge when by has no conditions"
 
   out <- nonequimerge(x, y, by = "id")
 
-  expect_s3_class(out, "data.table")
+  expect_s3_class(out, "basetable")
   expect_true("label" %in% names(out))
   expect_equal(out$label, c("c", "d"))
 })

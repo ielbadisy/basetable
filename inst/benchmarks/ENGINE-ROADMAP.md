@@ -25,6 +25,10 @@ base-style argument handling and NSE until expression compilation exists.
 - Native expression kernel (`bt_expr_`) for `subset()` predicates: arithmetic,
   comparison, boolean (three-valued), unary minus, and `ifelse()`, with an
   automatic `eval()` fallback for anything unsupported.
+- Native row-bind (`bt_rbind_`) with column union, NA fill and type promotion
+  for `rbindfill()`, `applyby(bind = TRUE)` and long reshape.
+- `basetable` result class stamped directly by the engine (`set_table_class`);
+  no `data.table` class, no `data.table` dependency anywhere.
 - File-native `btread()`, `btwrite()`, `bt_aggregate()`, `bt_count()`,
   `bt_distinct()`, and `bt_freq()`.
 

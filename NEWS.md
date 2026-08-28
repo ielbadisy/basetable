@@ -2,6 +2,15 @@
 
 ## New features
 
+* **basetable no longer depends on `data.table` in any form.** It has been
+  removed from `Suggests`, and every verb runs entirely on basetable's own
+  compiled engine.
+* Verbs now return a `basetable`: a plain data.frame with an added class that
+  prints compactly and whose `[` keeps the class and defaults to
+  `drop = FALSE`. It carries no `data.table` machinery; `as.data.frame()`
+  returns an ordinary frame. The `as =` argument of `btread()`, `bt_aggregate()`
+  and friends now takes `"basetable"` instead of `"data.table"`.
+
 * Added the first in-memory native C++ execution layer for the existing public
   basetable API. `pick()`, `drop()`, `subset()`, `orderrows()`, `uniquerows()`,
   `duplicaterows()`, `removeduplicates()`, `firstrows()`, `lastrows()`,
@@ -19,6 +28,10 @@
 * Routed `semimerge()` and `antimerge()` through a native key-membership mask,
   preserving the same exposed function names while removing another join hot
   path from the `data.table` backend.
+* Added a native row-bind kernel (`bt_rbind_`): `rbindfill()`, `applyby(bind =
+  TRUE)`, and the long-reshape path now union columns, fill gaps with `NA`, and
+  promote per-column types (logical < integer < double < character) in one C++
+  pass instead of `do.call(rbind, ...)`.
 * Added a native expression kernel (`bt_expr_`): `subset()` now compiles a
   supported predicate (column and scalar references; `+ - * / ^ %%`;
   `< <= > >= == !=`; `& | !`; unary `-`; `ifelse()`) to stack-machine bytecode
@@ -42,7 +55,7 @@
   basetable vs `data.table`, `collapse`, and Polars across projection,
   filtering, grouping, aggregation, and semi-join workloads.
 * Exported the existing `stack()` wrapper so `stack()` consistently returns a
-  `data.table` and masks `utils::stack()` like the rest of the base-flavored API.
+  `basetable` and masks `utils::stack()` like the rest of the base-flavored API.
 
 * A fused **file -> result** engine, built on `btread()`'s memory map,
   parallel row indexer and reader. Each verb scans the file **once**,

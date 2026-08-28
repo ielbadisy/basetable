@@ -19,22 +19,29 @@ knitr::opts_chunk$set(
 library(basetable)
 library(bench)
 library(ggplot2)
-library(data.table)
+
+have <- function(pkg) requireNamespace(pkg, quietly = TRUE)
+opt <- c(
+  data.table = have("data.table"),
+  dplyr = have("dplyr"),
+  collapse = have("collapse"),
+  polars = have("polars")
+)
 ```
 
-The benchmarks below compare `basetable` with raw `data.table`, base R, and
-`dplyr` on four representative table operations:
+`basetable` runs every table operation through its own native C++ engine and
+has **no `data.table` dependency**. These benchmarks still line it up against
+the fastest data-frame tools in R -- **base R**, **`data.table`**, **`dplyr`**,
+**`collapse`**, and **`polars`** -- on four representative operations:
 
 - row subsetting and column selection
 - keyed joins
 - grouped aggregation
 - grouped counting
 
-`basetable` wraps `data.table` as its execution backend, so the `data.table`
-comparison is the one that matters most here: it isolates the cost of the
-base-R-style interface itself, separate from the backend's own performance.
-The goal is not to prove a universal winner over base R or dplyr. It is to
-show how close the wrapper gets to its own backend.
+Arms whose package is not installed are dropped automatically. The point is
+not to crown a winner but to show that a base-R-style interface backed by
+compiled kernels stays competitive with the established engines.
 
 ```{r data}
 set.seed(1)
@@ -42,247 +49,143 @@ set.seed(1)
 subset_n <- 1e5
 merge_n <- 5e4
 
-subset_dt <- data.table(
+tbl <- data.frame(
   id = seq_len(subset_n),
   grp = sample(letters[1:5], subset_n, replace = TRUE),
-  value = rnorm(subset_n)
+  value = rnorm(subset_n),
+  stringsAsFactors = FALSE
 )
+merge_x <- data.frame(id = seq_len(merge_n), value_x = rnorm(merge_n))
+merge_y <- data.frame(id = sample(seq_len(merge_n), merge_n), value_y = rnorm(merge_n))
 
-merge_x_dt <- data.table(
-  id = seq_len(merge_n),
-  value_x = rnorm(merge_n)
-)
-
-merge_y_dt <- data.table(
-  id = sample(seq_len(merge_n), merge_n),
-  value_y = rnorm(merge_n)
-)
+if (opt[["data.table"]]) {
+  tbl_dt <- data.table::as.data.table(tbl)
+  mx_dt <- data.table::as.data.table(merge_x)
+  my_dt <- data.table::as.data.table(merge_y)
+}
+if (opt[["polars"]]) {
+  tbl_pl <- polars::as_polars_df(tbl)
+  mx_pl <- polars::as_polars_df(merge_x)
+  my_pl <- polars::as_polars_df(merge_y)
+}
 ```
 
 ```{r benchmark}
-run_subset_benchmark <- function() {
-  bench::mark(
-    basetable = basetable::subset(
-      subset_dt,
-      value > 0,
-      select = c("id", "grp", "value")
-    ),
-    data_table = subset_dt[value > 0, .(id, grp, value)],
-    base_r = base::subset(
-      subset_dt,
-      value > 0,
-      select = c("id", "grp", "value")
-    ),
-    dplyr = subset_dt |>
-      dplyr::filter(value > 0) |>
-      dplyr::select(id, grp, value),
-    iterations = 15,
-    check = FALSE
-  )
+mark_arms <- function(arms) {
+  keep <- vapply(names(arms), function(nm) {
+    nm %in% c("basetable", "base R") || isTRUE(opt[[nm]])
+  }, logical(1))
+  bench::mark(exprs = arms[keep], iterations = 15, check = FALSE)
 }
 
-run_merge_benchmark <- function() {
-  bench::mark(
-    basetable = basetable::merge(merge_x_dt, merge_y_dt, by = "id"),
-    data_table = data.table::merge.data.table(merge_x_dt, merge_y_dt, by = "id"),
-    base_r = base::merge(merge_x_dt, merge_y_dt, by = "id"),
-    dplyr = dplyr::inner_join(merge_x_dt, merge_y_dt, by = "id"),
-    iterations = 15,
-    check = FALSE
-  )
-}
+run_subset <- function() mark_arms(list(
+  basetable  = quote(basetable::subset(tbl, value > 0, select = c("id", "grp", "value"))),
+  `base R`   = quote(base::subset(tbl, value > 0, select = c("id", "grp", "value"))),
+  data.table = quote(tbl_dt[value > 0, list(id, grp, value)]),
+  dplyr      = quote(dplyr::select(dplyr::filter(tbl, value > 0), id, grp, value)),
+  collapse   = quote(collapse::fsubset(tbl, value > 0, id, grp, value)),
+  polars     = quote(tbl_pl$filter(polars::pl$col("value") > 0)$select("id", "grp", "value"))
+))
 
-run_aggregate_benchmark <- function() {
-  bench::mark(
-    basetable = basetable::aggregate(
-      subset_dt,
-      by = "grp",
-      value = "value",
-      fun = mean,
-      sort = FALSE
-    ),
-    data_table = subset_dt[, .(value = mean(value)), by = grp],
-    base_r = stats::aggregate(
-      value ~ grp,
-      data = subset_dt,
-      FUN = mean
-    ),
-    dplyr = subset_dt |>
-      dplyr::group_by(grp) |>
-      dplyr::summarise(value = mean(value), .groups = "drop"),
-    iterations = 15,
-    check = FALSE
-  )
-}
+run_merge <- function() mark_arms(list(
+  basetable  = quote(basetable::merge(merge_x, merge_y, by = "id")),
+  `base R`   = quote(base::merge(merge_x, merge_y, by = "id")),
+  data.table = quote(merge(mx_dt, my_dt, by = "id")),
+  dplyr      = quote(dplyr::inner_join(merge_x, merge_y, by = "id")),
+  collapse   = quote(collapse::join(merge_x, merge_y, on = "id", how = "inner", verbose = 0)),
+  polars     = quote(mx_pl$join(my_pl, on = "id", how = "inner"))
+))
 
-run_count_benchmark <- function() {
-  bench::mark(
-    basetable = basetable::count(subset_dt, by = "grp"),
-    data_table = subset_dt[, .N, by = grp],
-    base_r = as.data.frame(table(subset_dt$grp)),
-    dplyr = subset_dt |> dplyr::count(grp),
-    iterations = 15,
-    check = FALSE
-  )
-}
+run_aggregate <- function() mark_arms(list(
+  basetable  = quote(basetable::aggregate(tbl, by = "grp", value = "value", fun = mean, sort = FALSE)),
+  `base R`   = quote(stats::aggregate(value ~ grp, data = tbl, FUN = mean)),
+  data.table = quote(tbl_dt[, list(value = mean(value)), by = grp]),
+  dplyr      = quote(dplyr::summarise(dplyr::group_by(tbl, grp), value = mean(value), .groups = "drop")),
+  collapse   = quote(collapse::fsummarise(collapse::fgroup_by(tbl, grp), value = collapse::fmean(value))),
+  polars     = quote(tbl_pl$group_by("grp")$agg(polars::pl$col("value")$mean()))
+))
+
+run_count <- function() mark_arms(list(
+  basetable  = quote(basetable::count(tbl, by = "grp")),
+  `base R`   = quote(as.data.frame(table(tbl$grp))),
+  data.table = quote(tbl_dt[, .N, by = grp]),
+  dplyr      = quote(dplyr::count(tbl, grp)),
+  collapse   = quote(collapse::fcount(tbl, grp)),
+  polars     = quote(tbl_pl$group_by("grp")$agg(polars::pl$len()))
+))
 
 summarise_benchmark <- function(x, operation) {
-  out <- data.table::as.data.table(x)[, .(
+  out <- data.frame(
     operation = operation,
-    implementation = as.character(expression),
-    median_ms = as.numeric(median) * 1000,
-    itr_per_sec = as.numeric(`itr/sec`),
-    mem_alloc_mb = as.numeric(mem_alloc) / 1024^2
-  )]
-
-  out[, relative_time := median_ms / median_ms[implementation == "basetable"], by = operation]
-  out[, overhead_vs_data_table := median_ms / median_ms[implementation == "data_table"], by = operation]
-  out[, implementation := factor(
-    implementation,
-    levels = c("basetable", "data_table", "base_r", "dplyr"),
-    labels = c("basetable", "data.table", "base R", "dplyr")
-  )]
+    implementation = as.character(x$expression),
+    median_ms = as.numeric(x$median) * 1000,
+    itr_per_sec = as.numeric(x$`itr/sec`),
+    mem_alloc_mb = as.numeric(x$mem_alloc) / 1024^2,
+    stringsAsFactors = FALSE
+  )
+  base_ms <- out$median_ms[out$implementation == "basetable"]
+  out$relative_time <- out$median_ms / base_ms
   out
 }
 
-benchmark_results <- data.table::rbindlist(list(
-  summarise_benchmark(run_subset_benchmark(), "Subset and select"),
-  summarise_benchmark(run_merge_benchmark(), "Merge"),
-  summarise_benchmark(run_aggregate_benchmark(), "Aggregate"),
-  summarise_benchmark(run_count_benchmark(), "Group count")
-), fill = TRUE)
-
-benchmark_results[, operation := factor(operation, levels = c("Subset and select", "Merge", "Aggregate", "Group count"))]
-```
-
-## Results Table
-
-```{r table, results='asis'}
-table_results <- data.table::copy(benchmark_results)
-data.table::setorderv(table_results, c("operation", "implementation"))
-table_results[, `:=`(
-  median_ms = format(round(median_ms, 2), nsmall = 2),
-  itr_per_sec = format(round(itr_per_sec, 1), nsmall = 1),
-  mem_alloc_mb = format(round(mem_alloc_mb, 2), nsmall = 2),
-  relative_time = format(round(relative_time, 2), nsmall = 2),
-  overhead_vs_data_table = format(round(overhead_vs_data_table, 2), nsmall = 2)
-)]
-
-knitr::kable(
-  table_results,
-  col.names = c(
-    "Operation",
-    "Implementation",
-    "Median (ms)",
-    "Iterations / sec",
-    "Memory (MB)",
-    "Relative time vs basetable",
-    "Relative time vs data.table"
-  ),
-  align = c("l", "l", "r", "r", "r", "r", "r")
+benchmark_results <- do.call(rbind, list(
+  summarise_benchmark(run_subset(), "Subset and select"),
+  summarise_benchmark(run_merge(), "Merge"),
+  summarise_benchmark(run_aggregate(), "Aggregate"),
+  summarise_benchmark(run_count(), "Group count")
+))
+benchmark_results$operation <- factor(
+  benchmark_results$operation,
+  levels = c("Subset and select", "Merge", "Aggregate", "Group count")
 )
 ```
 
-The "Relative time vs data.table" column is the direct measure of wrapper
-cost: a value close to 1.00 for the `basetable` row means the base-R-faithful
-interface adds effectively no overhead over calling `data.table` directly.
+## Results table
 
-A broader perf pass also rewrote several other functions that previously did
-their grouping/joining/row iteration in pure base R (`interaction()`+`table()`
-or `split()`, row-wise `apply()`, `paste()`-based key matching) instead of
-using data.table's compiled internals. `inst/benchmarks/benchmark-all.R`
-tracks these against their native data.table equivalents; the most dramatic
-fix was `rollingmerge()`, which reimplemented a rolling/nearest join with a
-hand-rolled per-group R loop and measured at roughly **1500x** the cost of
-data.table's native `roll=` join before being rewritten to use it directly,
-and it now runs at parity. `count()`, `duplicated_keys()`, `freq()`, `filldown()`,
-`fillup()`, `split()`, and `summaries()` all saw similar (smaller) reductions
-in overhead from the same kind of fix.
-
-## Scaling and allocated memory
-
-Microbenchmarks can hide copies that only matter once a table is large. The
-standalone `inst/benchmarks/benchmark-scale.R` harness therefore runs four
-representative operations at 100,000, 1 million, and 10 million rows. It
-measures allocated memory as well as median runtime and gives the basetable and
-raw data.table arms the same input-immutability contract.
-
-Run the complete matrix from the package root with:
-
-```{r scale-command, eval=FALSE}
-Sys.setenv(BASETABLE_BENCH_OUTPUT = "scale-results.csv")
-source("inst/benchmarks/benchmark-scale.R")
+```{r table, results='asis'}
+tab <- benchmark_results[order(benchmark_results$operation, benchmark_results$implementation), ]
+for (col in c("median_ms", "itr_per_sec", "mem_alloc_mb", "relative_time")) {
+  tab[[col]] <- format(round(tab[[col]], 2), nsmall = 2)
+}
+knitr::kable(
+  tab,
+  row.names = FALSE,
+  col.names = c("Operation", "Implementation", "Median (ms)",
+                "Iterations / sec", "Memory (MB)", "Relative time vs basetable"),
+  align = c("l", "l", "r", "r", "r", "r")
+)
 ```
 
-The following 10-million-row results were recorded on x86-64 Linux with R
-4.5.1, data.table 1.18.4, bench 1.1.4, and 16 logical cores. The large tier
-uses three iterations per expression. Runtime is machine-specific and short
-benchmarks remain sensitive to garbage collection; allocation is generally
-the more stable signal.
+A value near 1.00 in the "Relative time vs basetable" column means the other
+implementation runs at roughly the same speed as basetable for that workload.
+The standalone `inst/benchmarks/benchmark-competitors.R` harness runs the same
+comparison at larger sizes.
 
-| Operation | Implementation | Median (ms) | Memory (MB) | Time vs data.table | Memory vs data.table |
-|:--|:--|--:|--:|--:|--:|
-| Subset | basetable | 122.33 | 209.79 | 0.97 | 1.00 |
-| Subset | data.table | 126.71 | 209.79 | 1.00 | 1.00 |
-| Transform | basetable | 161.33 | 381.50 | 1.24 | 1.25 |
-| Transform | data.table | 130.32 | 305.22 | 1.00 | 1.00 |
-| Count | basetable | 65.13 | 267.09 | 1.01 | 1.00 |
-| Count | data.table | 64.77 | 267.06 | 1.00 | 1.00 |
-| Mixed ordering | basetable | 314.26 | 352.89 | 1.09 | 1.00 |
-| Mixed ordering | data.table | 287.26 | 352.88 | 1.00 | 1.00 |
-
-At this scale, filtering, grouped counting, and mixed-direction ordering reach
-allocation parity with their native data.table equivalents. Transform retains
-about 25% overhead because it evaluates and validates each named expression
-sequentially, allowing a later expression to use a column created earlier in
-the same call. This is an intentional semantic feature, but it is now isolated
-and measured rather than hidden by unrelated table copies.
-
-## Absolute Time
+## Absolute time
 
 ```{r absolute-plot, fig.cap="Median runtime by implementation and operation."}
-ggplot(
-  benchmark_results,
-  aes(x = implementation, y = median_ms, fill = implementation)
-) +
+ggplot(benchmark_results, aes(x = implementation, y = median_ms, fill = implementation)) +
   geom_col(width = 0.7) +
   facet_wrap(~operation, ncol = 1, scales = "free_y") +
   coord_flip() +
   scale_y_log10(labels = scales::label_number(accuracy = 0.01)) +
   scale_fill_brewer(palette = "Set2") +
-  labs(
-    x = NULL,
-    y = "Median time (ms, log scale)",
-    fill = NULL
-  ) +
+  labs(x = NULL, y = "Median time (ms, log scale)", fill = NULL) +
   theme_minimal(base_size = 11) +
-  theme(
-    legend.position = "none",
-    strip.text = element_text(face = "bold")
-  )
+  theme(legend.position = "none", strip.text = element_text(face = "bold"))
 ```
 
-## Relative Time
+## Relative time
 
-```{r relative-plot, fig.cap="Relative runtime compared with basetable for each workload. Values above 1 mean slower than basetable."}
-ggplot(
-  benchmark_results,
-  aes(x = implementation, y = relative_time, fill = implementation)
-) +
+```{r relative-plot, fig.cap="Relative runtime compared with basetable. Values above 1 mean slower than basetable."}
+ggplot(benchmark_results, aes(x = implementation, y = relative_time, fill = implementation)) +
   geom_hline(yintercept = 1, linetype = 2, color = "grey50") +
   geom_col(width = 0.7) +
   facet_wrap(~operation, ncol = 1, scales = "free_y") +
   coord_flip() +
   scale_y_continuous(labels = scales::label_number(accuracy = 0.01)) +
   scale_fill_brewer(palette = "Set2") +
-  labs(
-    x = NULL,
-    y = "Relative time vs basetable",
-    fill = NULL
-  ) +
+  labs(x = NULL, y = "Relative time vs basetable", fill = NULL) +
   theme_minimal(base_size = 11) +
-  theme(
-    legend.position = "none",
-    strip.text = element_text(face = "bold")
-  )
+  theme(legend.position = "none", strip.text = element_text(face = "bold"))
 ```

@@ -17,7 +17,7 @@ bt_freq(
   n_max = Inf,
   na = c("NA", ""),
   n_threads = bt_default_threads(),
-  as = c("data.frame", "data.table")
+  as = c("data.frame", "basetable")
 )
 }
 \arguments{
@@ -35,10 +35,10 @@ one of \verb{< <= > >= == !=}. String literals may be quoted. All are AND-ed.}
 
 \item{n_threads}{Worker threads.}
 
-\item{as}{Return \code{"data.frame"} (default) or \code{"data.table"}.}
+\item{as}{Return \code{"data.frame"} (default) or \code{"basetable"}.}
 }
 \value{
-A data.frame (or data.table): the \code{by} columns, \code{n}, and \code{prop}.
+A data.frame: the \code{by} columns, \code{n}, and \code{prop}.
 }
 \description{
 One-pass grouped counts plus proportions.

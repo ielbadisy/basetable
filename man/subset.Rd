@@ -4,8 +4,8 @@
 \alias{reshape}
 \title{Core data manipulation operations}
 \description{
-Base-faithful table manipulation helpers built around explicit arguments and
-data.table returns. See \code{\link{aggregate}}, \code{\link{count}},
+Base-faithful table manipulation helpers built around explicit arguments,
+returning a \code{basetable}. See \code{\link{aggregate}}, \code{\link{count}},
 \code{\link{drop}}, \code{\link{merge}}, \code{\link{move}},
 \code{\link{orderrows}}, \code{\link{pick}}, \code{\link{renamecols}},
 \code{\link{split}}, \code{\link{stack}}, \code{\link{summaries}},
@@ -20,7 +20,7 @@ transform(data, ..., .keep = TRUE, by = NULL)
 reshape(data, ..., direction)
 }
 \arguments{
-  \item{data}{A \code{data.frame} or \code{data.table}.}
+  \item{data}{A \code{data.frame}.}
   \item{subset}{A base-style expression evaluated against columns.}
   \item{select, by}{Character vectors naming columns. For \code{transform},
     \code{by} names optional grouping columns: each expression in \code{...}
@@ -33,7 +33,7 @@ reshape(data, ..., direction)
   \item{direction}{Additional operation-specific controls.}
 }
 \value{
-Most functions return a data.table.
+Most functions return a basetable.
 }
 \examples{
 subset(mtcars, cyl == 6, select = c("mpg", "hp"))

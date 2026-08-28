@@ -7,14 +7,14 @@
 propcount(data, by, margin = NULL)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 
 \item{by}{Character vector of column names identifying groups or join keys.}
 
 \item{margin}{Column(s) defining the totals used to compute proportions.}
 }
 \value{
-A data.table of counts (and proportions when \code{margin} is supplied).
+A basetable of counts (and proportions when \code{margin} is supplied).
 }
 \description{
 Grouped counts with proportions

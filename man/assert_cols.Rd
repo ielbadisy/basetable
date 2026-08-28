@@ -17,7 +17,7 @@ common_names(x, y)
 duplicated_keys(data, by)
 }
 \arguments{
-  \item{data, x, y}{A \code{data.frame} or \code{data.table}.}
+  \item{data, x, y}{A \code{data.frame}.}
   \item{cols, by}{Character vectors naming columns.}
 }
 \value{

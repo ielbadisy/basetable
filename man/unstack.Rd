@@ -12,7 +12,7 @@ unstack(data, form, ...)
 \item{...}{Additional arguments passed to the underlying method.}
 }
 \value{
-A data.table reshaped into wide format.
+A basetable reshaped into wide format.
 }
 \description{
 Reshape a stacked table back into wide form.

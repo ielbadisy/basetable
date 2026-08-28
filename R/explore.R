@@ -107,7 +107,7 @@ freq <- function(data, column, by = NULL, prop = FALSE, sort = TRUE) {
 #' Build a publication-style summary table of one or more variables, optionally
 #' stratified by a grouping column, in the manner of a clinical "Table 1".
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param vars Character vector of variables to summarize. Defaults to every
 #'   column other than `by`.
 #' @param by Optional single column name used to stratify the summary.
@@ -115,7 +115,7 @@ freq <- function(data, column, by = NULL, prop = FALSE, sort = TRUE) {
 #' @param p_value Include a column of between-group p-values. Requires `by`.
 #' @param digits Number of decimal places used when formatting numbers.
 #'
-#' @return A data.table with one row per variable (or variable level), and one
+#' @return A basetable with one row per variable (or variable level), and one
 #'   column per stratum plus `Overall`/`p_value` as requested.
 #' @export
 summarytab <- function(data, vars = NULL, by = NULL, overall = TRUE, p_value = FALSE, digits = 1) {

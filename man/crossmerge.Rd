@@ -8,7 +8,7 @@ crossmerge(x, y)
 \item{x, y}{Data frames or data tables to combine.}
 }
 \value{
-A data.table containing the Cartesian product of the rows.
+A basetable containing the Cartesian product of the rows.
 }
 \description{
 Return every combination of rows from \code{x} and \code{y}.

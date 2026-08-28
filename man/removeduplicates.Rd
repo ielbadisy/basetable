@@ -7,7 +7,7 @@
 removeduplicates(data, by = NULL, keep = c("first", "last", "none"))
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 
 \item{by}{Character vector of column names identifying groups or join keys.}
 

@@ -7,7 +7,7 @@
 uniquerows(data, cols = NULL, .keep_all = FALSE)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 
 \item{cols}{Optional character vector of columns used to determine
 uniqueness.}
@@ -15,7 +15,7 @@ uniqueness.}
 \item{.keep_all}{Keep all columns when \code{cols} is supplied.}
 }
 \value{
-A data.table of the unique rows.
+A basetable of the unique rows.
 }
 \description{
 Return unique rows, optionally considering only selected columns.

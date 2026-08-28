@@ -6,6 +6,6 @@ test_that("omitmissing drops rows with missing values", {
 
   out <- omitmissing(data)
 
-  expect_s3_class(out, "data.table")
+  expect_s3_class(out, "basetable")
   expect_equal(out$id, 1)
 })

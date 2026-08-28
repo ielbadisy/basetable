@@ -50,7 +50,7 @@ test_that("subset/pick/transform/orderrows/renamecols compose into a pipeline", 
     transform(ratio = hp / mpg) |>
     orderrows(by = "ratio", decreasing = TRUE)
 
-  expect_s3_class(out, "data.table")
+  expect_s3_class(out, "basetable")
   expect_true(all(out$cyl == 6))
   expect_equal(names(out), c("mpg", "cyl", "hp", "ratio"))
 
@@ -63,7 +63,7 @@ test_that("subset/pick/transform/orderrows/renamecols compose into a pipeline", 
 
 test_that("summaries, uniquerows, row slicing, move, and rbindfill work together", {
   stats <- summaries(mtcars, mean_mpg = mean(mpg), n = length(mpg), by = "cyl")
-  expect_s3_class(stats, "data.table")
+  expect_s3_class(stats, "basetable")
   expect_equal(nrow(stats), length(unique(mtcars$cyl)))
   expect_true(all(c("cyl", "mean_mpg", "n") %in% names(stats)))
 

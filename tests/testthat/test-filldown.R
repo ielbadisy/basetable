@@ -7,6 +7,6 @@ test_that("filldown carries values forward within groups", {
 
   out <- filldown(data, cols = "treatment", by = "id")
 
-  expect_s3_class(out, "data.table")
+  expect_s3_class(out, "basetable")
   expect_equal(out$treatment, c("A", "A", "A", NA, "B"))
 })

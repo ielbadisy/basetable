@@ -7,7 +7,7 @@
 duplicaterows(data)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 }
 \value{
 A data.frame of the duplicated rows.

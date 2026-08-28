@@ -1,10 +1,10 @@
 #' Summarize missing values by column or row
 #'
-#' @param data A data.frame or data.table.
+#' @param data A data.frame.
 #' @param margin Summarize missingness `"column"`-wise (the default) or
 #'   `"row"`-wise.
 #'
-#' @return A data.table with one row per column (or per row) describing the count
+#' @return A basetable with one row per column (or per row) describing the count
 #'   and proportion of missing values.
 #' @export
 missingness <- function(data, margin = c("column", "row")) {

@@ -7,7 +7,7 @@
 applycols(data, cols, fun, ...)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 
 \item{cols}{Character vector of column names.}
 

@@ -4,7 +4,7 @@ test_that("antimerge keeps non-matching rows from x", {
 
   out <- antimerge(x, y, by = "id")
 
-  expect_s3_class(out, "data.table")
+  expect_s3_class(out, "basetable")
   expect_equal(out$id, c(1, 3))
   expect_equal(out$value, c("a", "c"))
 })

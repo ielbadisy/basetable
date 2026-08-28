@@ -7,7 +7,7 @@
 lastby(data, by, order = NULL)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 
 \item{by}{Character vector of column names identifying groups or join keys.}
 

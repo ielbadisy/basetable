@@ -7,7 +7,7 @@
 towide(data, names, values, idcols = NULL, fun = NULL, fill = NA)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 
 \item{names}{Name for the resulting key/value column, depending on the function.}
 
@@ -20,7 +20,7 @@ towide(data, names, values, idcols = NULL, fun = NULL, fill = NA)
 \item{fill}{Value used for positions where no window/result is available.}
 }
 \value{
-A wide-format data.table.
+A wide-format basetable.
 }
 \description{
 Reshape rows into columns

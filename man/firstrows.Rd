@@ -7,7 +7,7 @@
 firstrows(data, n = 1L)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 
 \item{n}{Integer count.}
 }

@@ -9,7 +9,7 @@ commonnames(x, y)
 \arguments{
 \item{x}{An atomic vector.}
 
-\item{y}{An atomic vector, data.frame, or data.table, depending on the function.}
+\item{y}{An atomic vector, data.frame, or basetable, depending on the function.}
 }
 \value{
 See \code{\link[=common_names]{common_names()}}.

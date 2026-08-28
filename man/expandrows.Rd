@@ -10,7 +10,7 @@ expandrows(data, times)
 \item{times}{A scalar or row-wise count vector giving repetitions.}
 }
 \value{
-A data.table with repeated rows.
+A basetable with repeated rows.
 }
 \description{
 Repeat each row of a table according to a count vector.

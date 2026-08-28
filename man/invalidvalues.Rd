@@ -7,7 +7,7 @@
 invalidvalues(data, column, allowed)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 
 \item{column}{Name of a single column.}
 

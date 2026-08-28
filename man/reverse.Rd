@@ -7,7 +7,7 @@
 reverse(data)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 }
 \value{
 \code{data} with rows in reverse order.

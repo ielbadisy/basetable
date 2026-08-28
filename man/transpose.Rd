@@ -7,10 +7,10 @@
 transpose(data)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 }
 \value{
-A transposed data.table.
+A transposed basetable.
 }
 \description{
 Transpose a table

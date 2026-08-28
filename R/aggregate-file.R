@@ -18,9 +18,9 @@
 #' @param na.rm Logical; drop `NA` values before reducing.
 #' @param delim,quote,comment,header,skip,n_max,na See [btread()].
 #' @param n_threads Worker threads.
-#' @param as Return `"data.frame"` (default) or `"data.table"`.
+#' @param as Return `"data.frame"` (default) or `"basetable"`.
 #'
-#' @return A data.frame (or data.table): the `by` columns, then one column per
+#' @return A data.frame: the `by` columns, then one column per
 #'   `value` x `fun`.
 #' @export
 #' @examples
@@ -41,7 +41,7 @@ bt_aggregate <- function(file,
                          n_max = Inf,
                          na = c("NA", ""),
                          n_threads = bt_default_threads(),
-                         as = c("data.frame", "data.table")) {
+                         as = c("data.frame", "basetable")) {
   as <- match.arg(as)
   stopifnot(length(file) == 1L, is.character(file))
   file <- path.expand(file)
@@ -130,7 +130,7 @@ bt_aggregate <- function(file,
   }
   if (only_n && is.null(value)) names(out)[length(out)] <- "n"
 
-  if (as == "data.table") {
+  if (as == "basetable") {
     out <- bt_as_data_table(out)
   }
   out
@@ -142,7 +142,7 @@ bt_aggregate <- function(file,
 #' `bt_aggregate(file, by, fun = "n")` with an `n` column.
 #'
 #' @inheritParams bt_aggregate
-#' @return A data.frame (or data.table): the `by` columns and an `n` count.
+#' @return A data.frame: the `by` columns and an `n` count.
 #' @export
 #' @examples
 #' p <- tempfile(fileext = ".csv")
@@ -151,7 +151,7 @@ bt_aggregate <- function(file,
 bt_count <- function(file, by, where = NULL, delim = NULL, quote = "\"",
                      comment = "", header = TRUE, skip = 0, n_max = Inf,
                      na = c("NA", ""), n_threads = bt_default_threads(),
-                     as = c("data.frame", "data.table")) {
+                     as = c("data.frame", "basetable")) {
   bt_aggregate(file, by = by, value = NULL, fun = "n", where = where,
                na.rm = TRUE, delim = delim, quote = quote, comment = comment,
                header = header, skip = skip, n_max = n_max, na = na,
@@ -165,17 +165,17 @@ bt_count <- function(file, by, where = NULL, delim = NULL, quote = "\"",
 #'
 #' @inheritParams bt_aggregate
 #' @param cols Columns whose distinct combinations to return.
-#' @return A data.frame (or data.table) of the distinct combinations.
+#' @return A data.frame of the distinct combinations.
 #' @export
 bt_distinct <- function(file, cols, where = NULL, delim = NULL, quote = "\"",
                         comment = "", header = TRUE, skip = 0, n_max = Inf,
                         na = c("NA", ""), n_threads = bt_default_threads(),
-                        as = c("data.frame", "data.table")) {
+                        as = c("data.frame", "basetable")) {
   out <- bt_count(file, by = cols, where = where, delim = delim, quote = quote,
                   comment = comment, header = header, skip = skip, n_max = n_max,
                   na = na, n_threads = n_threads, as = "data.frame")
   out[["n"]] <- NULL
-  if (match.arg(as) == "data.table") out <- bt_as_data_table(out)
+  if (match.arg(as) == "basetable") out <- bt_as_data_table(out)
   out
 }
 
@@ -185,20 +185,20 @@ bt_distinct <- function(file, cols, where = NULL, delim = NULL, quote = "\"",
 #'
 #' @inheritParams bt_aggregate
 #' @param sort Logical; order rows by descending count.
-#' @return A data.frame (or data.table): the `by` columns, `n`, and `prop`.
+#' @return A data.frame: the `by` columns, `n`, and `prop`.
 #' @export
 bt_freq <- function(file, by, where = NULL, sort = TRUE, delim = NULL,
                     quote = "\"", comment = "", header = TRUE, skip = 0,
                     n_max = Inf, na = c("NA", ""),
                     n_threads = bt_default_threads(),
-                    as = c("data.frame", "data.table")) {
+                    as = c("data.frame", "basetable")) {
   out <- bt_count(file, by = by, where = where, delim = delim, quote = quote,
                   comment = comment, header = header, skip = skip, n_max = n_max,
                   na = na, n_threads = n_threads, as = "data.frame")
   out[["prop"]] <- out[["n"]] / sum(out[["n"]])
   if (isTRUE(sort)) out <- bt_engine_order(out, by = "n", decreasing = TRUE)
   row.names(out) <- NULL
-  if (match.arg(as) == "data.table") out <- bt_as_data_table(out)
+  if (match.arg(as) == "basetable") out <- bt_as_data_table(out)
   out
 }
 

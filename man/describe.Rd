@@ -12,7 +12,7 @@ describe(data, cols = NULL, top_n = 3)
 \item{top_n}{Number of most frequent values to show for non-numeric columns.}
 }
 \value{
-A data.table with one row per column.
+A basetable with one row per column.
 }
 \description{
 Summarize a table with basic counts, missingness, distinct values, and

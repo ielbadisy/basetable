@@ -10,7 +10,7 @@ pick(data, cols)
 \item{cols}{Character vector of column names.}
 }
 \value{
-A data.table containing the selected columns.
+A basetable containing the selected columns.
 }
 \description{
 Select columns by name.

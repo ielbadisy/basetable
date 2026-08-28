@@ -3,7 +3,7 @@ test_that("completegrid creates missing combinations", {
 
   out <- completegrid(data, cols = c("site", "sex"))
 
-  expect_s3_class(out, "data.table")
+  expect_s3_class(out, "basetable")
   expect_equal(nrow(out), 4L)
   expect_true(any(is.na(out$value)))
 })

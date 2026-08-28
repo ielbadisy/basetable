@@ -9,7 +9,7 @@ unionrows(x, y, by = NULL)
 \arguments{
 \item{x}{An atomic vector.}
 
-\item{y}{An atomic vector, data.frame, or data.table, depending on the function.}
+\item{y}{An atomic vector, data.frame, or basetable, depending on the function.}
 
 \item{by}{Character vector of column names identifying groups or join keys.}
 }

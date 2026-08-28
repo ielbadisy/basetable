@@ -12,7 +12,7 @@ profile(data, cols = NULL, top_n = 3)
 \item{top_n}{Number of most frequent values to show for non-numeric columns.}
 }
 \value{
-A data.table with one row per column.
+A basetable with one row per column.
 }
 \description{
 Return a compact profile table for the variables in a data set.

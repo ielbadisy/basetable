@@ -7,7 +7,7 @@
 rbindfill(..., id = NULL, fill = TRUE, typeconflict = c("error", "coerce"))
 }
 \arguments{
-\item{...}{Data frames/data.tables to combine, or a single list of them.}
+\item{...}{Data frames to combine, or a single list of them.}
 
 \item{id}{Optional name for a source identifier column recording which
 input each row came from.}
@@ -21,9 +21,9 @@ and the conflicting types before any coercion happens. \code{"coerce"} skips
 the check and allows ordinary vector coercion while binding.}
 }
 \value{
-A combined data.table.
+A combined basetable.
 }
 \description{
-Combine data frames or data.tables by row, filling columns that are
+Combine data frames by row, filling columns that are
 missing from some inputs with \code{NA}.
 }

@@ -16,7 +16,7 @@ bt_distinct(
   n_max = Inf,
   na = c("NA", ""),
   n_threads = bt_default_threads(),
-  as = c("data.frame", "data.table")
+  as = c("data.frame", "basetable")
 )
 }
 \arguments{
@@ -32,10 +32,10 @@ one of \verb{< <= > >= == !=}. String literals may be quoted. All are AND-ed.}
 
 \item{n_threads}{Worker threads.}
 
-\item{as}{Return \code{"data.frame"} (default) or \code{"data.table"}.}
+\item{as}{Return \code{"data.frame"} (default) or \code{"basetable"}.}
 }
 \value{
-A data.frame (or data.table) of the distinct combinations.
+A data.frame of the distinct combinations.
 }
 \description{
 One-pass unique combinations of \code{cols} (like \code{unique(x, by = cols)} but

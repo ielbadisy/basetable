@@ -13,7 +13,7 @@ library(basetable)
 
 `basetable` uses compact verbs with explicit arguments. The same functions
 work in nested expressions and native R pipelines, always returning a
-`data.table` without modifying the input.
+the native engine without modifying the input.
 
 ## A compact pipeline
 

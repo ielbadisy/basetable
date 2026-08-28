@@ -111,6 +111,15 @@ SEXP make_row_names(R_xlen_t n) {
   return rn;
 }
 
+// Every frame the in-memory engine returns carries basetable's own class.
+void set_table_class(SEXP out) {
+  SEXP cls = PROTECT(Rf_allocVector(STRSXP, 2));
+  SET_STRING_ELT(cls, 0, Rf_mkChar("basetable"));
+  SET_STRING_ELT(cls, 1, Rf_mkChar("data.frame"));
+  Rf_setAttrib(out, R_ClassSymbol, cls);
+  UNPROTECT(1);
+}
+
 void copy_common_attrs(SEXP out, SEXP in) {
   for (SEXP a = ATTRIB(in); a != R_NilValue; a = CDR(a)) {
     SEXP tag = TAG(a);
@@ -169,31 +178,111 @@ SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<i
   }
   Rf_setAttrib(out, R_NamesSymbol, names);
   Rf_setAttrib(out, R_RowNamesSymbol, make_row_names((R_xlen_t)rows.size()));
-  Rf_setAttrib(out, R_ClassSymbol, Rf_mkString("data.frame"));
+  set_table_class(out);
   UNPROTECT(2);
   return out;
 }
 
-void append_value_key(std::string& key, SEXP col, R_xlen_t i) {
-  key.push_back((char)TYPEOF(col));
-  key.push_back(':');
+// One numeric key slot: logical / integer / real all fold into the same double
+// domain so that 1L, 1.0 and TRUE compare equal across columns, matching what
+// base::merge() does when it coerces mismatched key types.
+bool key_is_numeric(SEXP col) {
+  int t = TYPEOF(col);
+  return (t == LGLSXP || t == INTSXP || t == REALSXP) && !Rf_isFactor(col);
+}
+
+double key_num(SEXP col, R_xlen_t i, int& kind) {
+  // kind: 0 finite, 1 NA, 2 NaN
   switch (TYPEOF(col)) {
-    case LGLSXP:
-      key.append(reinterpret_cast<const char*>(&LOGICAL(col)[i]), sizeof(int));
-      break;
-    case INTSXP:
-      key.append(reinterpret_cast<const char*>(&INTEGER(col)[i]), sizeof(int));
-      break;
+    case LGLSXP: {
+      int v = LOGICAL(col)[i];
+      if (v == NA_LOGICAL) { kind = 1; return 0.0; }
+      kind = 0; return (double)v;
+    }
+    case INTSXP: {
+      int v = INTEGER(col)[i];
+      if (v == NA_INTEGER) { kind = 1; return 0.0; }
+      kind = 0; return (double)v;
+    }
+    default: {  // REALSXP
+      double v = REAL(col)[i];
+      if (ISNA(v)) { kind = 1; return 0.0; }
+      if (std::isnan(v)) { kind = 2; return 0.0; }
+      kind = 0; return v == 0.0 ? 0.0 : v;  // normalise -0.0
+    }
+  }
+}
+
+// A key slot rendered as a string: factor label, string element, or NA.
+SEXP key_str_elt(SEXP col, R_xlen_t i) {
+  if (Rf_isFactor(col)) {
+    SEXP lv = Rf_getAttrib(col, R_LevelsSymbol);
+    int code = INTEGER(col)[i];
+    if (code == NA_INTEGER || code < 1 || code > Rf_length(lv)) return NA_STRING;
+    return STRING_ELT(lv, code - 1);
+  }
+  if (TYPEOF(col) == STRSXP) return STRING_ELT(col, i);
+  return NA_STRING;
+}
+
+// Like key_str_elt but also coerces numeric / logical slots to their character
+// form, the way rbind() / as.character() would when binding mixed columns.
+SEXP key_str_or_coerce(SEXP col, R_xlen_t i) {
+  if (Rf_isFactor(col) || TYPEOF(col) == STRSXP) return key_str_elt(col, i);
+  char buf[32];
+  switch (TYPEOF(col)) {
+    case LGLSXP: {
+      int v = LOGICAL(col)[i];
+      return v == NA_LOGICAL ? NA_STRING : Rf_mkChar(v ? "TRUE" : "FALSE");
+    }
+    case INTSXP: {
+      int v = INTEGER(col)[i];
+      if (v == NA_INTEGER) return NA_STRING;
+      std::snprintf(buf, sizeof(buf), "%d", v);
+      return Rf_mkChar(buf);
+    }
     case REALSXP: {
       double v = REAL(col)[i];
-      if (ISNA(v)) key.push_back(1);
-      else if (std::isnan(v)) key.push_back(2);
-      else key.push_back(0);
-      key.append(reinterpret_cast<const char*>(&v), sizeof(double));
+      if (ISNAN(v)) return NA_STRING;
+      std::snprintf(buf, sizeof(buf), "%.15g", v);
+      return Rf_mkChar(buf);
+    }
+    default:
+      return NA_STRING;
+  }
+}
+
+void append_value_key(std::string& key, SEXP col, R_xlen_t i) {
+  if (Rf_isFactor(col)) {
+    SEXP levels = Rf_getAttrib(col, R_LevelsSymbol);
+    int code = INTEGER(col)[i];
+    key.push_back('S');
+    key.push_back(':');
+    if (code == NA_INTEGER || code < 1 || code > Rf_length(levels)) {
+      key.append("<NA>");
+    } else {
+      const char* p = CHAR(STRING_ELT(levels, code - 1));
+      key.append(p, std::strlen(p));
+    }
+    key.push_back('\037');
+    return;
+  }
+  switch (TYPEOF(col)) {
+    case LGLSXP:
+    case INTSXP:
+    case REALSXP: {
+      int kind = 0;
+      double v = key_num(col, i, kind);
+      key.push_back('N');
+      key.push_back(':');
+      key.push_back((char)kind);
+      if (kind == 0) key.append(reinterpret_cast<const char*>(&v), sizeof(double));
       break;
     }
     case STRSXP: {
       SEXP s = STRING_ELT(col, i);
+      key.push_back('S');
+      key.push_back(':');
       if (s == NA_STRING) key.append("<NA>");
       else {
         const char* p = CHAR(s);
@@ -513,7 +602,7 @@ bool count_int_dense(SEXP df, int by, const int* p, R_xlen_t nrow, SEXP s_name, 
   SET_STRING_ELT(names, 1, STRING_ELT(s_name, 0));
   Rf_setAttrib(out, R_NamesSymbol, names);
   Rf_setAttrib(out, R_RowNamesSymbol, make_row_names((R_xlen_t)out_counts.size()));
-  Rf_setAttrib(out, R_ClassSymbol, Rf_mkString("data.frame"));
+  set_table_class(out);
   UNPROTECT(4);
   *out_ptr = out;
   return true;
@@ -549,7 +638,7 @@ bool count_hash_typed(SEXP df, int by, const T* p, R_xlen_t nrow, SEXP s_name, S
   SET_STRING_ELT(names, 1, STRING_ELT(s_name, 0));
   Rf_setAttrib(out, R_NamesSymbol, names);
   Rf_setAttrib(out, R_RowNamesSymbol, make_row_names((R_xlen_t)counts.size()));
-  Rf_setAttrib(out, R_ClassSymbol, Rf_mkString("data.frame"));
+  set_table_class(out);
   UNPROTECT(4);
   *out_ptr = out;
   return true;
@@ -648,7 +737,7 @@ bool group_agg_int_single(SEXP df, int by, const std::vector<int>& val, AggFun f
           SET_STRING_ELT(names, 1, STRING_ELT(Rf_getAttrib(df, R_NamesSymbol), val[0]));
           Rf_setAttrib(result, R_NamesSymbol, names);
           Rf_setAttrib(result, R_RowNamesSymbol, make_row_names((R_xlen_t)first.size()));
-          Rf_setAttrib(result, R_ClassSymbol, Rf_mkString("data.frame"));
+          set_table_class(result);
           UNPROTECT(4);
           *out_ptr = result;
           return true;
@@ -716,7 +805,7 @@ bool group_agg_int_single(SEXP df, int by, const std::vector<int>& val, AggFun f
 
       Rf_setAttrib(result, R_NamesSymbol, names);
       Rf_setAttrib(result, R_RowNamesSymbol, make_row_names((R_xlen_t)first.size()));
-      Rf_setAttrib(result, R_ClassSymbol, Rf_mkString("data.frame"));
+      set_table_class(result);
       UNPROTECT(3);
       *out_ptr = result;
       return true;
@@ -777,7 +866,7 @@ bool group_agg_int_single(SEXP df, int by, const std::vector<int>& val, AggFun f
 
   Rf_setAttrib(result, R_NamesSymbol, names);
   Rf_setAttrib(result, R_RowNamesSymbol, make_row_names((R_xlen_t)first.size()));
-  Rf_setAttrib(result, R_ClassSymbol, Rf_mkString("data.frame"));
+  set_table_class(result);
   UNPROTECT(3);
   *out_ptr = result;
   return true;
@@ -888,12 +977,47 @@ SEXP join_take(SEXP src, const std::vector<R_xlen_t>& rows) {
 }
 
 // Merged key column: take from the x row when present, else the matching y row.
+// When x and y key columns have different (numeric) types, the result is
+// promoted to double, the way base::merge() coerces mismatched keys.
 SEXP join_take_key(SEXP xc, SEXP yc,
                    const std::vector<R_xlen_t>& xrows,
                    const std::vector<R_xlen_t>& yrows) {
-  if (TYPEOF(xc) != TYPEOF(yc))
-    Rf_error("basetable: join key columns must share a type");
   R_xlen_t n = (R_xlen_t)xrows.size();
+
+  bool x_str = Rf_isFactor(xc) || TYPEOF(xc) == STRSXP;
+  bool y_str = Rf_isFactor(yc) || TYPEOF(yc) == STRSXP;
+  bool same_factor = Rf_isFactor(xc) && Rf_isFactor(yc) &&
+    R_compute_identical(Rf_getAttrib(xc, R_LevelsSymbol),
+                        Rf_getAttrib(yc, R_LevelsSymbol), 0);
+
+  if ((TYPEOF(xc) != TYPEOF(yc) || (Rf_isFactor(xc) && !same_factor)) && !same_factor) {
+    if (key_is_numeric(xc) && key_is_numeric(yc)) {
+      SEXP out = PROTECT(Rf_allocVector(REALSXP, n));
+      double* p = REAL(out);
+      for (R_xlen_t i = 0; i < n; ++i) {
+        int kind = 0;
+        R_xlen_t xr = xrows[(size_t)i], yr = yrows[(size_t)i];
+        if (xr >= 0) { double v = key_num(xc, xr, kind); p[i] = kind == 0 ? v : (kind == 2 ? R_NaN : NA_REAL); }
+        else if (yr >= 0) { double v = key_num(yc, yr, kind); p[i] = kind == 0 ? v : (kind == 2 ? R_NaN : NA_REAL); }
+        else p[i] = NA_REAL;
+      }
+      UNPROTECT(1);
+      return out;
+    }
+    if (x_str && y_str) {
+      SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
+      for (R_xlen_t i = 0; i < n; ++i) {
+        R_xlen_t xr = xrows[(size_t)i], yr = yrows[(size_t)i];
+        if (xr >= 0) SET_STRING_ELT(out, i, key_str_elt(xc, xr));
+        else if (yr >= 0) SET_STRING_ELT(out, i, key_str_elt(yc, yr));
+        else SET_STRING_ELT(out, i, NA_STRING);
+      }
+      UNPROTECT(1);
+      return out;
+    }
+    Rf_error("basetable: join key columns must share a type");
+  }
+
   SEXP out = PROTECT(Rf_allocVector(TYPEOF(xc), n));
   for (R_xlen_t i = 0; i < n; ++i) {
     if (xrows[(size_t)i] >= 0) copy_elt(out, i, xc, xrows[(size_t)i]);
@@ -1052,7 +1176,7 @@ extern "C" SEXP bt_count_(SEXP df, SEXP s_by, SEXP s_name) {
   SET_STRING_ELT(names, nkey, STRING_ELT(s_name, 0));
   Rf_setAttrib(with_n, R_NamesSymbol, names);
   Rf_setAttrib(with_n, R_RowNamesSymbol, make_row_names((R_xlen_t)counts.size()));
-  Rf_setAttrib(with_n, R_ClassSymbol, Rf_mkString("data.frame"));
+  set_table_class(with_n);
   UNPROTECT(4);
   return with_n;
 }
@@ -1130,7 +1254,7 @@ extern "C" SEXP bt_group_agg_(SEXP df, SEXP s_by, SEXP s_value, SEXP s_fun, SEXP
 
   Rf_setAttrib(result, R_NamesSymbol, names);
   Rf_setAttrib(result, R_RowNamesSymbol, make_row_names((R_xlen_t)first.size()));
-  Rf_setAttrib(result, R_ClassSymbol, Rf_mkString("data.frame"));
+  set_table_class(result);
   UNPROTECT(3);
   return result;
 }
@@ -1304,7 +1428,7 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
   }
   Rf_setAttrib(out, R_NamesSymbol, names);
   Rf_setAttrib(out, R_RowNamesSymbol, make_row_names(nout));
-  Rf_setAttrib(out, R_ClassSymbol, Rf_mkString("data.frame"));
+  set_table_class(out);
   UNPROTECT(2);
   return out;
 }
@@ -1407,7 +1531,7 @@ extern "C" SEXP bt_range_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
   }
   Rf_setAttrib(out, R_NamesSymbol, names);
   Rf_setAttrib(out, R_RowNamesSymbol, make_row_names(nout));
-  Rf_setAttrib(out, R_ClassSymbol, Rf_mkString("data.frame"));
+  set_table_class(out);
   UNPROTECT(2);
   return out;
 }
@@ -1497,7 +1621,137 @@ extern "C" SEXP bt_rolling_join_(SEXP x, SEXP y, SEXP s_x_exact, SEXP s_y_exact,
   }
   Rf_setAttrib(out, R_NamesSymbol, names);
   Rf_setAttrib(out, R_RowNamesSymbol, make_row_names(xf.nrow));
-  Rf_setAttrib(out, R_ClassSymbol, Rf_mkString("data.frame"));
+  set_table_class(out);
+  UNPROTECT(2);
+  return out;
+}
+
+// Row-bind a list of data.frames. With fill = TRUE the column set is the union
+// of all input names (first-seen order) and missing columns become NA; with
+// fill = FALSE only the first frame's columns are used. A column present with
+// different types across inputs is promoted along logical < integer < double <
+// character (factors and any string force character). `id_name` (optional) adds
+// a leading label column drawn from `id_values` (the names of the input list).
+extern "C" SEXP bt_rbind_(SEXP frames, SEXP s_fill, SEXP s_id_name, SEXP s_id_values) {
+  if (TYPEOF(frames) != VECSXP)
+    Rf_error("basetable: bt_rbind_ expects a list of data.frames");
+  R_xlen_t nf = Rf_xlength(frames);
+  bool fill = Rf_asLogical(s_fill) == TRUE;
+  const char* id_name = (TYPEOF(s_id_name) == STRSXP && Rf_xlength(s_id_name) == 1)
+    ? CHAR(STRING_ELT(s_id_name, 0)) : nullptr;
+
+  std::vector<std::string> col_names;
+  std::unordered_map<std::string, int> col_pos;
+  std::vector<R_xlen_t> nrows((size_t)nf, 0);
+  R_xlen_t total = 0;
+
+  for (R_xlen_t f = 0; f < nf; ++f) {
+    SEXP df = VECTOR_ELT(frames, f);
+    Frame fr = frame_from(df);
+    nrows[(size_t)f] = fr.nrow;
+    total += fr.nrow;
+    SEXP nm = Rf_getAttrib(df, R_NamesSymbol);
+    if (f == 0 || fill) {
+      for (R_xlen_t j = 0; j < fr.ncol; ++j) {
+        std::string s = CHAR(STRING_ELT(nm, j));
+        if (col_pos.find(s) == col_pos.end()) {
+          col_pos.emplace(s, (int)col_names.size());
+          col_names.push_back(s);
+        }
+      }
+    }
+  }
+  int ncol = (int)col_names.size();
+
+  // Resolve the target type of each output column.
+  auto rank = [](SEXPTYPE t) {
+    switch (t) { case LGLSXP: return 0; case INTSXP: return 1; case REALSXP: return 2; default: return 3; }
+  };
+  std::vector<SEXPTYPE> out_type((size_t)ncol, LGLSXP);
+  std::vector<char> seen((size_t)ncol, 0);
+  for (R_xlen_t f = 0; f < nf; ++f) {
+    SEXP df = VECTOR_ELT(frames, f);
+    SEXP nm = Rf_getAttrib(df, R_NamesSymbol);
+    for (R_xlen_t j = 0; j < Rf_xlength(df); ++j) {
+      auto it = col_pos.find(CHAR(STRING_ELT(nm, j)));
+      if (it == col_pos.end()) continue;
+      SEXP col = VECTOR_ELT(df, j);
+      SEXPTYPE t = Rf_isFactor(col) ? STRSXP : TYPEOF(col);
+      if (t != LGLSXP && t != INTSXP && t != REALSXP && t != STRSXP) t = STRSXP;
+      int c = it->second;
+      out_type[(size_t)c] = seen[(size_t)c]
+        ? (rank(t) > rank(out_type[(size_t)c]) ? t : out_type[(size_t)c])
+        : t;
+      seen[(size_t)c] = 1;
+    }
+  }
+
+  int extra = id_name ? 1 : 0;
+  SEXP out = PROTECT(Rf_allocVector(VECSXP, ncol + extra));
+  SEXP names = PROTECT(Rf_allocVector(STRSXP, ncol + extra));
+
+  if (id_name) {
+    SEXP idcol = PROTECT(Rf_allocVector(STRSXP, total));
+    R_xlen_t at = 0;
+    bool have_vals = TYPEOF(s_id_values) == STRSXP && Rf_xlength(s_id_values) == nf;
+    for (R_xlen_t f = 0; f < nf; ++f) {
+      SEXP lbl = have_vals ? STRING_ELT(s_id_values, f) : R_NilValue;
+      for (R_xlen_t i = 0; i < nrows[(size_t)f]; ++i) {
+        if (have_vals && lbl != NA_STRING && CHAR(lbl)[0] != '\0')
+          SET_STRING_ELT(idcol, at++, lbl);
+        else {
+          char buf[24];
+          std::snprintf(buf, sizeof(buf), "%lld", (long long)(f + 1));
+          SET_STRING_ELT(idcol, at++, Rf_mkChar(buf));
+        }
+      }
+    }
+    SET_VECTOR_ELT(out, 0, idcol);
+    SET_STRING_ELT(names, 0, Rf_mkChar(id_name));
+    UNPROTECT(1);
+  }
+
+  for (int c = 0; c < ncol; ++c) {
+    SEXPTYPE tt = out_type[(size_t)c];
+    SEXP col = PROTECT(Rf_allocVector(tt, total));
+    R_xlen_t at = 0;
+    for (R_xlen_t f = 0; f < nf; ++f) {
+      SEXP df = VECTOR_ELT(frames, f);
+      SEXP nm = Rf_getAttrib(df, R_NamesSymbol);
+      int src = -1;
+      for (R_xlen_t j = 0; j < Rf_xlength(df); ++j)
+        if (!std::strcmp(CHAR(STRING_ELT(nm, j)), col_names[(size_t)c].c_str())) { src = (int)j; break; }
+      R_xlen_t rn = nrows[(size_t)f];
+      if (src < 0) {
+        for (R_xlen_t i = 0; i < rn; ++i) set_na_elt(col, at + i);
+        at += rn;
+        continue;
+      }
+      SEXP s = VECTOR_ELT(df, src);
+      for (R_xlen_t i = 0; i < rn; ++i, ++at) {
+        if (tt == STRSXP) {
+          SET_STRING_ELT(col, at, key_str_or_coerce(s, i));
+        } else if (tt == REALSXP) {
+          int kind = 0;
+          double v = key_is_numeric(s) ? key_num(s, i, kind) : (kind = 1, 0.0);
+          REAL(col)[at] = kind == 0 ? v : (kind == 2 ? R_NaN : NA_REAL);
+        } else if (tt == INTSXP) {
+          if (TYPEOF(s) == INTSXP) INTEGER(col)[at] = INTEGER(s)[i];
+          else if (TYPEOF(s) == LGLSXP) INTEGER(col)[at] = LOGICAL(s)[i];
+          else INTEGER(col)[at] = NA_INTEGER;
+        } else {  // LGLSXP
+          LOGICAL(col)[at] = TYPEOF(s) == LGLSXP ? LOGICAL(s)[i] : NA_LOGICAL;
+        }
+      }
+    }
+    SET_VECTOR_ELT(out, c + extra, col);
+    SET_STRING_ELT(names, c + extra, Rf_mkChar(col_names[(size_t)c].c_str()));
+    UNPROTECT(1);
+  }
+
+  Rf_setAttrib(out, R_NamesSymbol, names);
+  Rf_setAttrib(out, R_RowNamesSymbol, make_row_names(total));
+  set_table_class(out);
   UNPROTECT(2);
   return out;
 }

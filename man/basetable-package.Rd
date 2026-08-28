@@ -4,8 +4,8 @@
 \title{Base-Faithful Tabular Data Tools}
 \description{
 The \pkg{basetable} package provides a compact set of base-style data
-manipulation and exploratory data analysis helpers backed primarily by
-\pkg{data.table}.
+manipulation and exploratory data analysis helpers backed by a native
+C++ table engine.
 }
 \details{
 Core design rules:

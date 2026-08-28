@@ -12,7 +12,7 @@ library(basetable)
 ```
 
 `basetable` provides a base-style front end for tabular work with a
-`data.table` backend. The core design goals are explicit semantics, compact
+native C++ table engine. The core design goals are explicit semantics, compact
 naming, and equal support for nested calls and native `|>` pipelines.
 
 ## The canonical compact core
@@ -33,13 +33,13 @@ Most workflows need only a small set of regular verbs:
 
 These are canonical names, not one layer of aliases among several grammars.
 Each function accepts a table as its first argument, uses character vectors
-for column specifications, and returns a `data.table`. Those regular rules
+for column specifications, and returns a `bt_table`. Those regular rules
 make pipelines compact for people and make function selection predictable for
 program-generating tools such as language models.
 
 The package is intentionally focused on in-memory table manipulation,
 exploration, and validation. Read and write files with base R or a dedicated
-I/O package, then pass the resulting data frame or data.table to basetable.
+I/O package, then pass the resulting data frame to basetable.
 Domain-specific parsing and validation remain the responsibility of focused
 packages.
 

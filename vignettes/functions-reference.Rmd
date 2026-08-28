@@ -18,19 +18,18 @@ vignette: >
 #| include: false
 knitr::opts_chunk$set(warning = FALSE)
 library(basetable)
-library(data.table)
 options(width = 90, digits = 4)
 ```
 
 # Introduction
 
-`basetable` is for people who already know base R and want `data.table`
-objects without learning `data.table`'s `[i, j, by]` syntax or dplyr's tidy
+`basetable` is for people who already know base R and want fast table
+operations without learning `data.table`'s `[i, j, by]` syntax or dplyr's tidy
 evaluation. It is aimed specifically at two audiences: **teaching** table
 manipulation to people learning base R (without the extra cognitive load of
 non-standard evaluation or terse `[i, j, by]` syntax), and **migrating** a
 codebase already built on base-R table semantics (`subset()`, `merge()`,
-`aggregate()`, and friends) to `data.table`-backed results without a rewrite.
+`aggregate()`, and friends) onto a faster engine without a rewrite.
 It is not trying to replace dplyr or data.table for a new project that's free
 to pick any tool; both are more established choices with a larger ecosystem.
 
@@ -39,9 +38,10 @@ Design goals:
 - **Base-style naming and semantics.** Functions read like `subset()`,
   `transform()`, `aggregate()`, `merge()`, and `split()`, the base R verbs
   most R users already know, rather than inventing a new grammar.
-- **`data.table` as the execution backend.** Every operation that touches real
-  data routes through `data.table`, so the package is fast without asking you
-  to learn `data.table`'s `[i, j, by]` syntax.
+- **A native C++ execution engine.** Every operation that touches real data
+  routes through basetable's own compiled kernels, so the package is fast
+  without asking you to learn `data.table`'s `[i, j, by]` syntax and without a
+  `data.table` dependency.
 - **Explicit, standard-evaluation interfaces.** Column names are passed as
   character strings, not bare symbols captured by non-standard evaluation
   (with a few clearly-marked exceptions, like `subset()`'s and `transform()`'s
@@ -54,8 +54,8 @@ Design goals:
 `dplyr` without shadowing its grammar. One practical consequence of the
 base-style naming that remains: `basetable` still reuses a handful of true
 base-R names, like `subset()`, `merge()`, `transform()`, `split()`, and
-`count()`, that `data.table` also defines. If you attach `data.table` in the
-same session, whichever package was attached **last** wins for any shared
+`count()`, that `data.table` also defines. If you attach another package that exports
+those names, whichever was attached **last** wins for any shared
 name and silently shadows the other: call `basetable::fn()` explicitly (or
 use the [`conflicted`](https://conflicted.r-lib.org/) package) if you need
 both loaded at once.
@@ -135,9 +135,9 @@ renamecols(mtcars, horsepower = hp) |> pick(c("horsepower", "mpg"))
 ## Grouped summaries: `aggregate()`
 
 `aggregate()` computes one summary function over one or more value columns,
-per group, the `data.table`-backed analogue of `stats::aggregate()`. Note it
-returns a `data.table` directly, since it's meant to be fast and composable
-with further `data.table` operations.
+per group, a faster analogue of `stats::aggregate()`. Note it returns a
+`bt_table` directly, since it's meant to be fast and composable with further
+basetable operations.
 
 ```{r}
 aggregate(mtcars, by = "cyl", value = c("mpg", "hp"), fun = mean)
@@ -164,8 +164,8 @@ summaries(mtcars, "cyl", mean_hp = mean(hp), sd_hp = sd(hp))
 
 ## Splitting into groups: `split()` and `applyby()`
 
-`split()` breaks a table into a named list of data.tables, one per group, using
-`data.table`'s grouped split machinery internally:
+`split()` breaks a table into a named list of `bt_table`s, one per group, using
+the native grouping engine internally:
 
 ```{r}
 pieces <- split(iris, by = "Species")
@@ -173,7 +173,7 @@ names(pieces)
 pieces$setosa |> headtail(2)
 ```
 
-`applyby()` applies a function to each group through the same `data.table`
+`applyby()` applies a function to each group through the same grouping
 split path and, if `bind = TRUE`, stitches the results back into one table:
 
 ```{r}
@@ -190,12 +190,12 @@ lastby(df, by = "id")
 
 # Joining tables {#sec-joins}
 
-`basetable` provides the full family of table joins, all `data.table`-backed.
+`basetable` provides the full family of table joins, all engine-backed.
 
 ## Standard joins: `merge()`
 
 `merge()` mirrors `base::merge()`'s interface exactly (`by`, `all`, `all.x`,
-`all.y`, `suffixes`) while running on `data.table` internally.
+`all.y`, `suffixes`) while running on the native join engine internally.
 
 ```{r}
 orders <- data.frame(id = c(1, 2, 3), customer = c("a", "b", "c"))
@@ -280,7 +280,7 @@ updatemerge(current, updates, by = "id")
 ## Conditional joins: `nonequimerge()`, `rangemerge()`
 
 `nonequimerge()` supports genuine inequality conditions in `by`, written as
-`"xcol<op>ycol"` (the same convention `data.table` itself uses for `on=`),
+`"xcol<op>ycol"`,
 alongside any plain exact-match columns:
 
 ```{r}
@@ -373,7 +373,7 @@ towide(long, names = "month", values = "sales", idcols = "id", fun = sum)
 
 `reshape()`, `stack()`, and `unstack()` are `basetable`-native wrappers around
 `stats::reshape()`, `utils::stack()`, and `utils::unstack()`, kept for
-base-R-compatibility rather than reimplemented on `data.table`.
+base-R compatibility rather than reimplemented on the engine.
 
 ```{r}
 wide2 <- data.frame(id = 1:2, t1 = c(10, 20), t2 = c(11, 22))
@@ -612,7 +612,7 @@ For an arbitrary set of row positions, index the table directly, the same
 way you would any base R data frame:
 
 ```{r}
-data.table::as.data.table(mtcars)[c(1, 3, 5)]
+firstrows(mtcars, c(1, 3, 5))
 ```
 
 ## Sorting rows: `orderrows()`
@@ -863,6 +863,6 @@ foldr(1:4, `+`)
 # Closing notes
 
 This document covers all of `basetable`'s exported functions. For the
-performance story (how the wrapper compares to raw `data.table`, and where
+performance story (how basetable compares to base R and dplyr, and where
 its overhead was tracked down and fixed), see the companion `benchmarking`
 vignette.

@@ -12,7 +12,7 @@ summaries(data, by = NULL, ...)
 \item{...}{Named summary expressions.}
 }
 \value{
-A data.table containing the requested summaries.
+A basetable containing the requested summaries.
 }
 \description{
 Compute multiple named summary expressions, optionally by group.

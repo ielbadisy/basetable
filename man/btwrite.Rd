@@ -17,7 +17,7 @@ btwrite(
 )
 }
 \arguments{
-\item{x}{A data.frame or data.table.}
+\item{x}{A data.frame.}
 
 \item{file}{Output path.}
 

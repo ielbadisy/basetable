@@ -16,7 +16,7 @@ rolling key.}
 \item{tolerance}{Maximum distance allowed for rolling matches.}
 }
 \value{
-A data.table with rows from \code{x} joined to nearest matches in \code{y}.
+A basetable with rows from \code{x} joined to nearest matches in \code{y}.
 }
 \description{
 Join tables using a rolling match on the last key column.

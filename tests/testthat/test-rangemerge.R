@@ -4,7 +4,7 @@ test_that("rangemerge keeps only y rows whose value falls within x's [lower, upp
 
   out <- rangemerge(x, y, by = "id", lower = "lower", upper = "upper", value = "val")
 
-  expect_s3_class(out, "data.table")
+  expect_s3_class(out, "basetable")
   expect_equal(nrow(out), 3L)
   expect_equal(out$label, c("a", "a", "c"))
   expect_false("val_end" %in% names(out))

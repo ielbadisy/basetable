@@ -7,7 +7,7 @@
 repairnames(data, method = c("unique", "universal", "minimal"))
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 
 \item{method}{Cleaning strategy to apply to names.}
 }

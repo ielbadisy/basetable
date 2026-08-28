@@ -14,7 +14,7 @@ summarytab(
 )
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 
 \item{vars}{Character vector of variables to summarize. Defaults to every
 column other than \code{by}.}
@@ -28,7 +28,7 @@ column other than \code{by}.}
 \item{digits}{Number of decimal places used when formatting numbers.}
 }
 \value{
-A data.table with one row per variable (or variable level), and one
+A basetable with one row per variable (or variable level), and one
 column per stratum plus \code{Overall}/\code{p_value} as requested.
 }
 \description{

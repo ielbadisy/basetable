@@ -7,7 +7,7 @@
 renamecols(data, ...)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 
 \item{...}{Named rename expressions, as \code{new = old}.}
 }

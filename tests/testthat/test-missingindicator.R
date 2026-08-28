@@ -6,7 +6,7 @@ test_that("missingindicator appends logical indicator columns", {
 
   out <- missingindicator(data, cols = "value")
 
-  expect_s3_class(out, "data.table")
+  expect_s3_class(out, "basetable")
   expect_true("missing_value" %in% names(out))
   expect_equal(out$missing_value, c(FALSE, TRUE, TRUE))
 })

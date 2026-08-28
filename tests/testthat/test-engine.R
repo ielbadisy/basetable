@@ -2,7 +2,7 @@ test_that("native engine powers projection and row filtering", {
   df <- data.frame(a = 1:5, b = letters[1:5], c = c(TRUE, FALSE, TRUE, NA, TRUE))
 
   out <- pick(df, c("b", "a"))
-  expect_s3_class(out, "data.table")
+  expect_s3_class(out, "basetable")
   expect_equal(as.data.frame(out), df[c("b", "a")])
 
   filtered <- subset(df, c, select = c(a, b))
@@ -60,8 +60,8 @@ test_that("native engine powers semi and anti joins", {
 
   expect_equal(semi$val, c(2L, 4L))
   expect_equal(anti$val, c(1L, 3L))
-  expect_s3_class(semi, "data.table")
-  expect_s3_class(anti, "data.table")
+  expect_s3_class(semi, "basetable")
+  expect_s3_class(anti, "basetable")
 })
 
 test_that("native engine materialises equi joins with all.x / all.y / suffixes", {
@@ -98,6 +98,25 @@ test_that("native engine joins on multi-column keys and Cartesian products", {
   expect_equal(nrow(cj), 6L)
 })
 
+test_that("native engine coerces mismatched numeric and factor join keys", {
+  a <- data.frame(id = 1:4, x = letters[1:4], stringsAsFactors = FALSE)
+  b <- data.frame(id = c(2, 3, 5), y = c("B", "C", "E"), stringsAsFactors = FALSE)
+
+  inner <- merge(a, b, by = "id")
+  expect_equal(inner$id, c(2, 3))
+  expect_equal(inner$y, c("B", "C"))
+
+  full <- merge(a, b, by = "id", all = TRUE, sort = TRUE)
+  expect_equal(full$id, c(1, 2, 3, 4, 5))
+  expect_equal(full$x, c("a", "b", "c", "d", NA))
+
+  f1 <- data.frame(g = factor(c("lo", "hi", "lo")), v = 1:3)
+  f2 <- data.frame(g = c("hi", "lo"), w = c(10, 20), stringsAsFactors = FALSE)
+  fj <- merge(f1, f2, by = "g")
+  expect_equal(fj$v, c(1L, 2L, 3L))
+  expect_equal(fj$w, c(20, 10, 20))
+})
+
 test_that("native engine drives range, overlap and rolling joins", {
   x <- data.frame(id = c(1L, 1L), lower = c(0, 100), upper = c(10, 200))
   y <- data.frame(id = 1L, val = c(5, 15), label = c("a", "b"), stringsAsFactors = FALSE)
@@ -111,4 +130,24 @@ test_that("native engine drives range, overlap and rolling joins", {
 
   nearest <- rollingmerge(xt, yt, by = c("id", "time"), direction = "nearest")
   expect_equal(nearest$value, c("a", "b", "b"))
+})
+
+test_that("native row-bind unions columns, fills gaps and promotes types", {
+  a <- data.frame(x = 1:2, y = c("a", "b"), stringsAsFactors = FALSE)
+  b <- data.frame(y = c("c", "d"), z = c(TRUE, FALSE), stringsAsFactors = FALSE)
+
+  bound <- rbindfill(list(a, b))
+  expect_s3_class(bound, "basetable")
+  expect_equal(names(bound), c("x", "y", "z"))
+  expect_equal(bound$x, c(1L, 2L, NA, NA))
+  expect_equal(bound$y, c("a", "b", "c", "d"))
+  expect_equal(bound$z, c(NA, NA, TRUE, FALSE))
+
+  mixed <- rbindfill(list(data.frame(v = 1:2), data.frame(v = c("x", "y"))), typeconflict = "coerce")
+  expect_type(mixed$v, "character")
+  expect_equal(mixed$v, c("1", "2", "x", "y"))
+
+  tagged <- rbindfill(list(one = a[1, ], two = b[1, ]), id = "src")
+  expect_equal(tagged$src, c("one", "two"))
+  expect_equal(names(tagged)[[1]], "src")
 })

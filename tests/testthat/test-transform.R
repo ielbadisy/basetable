@@ -1,7 +1,7 @@
 test_that("transform adds derived columns", {
   out <- transform(mtcars, ratio = mpg / cyl)
 
-  expect_s3_class(out, "data.table")
+  expect_s3_class(out, "basetable")
   expect_true("ratio" %in% names(out))
   expect_equal(out$ratio[[1]], mtcars$mpg[[1]] / mtcars$cyl[[1]])
 })
@@ -9,7 +9,7 @@ test_that("transform adds derived columns", {
 test_that("transform() with .keep = FALSE keeps only new columns", {
   out <- transform(mtcars, ratio = mpg / cyl, .keep = FALSE)
 
-  expect_s3_class(out, "data.table")
+  expect_s3_class(out, "basetable")
   expect_equal(names(out), "ratio")
 })
 

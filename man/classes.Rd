@@ -7,10 +7,10 @@
 classes(data)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 }
 \value{
-A data.table with one row per column giving its class.
+A basetable with one row per column giving its class.
 }
 \description{
 Column classes

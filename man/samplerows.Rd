@@ -7,7 +7,7 @@
 samplerows(data, n)
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 
 \item{n}{Integer count.}
 }

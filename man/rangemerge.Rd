@@ -17,7 +17,7 @@ range bounds to test against.}
 matching \code{x} row's \verb{[lower, upper]} range.}
 }
 \value{
-A data.table with one row per \code{x} row for each \code{y} row whose
+A basetable with one row per \code{x} row for each \code{y} row whose
 \code{value} falls within \verb{[lower, upper]} (matching on \code{by}); an
 \code{x} row with no matching \code{y} row appears once with \code{NA} for
 \code{y}'s columns.

@@ -7,13 +7,13 @@
 missingness(data, margin = c("column", "row"))
 }
 \arguments{
-\item{data}{A data.frame or data.table.}
+\item{data}{A data.frame.}
 
 \item{margin}{Summarize missingness \code{"column"}-wise (the default) or
 \code{"row"}-wise.}
 }
 \value{
-A data.table with one row per column (or per row) describing the count
+A basetable with one row per column (or per row) describing the count
 and proportion of missing values.
 }
 \description{

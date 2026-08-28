@@ -32,9 +32,9 @@
 #' @param guess_max Number of rows sampled for type guessing.
 #' @param lazy Logical; return numeric columns as lazily-parsed ALTREP vectors.
 #' @param n_threads Number of worker threads for the eager numeric fill.
-#' @param as Return `"data.frame"` (default) or `"data.table"`.
+#' @param as Return `"data.frame"` (default) or `"basetable"`.
 #'
-#' @return A data.frame (or data.table).
+#' @return A data.frame.
 #' @export
 #' @examples
 #' p <- tempfile(fileext = ".csv")
@@ -55,7 +55,7 @@ btread <- function(file,
                     guess_max = 10000,
                     lazy = FALSE,
                     n_threads = bt_default_threads(),
-                    as = c("data.frame", "data.table")) {
+                    as = c("data.frame", "basetable")) {
   as <- match.arg(as)
   stopifnot(length(file) == 1L, is.character(file))
   file <- path.expand(file)
@@ -120,7 +120,7 @@ btread <- function(file,
                col_select_int,
                isTRUE(lazy))
 
-  if (as == "data.table") {
+  if (as == "basetable") {
     out <- bt_as_data_table(out)
   }
   out
@@ -132,7 +132,7 @@ btread <- function(file,
 #' thread, then disjoint row ranges are formatted into private buffers and
 #' flushed in order.
 #'
-#' @param x A data.frame or data.table.
+#' @param x A data.frame.
 #' @param file Output path.
 #' @param delim Field delimiter.
 #' @param na String to write for `NA`.

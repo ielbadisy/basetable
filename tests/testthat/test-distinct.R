@@ -1,7 +1,7 @@
 test_that("uniquerows returns unique rows", {
   out <- uniquerows(mtcars, cols = "cyl")
 
-  expect_s3_class(out, "data.table")
+  expect_s3_class(out, "basetable")
   expect_equal(nrow(out), length(unique(mtcars$cyl)))
 })
 

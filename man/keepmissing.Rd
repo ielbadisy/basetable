@@ -12,7 +12,7 @@ keepmissing(data, cols = NULL, mode = c("any", "all"))
 \item{mode}{Whether any or all selected columns must be missing.}
 }
 \value{
-A data.table containing the matching rows.
+A basetable containing the matching rows.
 }
 \description{
 Return rows where selected columns are missing or blank.

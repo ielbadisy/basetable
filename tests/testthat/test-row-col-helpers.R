@@ -72,7 +72,7 @@ test_that("orderrows supports a direction for each sort column", {
   )
 
   expect_equal(out$id, c(4, 2, 3, 1))
-  expect_s3_class(out, "data.table")
+  expect_s3_class(out, "basetable")
   expect_equal(df$id, 1:4)
 })
 

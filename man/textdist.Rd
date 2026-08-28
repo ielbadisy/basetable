@@ -9,7 +9,7 @@ textdist(x, y)
 \arguments{
 \item{x}{An atomic vector.}
 
-\item{y}{An atomic vector, data.frame, or data.table, depending on the function.}
+\item{y}{An atomic vector, data.frame, or basetable, depending on the function.}
 }
 \value{
 A numeric distance matrix (see \code{\link[utils:adist]{utils::adist()}}).

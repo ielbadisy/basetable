@@ -9,9 +9,9 @@ recode(x, old, new)
 \arguments{
 \item{x}{An atomic vector.}
 
-\item{old}{Baseline data.frame or data.table ("before" state).}
+\item{old}{Baseline data.frame ("before" state).}
 
-\item{new}{Updated data.frame or data.table ("after" state), or replacement values when used for value substitution.}
+\item{new}{Updated data.frame ("after" state), or replacement values when used for value substitution.}
 }
 \value{
 See \code{\link[=replacevalues]{replacevalues()}}.

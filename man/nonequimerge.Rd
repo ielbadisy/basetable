@@ -12,13 +12,13 @@ in both \code{x} and \code{y}) is matched exactly; an entry containing a
 comparison operator, written as \code{"xcol<op>ycol"} (e.g.
 \code{"date>=start_date"}, \code{"date<=end_date"}), is matched as an
 inequality between \code{x}'s \code{xcol} and \code{y}'s \code{ycol}. This
-follows \code{data.table}'s own \code{on=} condition syntax.}
+uses \code{"col>=other"} style comparison strings.}
 
-\item{...}{Additional arguments passed to \code{data.table}'s \code{[} join
+\item{...}{Currently ignored; reserved for future join
 (e.g. \code{mult}, \code{roll}).}
 }
 \value{
-A data.table with one row per matching \code{x}/\code{y} pair (an inner
+A basetable with one row per matching \code{x}/\code{y} pair (an inner
 join: rows of \code{x} with no matching \code{y} row are dropped).
 }
 \description{

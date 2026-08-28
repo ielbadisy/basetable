@@ -12,7 +12,7 @@ missingindicator(data, cols = NULL, prefix = "missing_")
 \item{prefix}{Prefix used for the added indicator columns.}
 }
 \value{
-A data.table with logical missingness indicator columns appended.
+A basetable with logical missingness indicator columns appended.
 }
 \description{
 Append logical indicators showing whether selected columns are missing or blank.

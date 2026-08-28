@@ -20,7 +20,7 @@ aggregate(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TRUE)
 \item{sort}{Whether to sort output rows by group.}
 }
 \value{
-A data.table containing one row per group.
+A basetable containing one row per group.
 }
 \description{
 Compute grouped summaries for one or more value columns.
