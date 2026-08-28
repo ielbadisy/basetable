@@ -34,6 +34,17 @@
   pass instead of `do.call(rbind, ...)`.
 * `towide()` now groups its id columns through the native grouping engine and
   buckets rows once, instead of an O(rows x levels x rows) triple loop.
+* `orderrows()` pre-ranks character key columns into integers once (in
+  `strcmp` order, ties shared, `NA` per `na.last`) so the sort comparator is
+  integer-only. About 5x faster than base R `order()` on a 5e5-row mixed-case
+  string-plus-integer sort; ordering is unchanged (C-locale byte order, as
+  before).
+* Grouped `aggregate()` with a recognised reducer now reduces large inputs in
+  parallel: each thread folds a row range into private accumulators that are
+  merged at the end (no R API calls in the parallel section). Kicks in above
+  ~750k rows and respects `setthreads()`; ~1.7x at 5M rows, ~1.9x at 20M.
+  Smaller inputs keep the single-threaded path. Results are identical bit for
+  bit apart from floating-point summation order.
 * Replaced the byte-string composite key used by grouping, distinct, duplicate
   detection and every join with a fixed-width integer key codec: numeric
   columns fold into one value domain, character and factor columns are

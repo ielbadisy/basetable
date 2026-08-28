@@ -182,3 +182,44 @@ test_that("grouping a single numeric double key works through the codec", {
   expect_equal(agg$k, c(1.5, 2.5))
   expect_equal(agg$v, c(1 + 3 + 5, 2 + 4))
 })
+
+test_that("threaded and serial grouped aggregation agree", {
+  skip_on_cran()
+  set.seed(42)
+  n <- 2e6
+  d <- data.frame(g = sample(letters[1:6], n, TRUE), x = rnorm(n), stringsAsFactors = FALSE)
+
+  old <- getOption("basetable.threads")
+  on.exit(options(basetable.threads = old), add = TRUE)
+
+  options(basetable.threads = 1L)
+  s <- aggregate(d, by = "g", value = "x", fun = sum, sort = TRUE)
+  m <- aggregate(d, by = "g", value = "x", fun = mean, sort = TRUE)
+  v <- aggregate(d, by = "g", value = "x", fun = var, sort = TRUE)
+
+  options(basetable.threads = 8L)
+  s8 <- aggregate(d, by = "g", value = "x", fun = sum, sort = TRUE)
+  m8 <- aggregate(d, by = "g", value = "x", fun = mean, sort = TRUE)
+  v8 <- aggregate(d, by = "g", value = "x", fun = var, sort = TRUE)
+
+  expect_equal(s8$x, s$x, tolerance = 1e-8)
+  expect_equal(m8$x, m$x, tolerance = 1e-10)
+  expect_equal(v8$x, v$x, tolerance = 1e-8)
+  expect_equal(s8$g, s$g)
+})
+
+test_that("orderrows on character keys matches C-locale ordering", {
+  set.seed(7)
+  d <- data.frame(
+    s = sample(c(letters, LETTERS), 5000, TRUE),
+    k = sample(1:20, 5000, TRUE),
+    stringsAsFactors = FALSE
+  )
+  d$s[sample(5000, 50)] <- NA
+
+  out <- as.data.frame(orderrows(d, by = c("s", "k")))
+  ref <- d[order(d$s, d$k, method = "radix", na.last = TRUE), ]
+  rownames(out) <- NULL
+  rownames(ref) <- NULL
+  expect_equal(out, ref)
+})

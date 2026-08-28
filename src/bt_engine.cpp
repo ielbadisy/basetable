@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -345,6 +346,28 @@ void agg_update(AggState& s, AggFun fun, double x) {
       ++s.n;
       break;
   }
+}
+
+void agg_merge(AggState& a, const AggState& b) {
+  a.sum += b.sum;
+  a.sq += b.sq;
+  a.n += b.n;
+  if (b.min < a.min) a.min = b.min;
+  if (b.max > a.max) a.max = b.max;
+  if (b.bad) a.bad = true;
+}
+
+int clamp_threads(SEXP s_n_threads, R_xlen_t work, R_xlen_t min_work) {
+  int req = 1;
+  if (s_n_threads != R_NilValue && Rf_xlength(s_n_threads) >= 1) {
+    int v = Rf_asInteger(s_n_threads);
+    if (v != NA_INTEGER && v > 0) req = v;
+  }
+  if (req < 1) req = 1;
+  if (req > 64) req = 64;
+  if (work < min_work) return 1;
+  int by_work = (int)std::min<R_xlen_t>(req, work / min_work);
+  return by_work < 1 ? 1 : by_work;
 }
 
 
@@ -998,6 +1021,36 @@ bool match_mask_int_single(SEXP x, SEXP y, int x_by, int y_by, SEXP out) {
   return true;
 }
 
+// Per-row integer rank of a character column in strcmp order, so ordering can
+// compare ints instead of running strcmp at every comparison. Equal content
+// shares a rank; NA rows sort first (!na_last) or last (na_last).
+std::vector<int> str_rank(SEXP col, R_xlen_t nrow, bool na_last) {
+  std::unordered_map<const void*, int> code;
+  std::vector<SEXP> distinct;
+  code.reserve((size_t)nrow);
+  for (R_xlen_t i = 0; i < nrow; ++i) {
+    SEXP s = STRING_ELT(col, i);
+    if (s == NA_STRING) continue;
+    if (code.emplace((const void*)s, 0).second) distinct.push_back(s);
+  }
+  std::sort(distinct.begin(), distinct.end(), [](SEXP a, SEXP b) {
+    return std::strcmp(CHAR(a), CHAR(b)) < 0;
+  });
+  for (size_t r = 0; r < distinct.size(); ++r) {
+    int rr = (r > 0 && std::strcmp(CHAR(distinct[r - 1]), CHAR(distinct[r])) == 0)
+      ? code[(const void*)distinct[r - 1]]
+      : (int)r + 1;
+    code[(const void*)distinct[r]] = rr;
+  }
+  std::vector<int> rank((size_t)nrow);
+  int na_rank = na_last ? INT_MAX : INT_MIN;
+  for (R_xlen_t i = 0; i < nrow; ++i) {
+    SEXP s = STRING_ELT(col, i);
+    rank[(size_t)i] = (s == NA_STRING) ? na_rank : code[(const void*)s];
+  }
+  return rank;
+}
+
 int cmp_value(SEXP col, R_xlen_t a, R_xlen_t b, bool na_last) {
   switch (TYPEOF(col)) {
     case LGLSXP: {
@@ -1185,12 +1238,27 @@ extern "C" SEXP bt_order_(SEXP df, SEXP s_by, SEXP s_decreasing, SEXP s_na_last)
   if (Rf_xlength(s_decreasing) != (R_xlen_t)by.size())
     Rf_error("basetable: decreasing length mismatch");
   bool na_last = Rf_asLogical(s_na_last) == TRUE;
+
+  // Pre-rank character key columns so the comparator stays integer-only.
+  std::vector<std::vector<int>> ranks(by.size());
+  for (size_t k = 0; k < by.size(); ++k) {
+    SEXP col = VECTOR_ELT(df, by[k]);
+    if (TYPEOF(col) == STRSXP && !Rf_isFactor(col))
+      ranks[k] = str_rank(col, f.nrow, na_last);
+  }
+
   std::vector<R_xlen_t> ord;
   ord.reserve((size_t)f.nrow);
   for (R_xlen_t i = 0; i < f.nrow; ++i) ord.push_back(i);
   std::stable_sort(ord.begin(), ord.end(), [&](R_xlen_t a, R_xlen_t b) {
-    for (R_xlen_t k = 0; k < (R_xlen_t)by.size(); ++k) {
-      int c = cmp_value(VECTOR_ELT(df, by[(size_t)k]), a, b, na_last);
+    for (size_t k = 0; k < by.size(); ++k) {
+      int c;
+      if (!ranks[k].empty()) {
+        int ra = ranks[k][(size_t)a], rb = ranks[k][(size_t)b];
+        c = (ra > rb) - (ra < rb);
+      } else {
+        c = cmp_value(VECTOR_ELT(df, by[k]), a, b, na_last);
+      }
       if (c != 0) {
         bool dec = LOGICAL(s_decreasing)[k] == TRUE;
         return dec ? c > 0 : c < 0;
@@ -1306,7 +1374,8 @@ extern "C" SEXP bt_count_(SEXP df, SEXP s_by, SEXP s_name) {
   return with_n;
 }
 
-extern "C" SEXP bt_group_agg_(SEXP df, SEXP s_by, SEXP s_value, SEXP s_fun, SEXP s_na_rm) {
+extern "C" SEXP bt_group_agg_(SEXP df, SEXP s_by, SEXP s_value, SEXP s_fun, SEXP s_na_rm,
+                              SEXP s_n_threads) {
   Frame f = frame_from(df);
   std::vector<int> by = col_index(s_by, f.ncol);
   std::vector<int> val = col_index(s_value, f.ncol);
@@ -1326,43 +1395,78 @@ extern "C" SEXP bt_group_agg_(SEXP df, SEXP s_by, SEXP s_value, SEXP s_fun, SEXP
 
   std::vector<int> codes;
   bool have_codes = by.size() == 1 && group_single(VECTOR_ELT(df, by[0]), f.nrow, codes, first);
-  if (have_codes) state.resize(first.size() * (size_t)nv);
 
-  KeyCodec codec(df, by);
-  std::unordered_map<KeyBuf, int, KeyHash> pos;
-  KeyBuf buf;
-  if (!have_codes) pos.reserve((size_t)f.nrow);
+  std::vector<SEXP> vcols((size_t)nv);
+  for (int j = 0; j < nv; ++j) {
+    vcols[(size_t)j] = VECTOR_ELT(df, val[(size_t)j]);
+    int t = TYPEOF(vcols[(size_t)j]);
+    if (fun != AGG_N && t != LGLSXP && t != INTSXP && t != REALSXP)
+      Rf_error("basetable: aggregate value columns must be numeric, integer, or logical");
+  }
 
-  for (R_xlen_t i = 0; i < f.nrow; ++i) {
-    int g;
-    if (have_codes) {
-      g = codes[(size_t)i];
-    } else {
-      codec.encode(df, by, i, buf);
-      auto it = pos.find(buf);
-      if (it == pos.end()) {
-        g = (int)first.size();
-        pos.emplace(buf, g);
-        first.push_back(i);
-        state.resize(state.size() + nv);
-      } else {
-        g = it->second;
+  int nth = have_codes ? clamp_threads(s_n_threads, f.nrow, 750000) : 1;
+
+  if (have_codes && nth > 1) {
+    // Dense group codes: reduce row ranges into per-thread private accumulators,
+    // then merge. No R API calls in the parallel section.
+    size_t width = first.size() * (size_t)nv;
+    std::vector<std::vector<AggState>> partial((size_t)nth, std::vector<AggState>(width));
+    auto worker = [&](int t, R_xlen_t lo, R_xlen_t hi) {
+      std::vector<AggState>& st = partial[(size_t)t];
+      for (R_xlen_t i = lo; i < hi; ++i) {
+        size_t base = (size_t)codes[(size_t)i] * (size_t)nv;
+        for (int j = 0; j < nv; ++j) {
+          AggState& s = st[base + (size_t)j];
+          if (fun == AGG_N) { ++s.n; continue; }
+          bool na = false;
+          double x = value_as_double(vcols[(size_t)j], i, na);
+          if (na) { if (!na_rm) s.bad = true; continue; }
+          agg_update(s, fun, x);
+        }
       }
+    };
+    std::vector<std::thread> pool;
+    R_xlen_t chunk = (f.nrow + nth - 1) / nth;
+    for (int t = 0; t < nth; ++t) {
+      R_xlen_t lo = (R_xlen_t)t * chunk, hi = std::min<R_xlen_t>(f.nrow, lo + chunk);
+      if (lo >= hi) break;
+      pool.emplace_back(worker, t, lo, hi);
     }
-
-    for (int j = 0; j < nv; ++j) {
-      AggState& s = state[(size_t)g * nv + j];
-      if (fun == AGG_N) {
-        ++s.n;
-        continue;
+    for (auto& th : pool) th.join();
+    state.assign(width, AggState());
+    for (int t = 0; t < nth; ++t)
+      for (size_t k = 0; k < width; ++k)
+        agg_merge(state[k], partial[(size_t)t][k]);
+  } else {
+    if (have_codes) state.resize(first.size() * (size_t)nv);
+    KeyCodec codec(df, by);
+    std::unordered_map<KeyBuf, int, KeyHash> pos;
+    KeyBuf buf;
+    if (!have_codes) pos.reserve((size_t)f.nrow);
+    for (R_xlen_t i = 0; i < f.nrow; ++i) {
+      int g;
+      if (have_codes) {
+        g = codes[(size_t)i];
+      } else {
+        codec.encode(df, by, i, buf);
+        auto it = pos.find(buf);
+        if (it == pos.end()) {
+          g = (int)first.size();
+          pos.emplace(buf, g);
+          first.push_back(i);
+          state.resize(state.size() + nv);
+        } else {
+          g = it->second;
+        }
       }
-      bool na = false;
-      double x = value_as_double(VECTOR_ELT(df, val[(size_t)j]), i, na);
-      if (na) {
-        if (!na_rm) s.bad = true;
-        continue;
+      for (int j = 0; j < nv; ++j) {
+        AggState& s = state[(size_t)g * nv + j];
+        if (fun == AGG_N) { ++s.n; continue; }
+        bool na = false;
+        double x = value_as_double(vcols[(size_t)j], i, na);
+        if (na) { if (!na_rm) s.bad = true; continue; }
+        agg_update(s, fun, x);
       }
-      agg_update(s, fun, x);
     }
   }
 

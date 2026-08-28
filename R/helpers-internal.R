@@ -478,7 +478,10 @@ bt_engine_aggregate <- function(data, by, value, fun, na.rm = FALSE) {
   df <- bt_as_data_frame(data)
   by_pos <- bt_col_positions(df, by)
   value_pos <- bt_col_positions(df, value)
-  bt_as_data_table(.Call(bt_group_agg_, df, by_pos, value_pos, fun, isTRUE(na.rm)))
+  bt_as_data_table(.Call(
+    bt_group_agg_, df, by_pos, value_pos, fun, isTRUE(na.rm),
+    as.integer(bt_default_threads())
+  ))
 }
 
 bt_engine_match_mask <- function(x, y, by) {

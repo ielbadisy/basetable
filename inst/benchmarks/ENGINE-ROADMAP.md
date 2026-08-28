@@ -8,7 +8,8 @@ base-style argument handling and NSE until expression compilation exists.
 
 - Native projection and row materialisation for `pick()`, `drop()`, `subset()`,
   `firstrows()`, `lastrows()`, and `reverse()`.
-- Native ordering for `orderrows()`.
+- Native ordering for `orderrows()`, with character key columns pre-ranked to
+  integers so the comparator never runs `strcmp`.
 - Native distinct and duplicate masks for `uniquerows()`, `duplicaterows()`,
   and `removeduplicates()`, including dense integer/logical fast paths.
 - Native grouped counts for `count()`.
@@ -38,12 +39,13 @@ base-style argument handling and NSE until expression compilation exists.
 
 ## Next engine tracks
 
-- Extend the key codec to `orderrows()` so sorting can compare integer codes
-  instead of `strcmp` for character columns.
 - Range / non-equi joins still scan a whole equi-key bucket per x row, and
   rolling joins scan the bucket linearly; add sorted-merge / binary-search
   variants on top of the integer key codec.
-- Parallelise the dense grouping and hash-aggregation passes.
+- Parallelise the rest: the `group_single` dictionary pass, the dense
+  integer-key aggregate path, `bt_group_id_`, `bt_count_`, and join build /
+  probe. (Grouped `aggregate()` with a dense code path already reduces in
+  parallel above ~750k rows.)
 - Extend the expression kernel to `transform()`: needs integer-result
   preservation (int op int stays int) and a grouped variant so
   `transform(by =)` stops looping groups in R.
