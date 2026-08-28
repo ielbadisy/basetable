@@ -11,11 +11,14 @@ extern "C" {
 SEXP btread_(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP,
               SEXP, SEXP, SEXP, SEXP, SEXP);
 SEXP btwrite_(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+SEXP bt_agg_(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP,
+             SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 void bt_init_altrep(DllInfo* dll);
 
 static const R_CallMethodDef CallEntries[] = {
   { "btread_",  (DL_FUNC) &btread_,  15 },
   { "btwrite_", (DL_FUNC) &btwrite_,  9 },
+  { "bt_agg_",  (DL_FUNC) &bt_agg_,  21 },
   { NULL, NULL, 0 }
 };
 
