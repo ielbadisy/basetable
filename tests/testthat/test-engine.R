@@ -223,3 +223,36 @@ test_that("orderrows on character keys matches C-locale ordering", {
   rownames(ref) <- NULL
   expect_equal(out, ref)
 })
+
+test_that("windowed rangemerge matches a brute-force scan", {
+  set.seed(11)
+  ng <- 8
+  x <- data.frame(k = sample(seq_len(ng), 120, TRUE), lo = round(rnorm(120), 1))
+  x$hi <- x$lo + round(runif(120, 0, 4), 1)
+  x$xid <- seq_len(120)
+  y <- data.frame(
+    k = sample(seq_len(ng), 200, TRUE),
+    val = round(rnorm(200), 1),
+    label = sprintf("L%03d", 1:200),
+    stringsAsFactors = FALSE
+  )
+
+  got <- as.data.frame(rangemerge(x, y, by = "k", lower = "lo", upper = "hi", value = "val"))
+  ref <- do.call(rbind, lapply(seq_len(nrow(x)), function(i) {
+    h <- y[y$k == x$k[i] & y$val >= x$lo[i] & y$val <= x$hi[i], , drop = FALSE]
+    if (!nrow(h)) data.frame(xid = i, label = NA_character_)
+    else data.frame(xid = i, label = h$label)
+  }))
+  rownames(got) <- NULL
+  rownames(ref) <- NULL
+  expect_equal(got[c("xid", "label")], ref)
+})
+
+test_that("overlapmerge (two-column interval predicate) still works via the scan path", {
+  x <- data.frame(id = c(1, 2), startx = c(1, 10), endx = c(4, 14))
+  y <- data.frame(id = c(1, 2), starty = c(3, 12), endy = c(5, 15), value = c("a", "b"),
+                  stringsAsFactors = FALSE)
+  out <- overlapmerge(x, y, startx = "startx", endx = "endx",
+                      starty = "starty", endy = "endy", by = "id")
+  expect_equal(out$value, c("a", "b"))
+})

@@ -1764,30 +1764,117 @@ extern "C" SEXP bt_range_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
     for (R_xlen_t j = 0; j < yf.nrow; ++j) all_y_rows.push_back(j);
   }
 
+  // Fast path: every predicate bounds one shared numeric y column, so each
+  // bucket can be sorted once and the matching window found by binary search.
+  bool windowed = !px.empty();
+  for (size_t k = 0; windowed && k < px.size(); ++k) {
+    if (py[k] != py[0]) windowed = false;
+    if (pop[k] == CMP_EQ) windowed = false;  // handled but rare; keep it simple
+    if (!key_is_numeric(VECTOR_ELT(x, px[k])) || !key_is_numeric(VECTOR_ELT(y, py[k])))
+      windowed = false;
+  }
+
   std::vector<R_xlen_t> xrows, yrows;
-  for (R_xlen_t i = 0; i < xf.nrow; ++i) {
-    const std::vector<R_xlen_t>* bucket = nullptr;
+
+  if (windowed) {
+    SEXP yv = VECTOR_ELT(y, py[0]);
+    using Win = std::vector<std::pair<double, R_xlen_t>>;
+    auto sort_bucket = [&](const std::vector<R_xlen_t>& rows) {
+      Win w;
+      w.reserve(rows.size());
+      for (R_xlen_t j : rows) {
+        bool na = false;
+        double v = value_as_double(yv, j, na);
+        if (!na) w.emplace_back(v, j);
+      }
+      std::sort(w.begin(), w.end());
+      return w;
+    };
+    std::unordered_map<KeyBuf, Win, KeyHash> wmap;
+    Win single;
     if (has_keys) {
-      codec.encode(x, x_by, i, buf);
-      auto it = ymap.find(buf);
-      if (it != ymap.end()) bucket = &it->second;
+      wmap.reserve(ymap.size());
+      for (auto& kv : ymap) wmap.emplace(kv.first, sort_bucket(kv.second));
     } else {
-      bucket = &all_y_rows;
+      single = sort_bucket(all_y_rows);
     }
-    bool hit = false;
-    if (bucket) {
-      for (R_xlen_t j : *bucket) {
-        bool ok = true;
-        for (size_t k = 0; k < px.size(); ++k) {
-          if (!pred_ok(pred_sign(VECTOR_ELT(x, px[k]), i, VECTOR_ELT(y, py[k]), j), pop[k])) {
-            ok = false;
-            break;
+
+    for (R_xlen_t i = 0; i < xf.nrow; ++i) {
+      const Win* w = nullptr;
+      if (has_keys) {
+        codec.encode(x, x_by, i, buf);
+        auto it = wmap.find(buf);
+        if (it != wmap.end()) w = &it->second;
+      } else {
+        w = &single;
+      }
+      double lo = R_NegInf, hi = R_PosInf;
+      bool lo_incl = true, hi_incl = true, ok = true;
+      for (size_t k = 0; k < px.size(); ++k) {
+        bool na = false;
+        double a = value_as_double(VECTOR_ELT(x, px[k]), i, na);
+        if (na) { ok = false; break; }
+        switch (pop[k]) {
+          case CMP_GE: if (a < hi) { hi = a; hi_incl = true; } break;   // y.v <= a
+          case CMP_GT: if (a <= hi) { hi = a; hi_incl = false; } break; // y.v <  a
+          case CMP_LE: if (a > lo) { lo = a; lo_incl = true; } break;   // y.v >= a
+          case CMP_LT: if (a >= lo) { lo = a; lo_incl = false; } break; // y.v >  a
+        }
+      }
+      bool hit = false;
+      if (ok && w && !w->empty() && (lo < hi || (lo == hi && lo_incl && hi_incl))) {
+        size_t begin = lo_incl
+          ? (size_t)(std::lower_bound(w->begin(), w->end(), std::make_pair(lo, (R_xlen_t)-1)) - w->begin())
+          : (size_t)(std::upper_bound(w->begin(), w->end(), std::make_pair(lo, (R_xlen_t)(R_XLEN_T_MAX))) - w->begin());
+        size_t end = hi_incl
+          ? (size_t)(std::upper_bound(w->begin(), w->end(), std::make_pair(hi, (R_xlen_t)(R_XLEN_T_MAX))) - w->begin())
+          : (size_t)(std::lower_bound(w->begin(), w->end(), std::make_pair(hi, (R_xlen_t)-1)) - w->begin());
+        // Multi-match rows come out ordered by the join-key value (the window
+        // is already sorted); small windows are additionally put back into y
+        // row order so the common case matches the old scan exactly.
+        if (end > begin) {
+          hit = true;
+          if (end - begin <= 64) {
+            R_xlen_t win[64];
+            size_t n = 0;
+            for (size_t p = begin; p < end; ++p) win[n++] = (*w)[p].second;
+            std::sort(win, win + n);
+            for (size_t p = 0; p < n; ++p) { xrows.push_back(i); yrows.push_back(win[p]); }
+          } else {
+            for (size_t p = begin; p < end; ++p) {
+              xrows.push_back(i);
+              yrows.push_back((*w)[p].second);
+            }
           }
         }
-        if (ok) { xrows.push_back(i); yrows.push_back(j); hit = true; }
       }
+      if (!hit && all_x) { xrows.push_back(i); yrows.push_back(-1); }
     }
-    if (!hit && all_x) { xrows.push_back(i); yrows.push_back(-1); }
+  } else {
+    for (R_xlen_t i = 0; i < xf.nrow; ++i) {
+      const std::vector<R_xlen_t>* bucket = nullptr;
+      if (has_keys) {
+        codec.encode(x, x_by, i, buf);
+        auto it = ymap.find(buf);
+        if (it != ymap.end()) bucket = &it->second;
+      } else {
+        bucket = &all_y_rows;
+      }
+      bool hit = false;
+      if (bucket) {
+        for (R_xlen_t j : *bucket) {
+          bool ok = true;
+          for (size_t k = 0; k < px.size(); ++k) {
+            if (!pred_ok(pred_sign(VECTOR_ELT(x, px[k]), i, VECTOR_ELT(y, py[k]), j), pop[k])) {
+              ok = false;
+              break;
+            }
+          }
+          if (ok) { xrows.push_back(i); yrows.push_back(j); hit = true; }
+        }
+      }
+      if (!hit && all_x) { xrows.push_back(i); yrows.push_back(-1); }
+    }
   }
 
   R_xlen_t nout = (R_xlen_t)xrows.size();
@@ -1853,34 +1940,77 @@ extern "C" SEXP bt_rolling_join_(SEXP x, SEXP y, SEXP s_x_exact, SEXP s_y_exact,
 
   SEXP xroll = VECTOR_ELT(x, xr);
   SEXP yroll = VECTOR_ELT(y, yr);
+
+  // Sort each equi-key bucket by roll value (then original row, so ties keep
+  // the lowest y index) and drop NA-roll rows. Matching is then a binary
+  // search per x row instead of a linear bucket scan.
+  using RollBucket = std::vector<std::pair<double, R_xlen_t>>;
+  auto build_bucket = [&](const std::vector<R_xlen_t>& rows) {
+    RollBucket b;
+    b.reserve(rows.size());
+    for (R_xlen_t j : rows) {
+      bool na = false;
+      double v = value_as_double(yroll, j, na);
+      if (!na) b.emplace_back(v, j);
+    }
+    std::sort(b.begin(), b.end());
+    return b;
+  };
+
+  std::unordered_map<KeyBuf, RollBucket, KeyHash> sorted;
+  RollBucket single;
+  if (has_exact) {
+    sorted.reserve(ymap.size());
+    for (auto& kv : ymap) sorted.emplace(kv.first, build_bucket(kv.second));
+  } else {
+    single = build_bucket(all_y_rows);
+  }
+
+  auto pick = [&](const RollBucket& b, double xv) -> R_xlen_t {
+    if (b.empty()) return -1;
+    // first element with value >= xv
+    size_t lo = (size_t)(std::lower_bound(
+      b.begin(), b.end(), std::make_pair(xv, (R_xlen_t)-1)) - b.begin());
+    // backward candidate: largest value <= xv
+    R_xlen_t back_j = -1; double back_ad = R_PosInf;
+    if (lo < b.size() && b[lo].first == xv) { back_j = b[lo].second; back_ad = 0.0; }
+    else if (lo > 0) {
+      double tv = b[lo - 1].first;
+      size_t s = (size_t)(std::lower_bound(
+        b.begin(), b.end(), std::make_pair(tv, (R_xlen_t)-1)) - b.begin());
+      back_j = b[s].second;
+      back_ad = xv - tv;
+    }
+    // forward candidate: smallest value >= xv
+    R_xlen_t fwd_j = -1; double fwd_ad = R_PosInf;
+    if (lo < b.size()) { fwd_j = b[lo].second; fwd_ad = b[lo].first - xv; }
+
+    R_xlen_t j = -1; double ad = R_PosInf;
+    if (dir == 0) { j = back_j; ad = back_ad; }
+    else if (dir == 1) { j = fwd_j; ad = fwd_ad; }
+    else {  // nearest; on an exact tie keep the lower y row index
+      if (fwd_j < 0) { j = back_j; ad = back_ad; }
+      else if (back_j < 0) { j = fwd_j; ad = fwd_ad; }
+      else if (back_ad < fwd_ad) { j = back_j; ad = back_ad; }
+      else if (fwd_ad < back_ad) { j = fwd_j; ad = fwd_ad; }
+      else { j = back_j < fwd_j ? back_j : fwd_j; ad = back_ad; }
+    }
+    if (j < 0 || ad > tol) return -1;
+    return j;
+  };
+
   std::vector<R_xlen_t> matchrow((size_t)xf.nrow, -1);
   for (R_xlen_t i = 0; i < xf.nrow; ++i) {
-    const std::vector<R_xlen_t>* bucket = nullptr;
-    if (has_exact) {
-      codec.encode(x, xe, i, buf);
-      auto it = ymap.find(buf);
-      if (it != ymap.end()) bucket = &it->second;
-    } else {
-      bucket = &all_y_rows;
-    }
-    if (!bucket) continue;
     bool xna = false;
     double xv = value_as_double(xroll, i, xna);
     if (xna) continue;
-    double best = R_PosInf;
-    R_xlen_t bestj = -1;
-    for (R_xlen_t j : *bucket) {
-      bool yna = false;
-      double yv = value_as_double(yroll, j, yna);
-      if (yna) continue;
-      double delta = yv - xv;
-      bool okdir = dir == 0 ? delta <= 0 : (dir == 1 ? delta >= 0 : true);
-      if (!okdir) continue;
-      double ad = std::fabs(delta);
-      if (ad > tol) continue;
-      if (ad < best) { best = ad; bestj = j; }
+    if (has_exact) {
+      codec.encode(x, xe, i, buf);
+      auto it = sorted.find(buf);
+      if (it != sorted.end()) matchrow[(size_t)i] = pick(it->second, xv);
+    } else {
+      matchrow[(size_t)i] = pick(single, xv);
     }
-    matchrow[(size_t)i] = bestj;
   }
 
   std::unordered_set<std::string> x_name_set;

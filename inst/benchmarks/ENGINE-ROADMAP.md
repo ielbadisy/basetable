@@ -24,9 +24,12 @@ base-style argument handling and NSE until expression compilation exists.
   (`bt_first_match_`) for `merge()`, `crossmerge()`, `completegrid()`, and
   `updatemerge()`.
 - Native predicate join (`bt_range_join_`, equi keys plus `<`/`<=`/`>`/`>=`/`==`)
-  for `nonequimerge()`, `overlapmerge()`, and `rangemerge()`.
+  for `nonequimerge()`, `overlapmerge()`, and `rangemerge()`. When every
+  condition bounds one shared numeric y column the bucket is sorted once and
+  the match window is found by binary search.
 - Native rolling join (`bt_rolling_join_`, backward/forward/nearest with
-  tolerance) for `rollingmerge()`.
+  tolerance) for `rollingmerge()`, each bucket sorted once and searched by
+  binary search.
 - Native expression kernel (`bt_expr_`) for `subset()` predicates: arithmetic,
   comparison, boolean (three-valued), unary minus, and `ifelse()`, with an
   automatic `eval()` fallback for anything unsupported.
@@ -39,9 +42,8 @@ base-style argument handling and NSE until expression compilation exists.
 
 ## Next engine tracks
 
-- Range / non-equi joins still scan a whole equi-key bucket per x row, and
-  rolling joins scan the bucket linearly; add sorted-merge / binary-search
-  variants on top of the integer key codec.
+- Interval-overlap joins (`overlapmerge`, two-y-column non-equi conditions)
+  still scan the bucket; add an interval-tree or sweepline path.
 - Parallelise the rest: the `group_single` dictionary pass, the dense
   integer-key aggregate path, `bt_group_id_`, `bt_count_`, and join build /
   probe. (Grouped `aggregate()` with a dense code path already reduces in

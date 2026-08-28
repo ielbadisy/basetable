@@ -34,6 +34,17 @@
   pass instead of `do.call(rbind, ...)`.
 * `towide()` now groups its id columns through the native grouping engine and
   buckets rows once, instead of an O(rows x levels x rows) triple loop.
+* `rollingmerge()` sorts each equi-key bucket by the roll key once and then
+  binary-searches the neighbour per x row, instead of scanning the whole
+  bucket. A 20k x 40k single-group rolling join drops from seconds to a few
+  milliseconds. `backward` / `forward` / `nearest` results are unchanged,
+  including the lowest-y-index tie-break for `nearest`.
+* `rangemerge()` (and any `nonequimerge()` whose conditions all bound one
+  shared numeric y column) now sorts each bucket once and binary-searches the
+  matching window instead of testing every y row. Interval-overlap joins
+  (`overlapmerge()`, and non-equi conditions spanning two y columns) keep the
+  scan. Windows up to 64 rows are emitted in y row order as before; wider
+  multi-match windows come out ordered by the join value.
 * `orderrows()` pre-ranks character key columns into integers once (in
   `strcmp` order, ties shared, `NA` per `na.last`) so the sort comparator is
   integer-only. About 5x faster than base R `order()` on a 5e5-row mixed-case
