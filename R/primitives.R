@@ -100,7 +100,8 @@ emptyrows <- function(data) {
 #' @export
 duplicaterows <- function(data) {
   df <- bt_as_data_frame(data)
-  df[duplicated(df) | duplicated(df, fromLast = TRUE), , drop = FALSE]
+  mask <- bt_engine_duplicated(df) | bt_engine_duplicated(df, from_last = TRUE)
+  bt_engine_subset(df, rows = mask)
 }
 
 #' Unique rows
@@ -115,17 +116,7 @@ duplicaterows <- function(data) {
 #' @return A data.table of the unique rows.
 #' @export
 uniquerows <- function(data, cols = NULL, .keep_all = FALSE) {
-  dt <- bt_as_data_table_ro(data)
-  if (is.null(cols)) {
-    return(unique(dt))
-  }
-
-  cols <- bt_resolve_cols(dt, cols)
-  if (.keep_all) {
-    unique(dt, by = cols)
-  } else {
-    unique(dt[, cols, with = FALSE])
-  }
+  bt_engine_unique(data, by = cols, keep_all = .keep_all || is.null(cols))
 }
 
 #' Duplicated key combinations
@@ -297,7 +288,9 @@ lastcols <- function(data, cols) move(data, cols, after = ncol(bt_as_data_frame(
 #' @export
 firstrows <- function(data, n = 1L) {
   df <- bt_as_data_frame(data)
-  bt_as_data_table(utils::head(df, n))
+  n <- max(0L, min(as.integer(n), nrow(df)))
+  rows <- if (n == 0L) integer() else seq_len(n)
+  bt_engine_subset(df, rows = rows)
 }
 
 #' Last `n` rows
@@ -309,7 +302,9 @@ firstrows <- function(data, n = 1L) {
 #' @export
 lastrows <- function(data, n = 1L) {
   df <- bt_as_data_frame(data)
-  bt_as_data_table(utils::tail(df, n))
+  n <- max(0L, min(as.integer(n), nrow(df)))
+  rows <- if (n == 0L) integer() else seq.int(nrow(df) - n + 1L, nrow(df))
+  bt_engine_subset(df, rows = rows)
 }
 
 #' Sample `n` rows without replacement
@@ -347,11 +342,7 @@ samplefrac <- function(data, frac) {
 #' @return `data` sorted by `by`.
 #' @export
 orderrows <- function(data, by, decreasing = FALSE, na.last = TRUE) {
-  dt <- bt_as_data_table(data)
-  by <- bt_resolve_cols(dt, by)
-  decreasing <- bt_recycle_flag(decreasing, length(by), "decreasing")
-  data.table::setorderv(dt, cols = by, order = ifelse(decreasing, -1L, 1L), na.last = na.last)
-  dt
+  bt_engine_order(data, by = by, decreasing = decreasing, na.last = na.last)
 }
 
 #' Reverse row order
@@ -362,7 +353,8 @@ orderrows <- function(data, by, decreasing = FALSE, na.last = TRUE) {
 #' @export
 reverse <- function(data) {
   df <- bt_as_data_frame(data)
-  bt_as_data_table(df[rev(seq_len(nrow(df))), , drop = FALSE])
+  rows <- if (nrow(df) == 0L) integer() else rev(seq_len(nrow(df)))
+  bt_engine_subset(df, rows = rows)
 }
 
 #' First row within each group
@@ -406,15 +398,15 @@ lastby <- function(data, by, order = NULL) {
 #' @export
 removeduplicates <- function(data, by = NULL, keep = c("first", "last", "none")) {
   keep <- match.arg(keep)
-  if (is.null(by)) {
-    df <- bt_as_data_frame(data)
-    return(bt_as_data_table(if (keep == "first") df[!duplicated(df), , drop = FALSE] else if (keep == "last") df[!duplicated(df, fromLast = TRUE), , drop = FALSE] else df[!duplicated(df) & !duplicated(df, fromLast = TRUE), , drop = FALSE]))
-  }
-  if (keep == "first") return(uniquerows(data, cols = by, .keep_all = TRUE))
-  if (keep == "last") return(lastby(data, by = by))
   df <- bt_as_data_frame(data)
-  key <- bt_resolve_cols(df, by)
-  bt_as_data_table(df[!duplicated(df[, key, drop = FALSE]) & !duplicated(df[, key, drop = FALSE], fromLast = TRUE), , drop = FALSE])
+  if (keep == "first") {
+    return(bt_engine_subset(df, rows = !bt_engine_duplicated(df, by = by)))
+  }
+  if (keep == "last") {
+    return(bt_engine_subset(df, rows = !bt_engine_duplicated(df, by = by, from_last = TRUE)))
+  }
+  mask <- !bt_engine_duplicated(df, by = by) & !bt_engine_duplicated(df, by = by, from_last = TRUE)
+  bt_engine_subset(df, rows = mask)
 }
 
 #' Row-wise minimum across columns

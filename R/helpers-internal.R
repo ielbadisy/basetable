@@ -201,6 +201,42 @@ bt_group_keys <- function(data, by) {
   unique(df[, by, drop = FALSE])
 }
 
+bt_col_positions <- function(data, cols, allow_null = FALSE) {
+  cols <- bt_resolve_cols(data, cols, allow_null = allow_null)
+  match(cols, names(data))
+}
+
+bt_engine_subset <- function(data, rows = NULL, cols = NULL) {
+  df <- bt_as_data_frame(data)
+  col_pos <- if (is.null(cols)) NULL else bt_col_positions(df, cols)
+  bt_as_data_table(.Call(bt_subset_, df, rows, col_pos))
+}
+
+bt_engine_order <- function(data, by, decreasing = FALSE, na.last = TRUE) {
+  df <- bt_as_data_frame(data)
+  by_pos <- bt_col_positions(df, by)
+  decreasing <- bt_recycle_flag(decreasing, length(by_pos), "decreasing")
+  bt_as_data_table(.Call(bt_order_, df, by_pos, as.logical(decreasing), isTRUE(na.last)))
+}
+
+bt_engine_unique <- function(data, by = NULL, keep_all = FALSE) {
+  df <- bt_as_data_frame(data)
+  by_pos <- if (is.null(by)) seq_along(df) else bt_col_positions(df, by)
+  bt_as_data_table(.Call(bt_unique_, df, by_pos, isTRUE(keep_all)))
+}
+
+bt_engine_duplicated <- function(data, by = NULL, from_last = FALSE) {
+  df <- bt_as_data_frame(data)
+  by_pos <- if (is.null(by)) seq_along(df) else bt_col_positions(df, by)
+  .Call(bt_duplicated_, df, by_pos, isTRUE(from_last))
+}
+
+bt_engine_count <- function(data, by, name = "n") {
+  df <- bt_as_data_frame(data)
+  by_pos <- bt_col_positions(df, by)
+  bt_as_data_table(.Call(bt_count_, df, by_pos, as.character(name)))
+}
+
 bt_set_row_names <- function(x, n) {
   if (length(x) == 1L) {
     rep(x, n)
