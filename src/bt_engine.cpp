@@ -1501,3 +1501,206 @@ extern "C" SEXP bt_rolling_join_(SEXP x, SEXP y, SEXP s_x_exact, SEXP s_y_exact,
   UNPROTECT(2);
   return out;
 }
+
+// ---- expression kernel --------------------------------------------------------
+//
+// A tiny stack machine that evaluates arithmetic / comparison / boolean
+// expressions over columns in one pass, without allocating the R intermediates
+// that `eval()` would. The R layer compiles a supported call tree to postfix
+// bytecode and falls back to `eval()` for anything unsupported. Every value is
+// carried as double; a per-slot `logical` flag decides whether the final result
+// is returned as LGLSXP or REALSXP.
+
+namespace {
+
+enum ExprOp {
+  EX_COL = 1, EX_CONST = 2, EX_TRUE = 3, EX_FALSE = 4, EX_NA = 5,
+  EX_ADD = 10, EX_SUB = 11, EX_MUL = 12, EX_DIV = 13, EX_POW = 14, EX_MOD = 15,
+  EX_LT = 20, EX_LE = 21, EX_GT = 22, EX_GE = 23, EX_EQ = 24, EX_NE = 25,
+  EX_AND = 30, EX_OR = 31,
+  EX_NEG = 40, EX_NOT = 41, EX_POS = 42,
+  EX_IFELSE = 50
+};
+
+struct ExprVal {
+  std::vector<double> data;  // size 1 (scalar) or n
+  bool logical = false;
+};
+
+double col_as_double(SEXP col, R_xlen_t i) {
+  switch (TYPEOF(col)) {
+    case LGLSXP: { int v = LOGICAL(col)[i]; return v == NA_LOGICAL ? NA_REAL : (double)v; }
+    case INTSXP: { int v = INTEGER(col)[i]; return v == NA_INTEGER ? NA_REAL : (double)v; }
+    case REALSXP: return REAL(col)[i];
+    default: Rf_error("basetable: expression columns must be numeric or logical");
+  }
+}
+
+inline double bin_arith(int op, double a, double b) {
+  if (ISNAN(a) || ISNAN(b)) return NA_REAL;
+  switch (op) {
+    case EX_ADD: return a + b;
+    case EX_SUB: return a - b;
+    case EX_MUL: return a * b;
+    case EX_DIV: return a / b;
+    case EX_POW: return std::pow(a, b);
+    case EX_MOD: {
+      if (b == 0.0) return R_NaN;
+      double r = std::fmod(a, b);
+      if (r != 0.0 && ((r < 0.0) != (b < 0.0))) r += b;
+      return r;
+    }
+  }
+  return NA_REAL;
+}
+
+inline double bin_cmp(int op, double a, double b) {
+  if (ISNAN(a) || ISNAN(b)) return NA_REAL;
+  switch (op) {
+    case EX_LT: return a < b ? 1.0 : 0.0;
+    case EX_LE: return a <= b ? 1.0 : 0.0;
+    case EX_GT: return a > b ? 1.0 : 0.0;
+    case EX_GE: return a >= b ? 1.0 : 0.0;
+    case EX_EQ: return a == b ? 1.0 : 0.0;
+    case EX_NE: return a != b ? 1.0 : 0.0;
+  }
+  return NA_REAL;
+}
+
+// Three-valued AND/OR on double-coded logicals (0 false, nonzero true, NA_REAL NA).
+inline double bin_bool(int op, double a, double b) {
+  bool ana = ISNAN(a), bna = ISNAN(b);
+  if (op == EX_AND) {
+    if ((!ana && a == 0.0) || (!bna && b == 0.0)) return 0.0;
+    if (ana || bna) return NA_REAL;
+    return 1.0;
+  }
+  // EX_OR
+  if ((!ana && a != 0.0) || (!bna && b != 0.0)) return 1.0;
+  if (ana || bna) return NA_REAL;
+  return 0.0;
+}
+
+}  // namespace
+
+extern "C" SEXP bt_expr_(SEXP df, SEXP s_code, SEXP s_args, SEXP s_consts) {
+  Frame f = frame_from(df);
+  R_xlen_t n = f.nrow;
+  if (TYPEOF(s_code) != INTSXP || TYPEOF(s_args) != INTSXP || TYPEOF(s_consts) != REALSXP)
+    Rf_error("basetable: malformed expression program");
+  R_xlen_t ncode = Rf_xlength(s_code);
+  if (Rf_xlength(s_args) != ncode)
+    Rf_error("basetable: expression code/arg length mismatch");
+  const int* code = INTEGER(s_code);
+  const int* args = INTEGER(s_args);
+  const double* consts = REAL(s_consts);
+  R_xlen_t nconst = Rf_xlength(s_consts);
+
+  std::vector<ExprVal> stack;
+  stack.reserve(8);
+
+  auto at = [n](const ExprVal& v, R_xlen_t i) -> double {
+    return v.data.size() == 1 ? v.data[0] : v.data[(size_t)i];
+  };
+
+  for (R_xlen_t ip = 0; ip < ncode; ++ip) {
+    int op = code[ip];
+    switch (op) {
+      case EX_COL: {
+        int cj = args[ip];
+        if (cj < 0 || cj >= f.ncol) Rf_error("basetable: expression column out of range");
+        SEXP col = VECTOR_ELT(df, cj);
+        ExprVal v;
+        v.data.resize((size_t)n);
+        for (R_xlen_t i = 0; i < n; ++i) v.data[(size_t)i] = col_as_double(col, i);
+        v.logical = TYPEOF(col) == LGLSXP;
+        stack.push_back(std::move(v));
+        break;
+      }
+      case EX_CONST: {
+        int ci = args[ip];
+        if (ci < 0 || ci >= nconst) Rf_error("basetable: expression const out of range");
+        ExprVal v; v.data.assign(1, consts[ci]); v.logical = false;
+        stack.push_back(std::move(v));
+        break;
+      }
+      case EX_TRUE:  { ExprVal v; v.data.assign(1, 1.0); v.logical = true; stack.push_back(std::move(v)); break; }
+      case EX_FALSE: { ExprVal v; v.data.assign(1, 0.0); v.logical = true; stack.push_back(std::move(v)); break; }
+      case EX_NA:    { ExprVal v; v.data.assign(1, NA_REAL); v.logical = true; stack.push_back(std::move(v)); break; }
+      case EX_ADD: case EX_SUB: case EX_MUL: case EX_DIV: case EX_POW: case EX_MOD:
+      case EX_LT: case EX_LE: case EX_GT: case EX_GE: case EX_EQ: case EX_NE:
+      case EX_AND: case EX_OR: {
+        if (stack.size() < 2) Rf_error("basetable: expression stack underflow");
+        ExprVal b = std::move(stack.back()); stack.pop_back();
+        ExprVal a = std::move(stack.back()); stack.pop_back();
+        bool scalar = a.data.size() == 1 && b.data.size() == 1;
+        ExprVal r;
+        r.data.resize(scalar ? 1 : (size_t)n);
+        bool cmp = (op >= EX_LT && op <= EX_NE);
+        bool boolean = (op == EX_AND || op == EX_OR);
+        r.logical = cmp || boolean;
+        R_xlen_t m = scalar ? 1 : n;
+        for (R_xlen_t i = 0; i < m; ++i) {
+          double av = at(a, i), bv = at(b, i);
+          r.data[(size_t)i] = boolean ? bin_bool(op, av, bv)
+                            : cmp     ? bin_cmp(op, av, bv)
+                                      : bin_arith(op, av, bv);
+        }
+        stack.push_back(std::move(r));
+        break;
+      }
+      case EX_NEG: case EX_POS: case EX_NOT: {
+        if (stack.empty()) Rf_error("basetable: expression stack underflow");
+        ExprVal a = std::move(stack.back()); stack.pop_back();
+        ExprVal r;
+        r.data.resize(a.data.size());
+        r.logical = (op == EX_NOT);
+        for (size_t i = 0; i < a.data.size(); ++i) {
+          double av = a.data[i];
+          if (op == EX_NOT) r.data[i] = ISNAN(av) ? NA_REAL : (av == 0.0 ? 1.0 : 0.0);
+          else if (op == EX_NEG) r.data[i] = ISNAN(av) ? NA_REAL : -av;
+          else r.data[i] = av;
+        }
+        stack.push_back(std::move(r));
+        break;
+      }
+      case EX_IFELSE: {
+        if (stack.size() < 3) Rf_error("basetable: expression stack underflow");
+        ExprVal no = std::move(stack.back()); stack.pop_back();
+        ExprVal yes = std::move(stack.back()); stack.pop_back();
+        ExprVal cond = std::move(stack.back()); stack.pop_back();
+        bool scalar = cond.data.size() == 1 && yes.data.size() == 1 && no.data.size() == 1;
+        ExprVal r;
+        r.data.resize(scalar ? 1 : (size_t)n);
+        r.logical = yes.logical && no.logical;
+        R_xlen_t m = scalar ? 1 : n;
+        for (R_xlen_t i = 0; i < m; ++i) {
+          double c = at(cond, i);
+          r.data[(size_t)i] = ISNAN(c) ? NA_REAL : (c != 0.0 ? at(yes, i) : at(no, i));
+        }
+        stack.push_back(std::move(r));
+        break;
+      }
+      default:
+        Rf_error("basetable: unknown expression opcode %d", op);
+    }
+  }
+
+  if (stack.size() != 1) Rf_error("basetable: expression did not reduce to one value");
+  ExprVal& top = stack.back();
+  SEXP out;
+  if (top.logical) {
+    out = PROTECT(Rf_allocVector(LGLSXP, n));
+    int* p = LOGICAL(out);
+    for (R_xlen_t i = 0; i < n; ++i) {
+      double v = at(top, i);
+      p[i] = ISNAN(v) ? NA_LOGICAL : (v != 0.0 ? TRUE : FALSE);
+    }
+  } else {
+    out = PROTECT(Rf_allocVector(REALSXP, n));
+    double* p = REAL(out);
+    for (R_xlen_t i = 0; i < n; ++i) p[i] = at(top, i);
+  }
+  UNPROTECT(1);
+  return out;
+}

@@ -1,10 +1,9 @@
 subset <- function(data, subset = NULL, select = NULL, drop = FALSE) {
   df <- bt_as_data_frame(data)
-  data_mask <- as.list(df)
 
   subset_expr <- substitute(subset)
   if (!base::missing(subset) && !identical(subset_expr, quote(NULL))) {
-    rows <- eval(subset_expr, envir = data_mask, enclos = parent.frame())
+    rows <- bt_eval_predicate(subset_expr, df, parent.frame())
     if (!is.logical(rows) || length(rows) != nrow(df)) {
       stop("`subset` must evaluate to a logical vector with one value per row.", call. = FALSE)
     }

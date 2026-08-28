@@ -303,6 +303,100 @@ bt_eval_in_data <- function(expr, data) {
   eval(expr, envir = bt_data_mask(data), enclos = parent.frame())
 }
 
+# Opcodes for the native expression stack machine (bt_expr_).
+bt_expr_opcodes <- c(
+  col = 1L, const = 2L, true = 3L, false = 4L, na = 5L,
+  `+` = 10L, `-` = 11L, `*` = 12L, `/` = 13L, `^` = 14L, `%%` = 15L,
+  `<` = 20L, `<=` = 21L, `>` = 22L, `>=` = 23L, `==` = 24L, `!=` = 25L,
+  `&` = 30L, `|` = 31L,
+  neg = 40L, `!` = 41L, pos = 42L,
+  ifelse = 50L
+)
+
+# Compile a substitute()d call to postfix bytecode for bt_expr_, or return NULL
+# when the expression uses anything the kernel does not implement (string ops,
+# function calls other than ifelse(), variables that are not numeric/logical
+# columns, ...), so the caller can fall back to eval(). `df` is the data frame
+# the expression will run against; only its names and column types are used.
+bt_compile_expr <- function(expr, df) {
+  colnames <- names(df)
+  numeric_col <- vapply(df, function(x) is.numeric(x) || is.logical(x), logical(1))
+  code <- integer(0)
+  args <- integer(0)
+  consts <- numeric(0)
+  ok <- TRUE
+
+  emit <- function(op, arg = 0L) {
+    code[[length(code) + 1L]] <<- op
+    args[[length(args) + 1L]] <<- arg
+  }
+  fail <- function() {
+    ok <<- FALSE
+    NULL
+  }
+
+  walk <- function(e) {
+    if (!ok) return(invisible())
+    if (is.symbol(e)) {
+      pos <- match(as.character(e), colnames)
+      if (is.na(pos) || !numeric_col[[pos]]) return(fail())
+      return(emit(bt_expr_opcodes[["col"]], pos - 1L))
+    }
+    if (is.logical(e) && length(e) == 1L) {
+      if (is.na(e)) return(emit(bt_expr_opcodes[["na"]]))
+      return(emit(bt_expr_opcodes[[if (e) "true" else "false"]]))
+    }
+    if (is.numeric(e) && length(e) == 1L && !is.na(e)) {
+      consts[[length(consts) + 1L]] <<- as.numeric(e)
+      return(emit(bt_expr_opcodes[["const"]], length(consts) - 1L))
+    }
+    if (!is.call(e)) return(fail())
+
+    head <- as.character(e[[1L]])
+    nargs <- length(e) - 1L
+
+    if (head == "(" && nargs == 1L) {
+      return(walk(e[[2L]]))
+    }
+    if (head %in% c("+", "-") && nargs == 1L) {
+      walk(e[[2L]])
+      return(emit(bt_expr_opcodes[[if (head == "-") "neg" else "pos"]]))
+    }
+    if (head == "!" && nargs == 1L) {
+      walk(e[[2L]])
+      return(emit(bt_expr_opcodes[["!"]]))
+    }
+    if (head == "ifelse" && nargs == 3L && is.null(names(e))) {
+      walk(e[[2L]]); walk(e[[3L]]); walk(e[[4L]])
+      return(emit(bt_expr_opcodes[["ifelse"]]))
+    }
+    if (nargs == 2L && head %in% c("+", "-", "*", "/", "^", "%%",
+                                   "<", "<=", ">", ">=", "==", "!=", "&", "|")) {
+      walk(e[[2L]])
+      walk(e[[3L]])
+      return(emit(bt_expr_opcodes[[head]]))
+    }
+    fail()
+  }
+
+  walk(expr)
+  if (!ok || length(code) == 0L) {
+    return(NULL)
+  }
+  list(code = as.integer(code), args = as.integer(args), consts = as.numeric(consts))
+}
+
+# Evaluate a row predicate: compile to the native kernel when possible, else
+# fall back to eval() in the data mask. Returns the raw vector; the caller is
+# responsible for validating type and length.
+bt_eval_predicate <- function(expr, df, env) {
+  plan <- bt_compile_expr(expr, df)
+  if (!is.null(plan)) {
+    return(.Call(bt_expr_, df, plan$code, plan$args, plan$consts))
+  }
+  eval(expr, envir = bt_data_mask(df, env), enclos = env)
+}
+
 bt_eval_logical <- function(expr, data, n) {
   value <- bt_eval_in_data(expr, data)
   if (!is.logical(value) || length(value) != n) {

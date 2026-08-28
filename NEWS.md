@@ -19,6 +19,13 @@
 * Routed `semimerge()` and `antimerge()` through a native key-membership mask,
   preserving the same exposed function names while removing another join hot
   path from the `data.table` backend.
+* Added a native expression kernel (`bt_expr_`): `subset()` now compiles a
+  supported predicate (column and scalar references; `+ - * / ^ %%`;
+  `< <= > >= == !=`; `& | !`; unary `-`; `ifelse()`) to stack-machine bytecode
+  and evaluates it in one allocation-light pass, matching `eval()` including
+  `NA` propagation and three-valued `&`/`|`. Anything outside that grammar
+  (string comparisons, other function calls, non-column variables) transparently
+  falls back to `eval()`.
 * Added native join materialisation kernels and moved the remaining join verbs
   onto them: `merge()` (inner/left/right/full with `sort` and `suffixes`),
   `crossmerge()`, `completegrid()`, and `updatemerge()` now run through a C++

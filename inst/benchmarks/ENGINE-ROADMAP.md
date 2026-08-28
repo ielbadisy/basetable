@@ -22,6 +22,9 @@ base-style argument handling and NSE until expression compilation exists.
   for `nonequimerge()`, `overlapmerge()`, and `rangemerge()`.
 - Native rolling join (`bt_rolling_join_`, backward/forward/nearest with
   tolerance) for `rollingmerge()`.
+- Native expression kernel (`bt_expr_`) for `subset()` predicates: arithmetic,
+  comparison, boolean (three-valued), unary minus, and `ifelse()`, with an
+  automatic `eval()` fallback for anything unsupported.
 - File-native `btread()`, `btwrite()`, `bt_aggregate()`, `bt_count()`,
   `bt_distinct()`, and `bt_freq()`.
 
@@ -35,9 +38,9 @@ base-style argument handling and NSE until expression compilation exists.
   keys, O(build + probe) with per-key match lists) with sorted-merge and
   dictionary-encoded variants so range/non-equi joins stop scanning full key
   buckets and rolling joins use binary search.
-- Add an expression kernel planner for common `transform()` and `subset()`
-  expressions: arithmetic, comparisons, boolean operators, `ifelse`, and
-  scalar recycling.
+- Extend the expression kernel to `transform()`: needs integer-result
+  preservation (int op int stays int) and a grouped variant so
+  `transform(by =)` stops looping groups in R.
 - Add thread-aware kernels for row copying, dense grouping, hash aggregation,
   and sort partitioning.
 - Move from a `data.table` compatibility output class toward an owned table

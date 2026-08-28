@@ -25,6 +25,7 @@ SEXP bt_join_(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 SEXP bt_first_match_(SEXP, SEXP, SEXP, SEXP);
 SEXP bt_range_join_(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 SEXP bt_rolling_join_(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+SEXP bt_expr_(SEXP, SEXP, SEXP, SEXP);
 void bt_init_altrep(DllInfo* dll);
 
 static const R_CallMethodDef CallEntries[] = {
@@ -43,6 +44,7 @@ static const R_CallMethodDef CallEntries[] = {
   { "bt_first_match_",  (DL_FUNC) &bt_first_match_,  4 },
   { "bt_range_join_",   (DL_FUNC) &bt_range_join_,   9 },
   { "bt_rolling_join_", (DL_FUNC) &bt_rolling_join_, 9 },
+  { "bt_expr_",         (DL_FUNC) &bt_expr_,         4 },
   { NULL, NULL, 0 }
 };
 
