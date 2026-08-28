@@ -21,6 +21,7 @@ extern "C" {
   void bt_lazysource_finalizer(SEXP);
   SEXP bt_make_altrep_real(SEXP, int);
   SEXP bt_make_altrep_int(SEXP, int);
+  SEXP bt_make_altrep_str(SEXP, int);
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +111,25 @@ static void convert_numeric_range(const LazySource& src,
   }
 }
 
-// single-column materialiser used by the ALTREP path
+// single-column character materialiser (R thread only: uses mkCharLenCE)
+void bt::materialise_string_column(const LazySource& src, int col, void* out_sexp) {
+  SEXP v = static_cast<SEXP>(out_sexp);
+  const Options& opt = src.opt;
+  const char* data = src.file->data;
+  std::string sc;
+  for (int64_t r = 0; r < src.nrow; ++r) {
+    const char* row = data + src.index.starts[r];
+    size_t len = src.index.starts[r + 1] - src.index.starts[r];
+    RowReader rr(row, len, opt, &sc, src.index.any_quote);
+    const char* fp = nullptr; size_t fn = 0;
+    bool have = false;
+    for (int c = 0; c <= col; ++c) have = rr.next(fp, fn);
+    if (!have || opt.is_na(fp, fn)) SET_STRING_ELT(v, r, NA_STRING);
+    else SET_STRING_ELT(v, r, Rf_mkCharLenCE(fp, (int) fn, CE_UTF8));
+  }
+}
+
+// single-column numeric materialiser used by the ALTREP path
 void bt::materialise_column(const LazySource& src, int col, int type,
                             void* out_ptr, int* n_parse_fail) {
   std::vector<int> out_col(src.ncol, -1);
@@ -291,6 +310,8 @@ extern "C" SEXP btread_(SEXP s_path, SEXP s_delim, SEXP s_quote, SEXP s_comment,
       SEXP col = (type == COL_INTEGER) ? bt_make_altrep_int(src_xptr, c)
                                        : bt_make_altrep_real(src_xptr, c);
       SET_VECTOR_ELT(out, slot, col);
+    } else if (lazy && type == COL_STRING) {
+      SET_VECTOR_ELT(out, slot, bt_make_altrep_str(src_xptr, c));
     } else if (type == COL_LOGICAL) {
       SEXP v = Rf_allocVector(LGLSXP, nrow);
       SET_VECTOR_ELT(out, slot, v);
@@ -345,13 +366,12 @@ extern "C" SEXP btread_(SEXP s_path, SEXP s_delim, SEXP s_quote, SEXP s_comment,
     std::vector<int> str_slot(ncol, -1);
     int last_str = -1;
     for (int slot = 0; slot < nkeep; ++slot)
-      if (slot_type[slot] == COL_STRING) {
+      if (slot_type[slot] == COL_STRING && !ALTREP(VECTOR_ELT(out, slot))) {
         str_slot[slot_fullcol[slot]] = slot;
         if (slot_fullcol[slot] > last_str) last_str = slot_fullcol[slot];
       }
-
     std::string sc2;
-    for (int64_t r = 0; r < nrow; ++r) {
+    for (int64_t r = 0; last_str >= 0 && r < nrow; ++r) {
       const char* row = data + src->index.starts[r];
       size_t len = src->index.starts[r + 1] - src->index.starts[r];
       RowReader rr(row, len, opt, &sc2, src->index.any_quote);

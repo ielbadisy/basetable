@@ -339,6 +339,10 @@ struct LazySource {
 void materialise_column(const LazySource& src, int col, int type,
                         void* out_ptr, int* n_parse_fail);
 
+// Fill a single character column (out_sexp is a STRSXP of length src.nrow).
+// Runs on the R thread; used by the eager path and the string ALTREP.
+void materialise_string_column(const LazySource& src, int col, void* out_sexp);
+
 } // namespace bt
 
 #endif // BT_COMMON_H

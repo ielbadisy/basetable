@@ -75,6 +75,42 @@ test_that("btread lazy mode returns correct values", {
   expect_s3_class(r, "data.frame")
 })
 
+test_that("btread lazy mode returns ALTREP character columns that behave", {
+  n <- 5000L
+  df <- data.frame(
+    id = seq_len(n),
+    s1 = sample(c("alpha", "beta,x", NA, "gamma"), n, replace = TRUE),
+    v  = rnorm(n),
+    s2 = sprintf("k%04d", sample(500L, n, replace = TRUE)),
+    stringsAsFactors = FALSE
+  )
+  p <- tempfile(fileext = ".csv")
+  data.table::fwrite(df, p)
+
+  eager <- btread(p)
+  lazy  <- btread(p, lazy = TRUE)
+
+  expect_type(lazy$s1, "character")
+  expect_identical(lazy$s1, eager$s1)
+  expect_identical(lazy$s2, eager$s2)
+  expect_identical(paste0(lazy$s2, "!")[1:5], paste0(eager$s2, "!")[1:5])
+  expect_equal(sum(nchar(lazy$s2)), sum(nchar(eager$s2)))
+
+  # element assignment forces + writes the cache
+  lazy$s1[2] <- "ZZ"
+  expect_identical(lazy$s1[2], "ZZ")
+
+  # serialises without the mapping
+  f <- tempfile()
+  saveRDS(btread(p, lazy = TRUE), f)
+  expect_equal(as.data.frame(readRDS(f)), as.data.frame(eager), ignore_attr = TRUE)
+
+  # col_select through the lazy path keeps only requested columns unparsed
+  sel <- btread(p, lazy = TRUE, col_select = c("id", "s2"))
+  expect_named(sel, c("id", "s2"))
+  expect_identical(sel$s2, eager$s2)
+})
+
 test_that("btread: NA strings and all-NA column", {
   p <- tempfile(fileext = ".csv")
   writeLines(c("a,b,c", "1,NA,", "2,x,", "3,NA,"), p)

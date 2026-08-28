@@ -1,3 +1,14 @@
+# basetable 0.8.1
+
+## New features
+
+* `btread(lazy = TRUE)` now returns **character** columns as ALTREP too (not
+  only integer/double), so a lazy read parses nothing until a column is
+  touched. Combined with the parallel row indexer this makes "open a file"
+  and "read a few columns of a wide file" faster than both `data.table::fread`
+  and `vroom` (`vroom` still wins nothing here; `fread` keeps the lead only
+  when every value is parsed with all threads). See `bench/RESULTS.md`.
+
 # basetable 0.8.0
 
 ## New features

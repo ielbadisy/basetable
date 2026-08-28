@@ -13,6 +13,7 @@ using namespace bt;
 
 static R_altrep_class_t bt_real_class;
 static R_altrep_class_t bt_int_class;
+static R_altrep_class_t bt_str_class;
 
 // ---------------------------------------------------------------------------
 
@@ -94,6 +95,33 @@ static R_xlen_t bt_int_Get_region(SEXP x, R_xlen_t i, R_xlen_t n, int* buf) {
   return ncopy < 0 ? 0 : ncopy;
 }
 
+// ---- string column -----------------------------------------------------
+
+static SEXP bt_str_materialise(SEXP x) {
+  SEXP cache = R_altrep_data2(x);
+  if (cache != R_NilValue) return cache;
+  LazySource* s = alt_src(x);
+  int col = alt_col(x);
+  SEXP v = PROTECT(Rf_allocVector(STRSXP, s->nrow));
+  materialise_string_column(*s, col, v);
+  R_set_altrep_data2(x, v);
+  UNPROTECT(1);
+  return v;
+}
+static void* bt_str_Dataptr(SEXP x, Rboolean) {
+  return DATAPTR(bt_str_materialise(x));
+}
+static const void* bt_str_Dataptr_or_null(SEXP x) {
+  SEXP c = R_altrep_data2(x);
+  return c == R_NilValue ? nullptr : DATAPTR(c);
+}
+static SEXP bt_str_Elt(SEXP x, R_xlen_t i) {
+  return STRING_ELT(bt_str_materialise(x), i);
+}
+static void bt_str_Set_elt(SEXP x, R_xlen_t i, SEXP v) {
+  SET_STRING_ELT(bt_str_materialise(x), i, v);
+}
+
 // ---- registration + constructors ---------------------------------------
 
 extern "C" void bt_init_altrep(DllInfo* dll) {
@@ -112,6 +140,14 @@ extern "C" void bt_init_altrep(DllInfo* dll) {
   R_set_altvec_Dataptr_or_null_method(bt_int_class, bt_int_Dataptr_or_null);
   R_set_altinteger_Elt_method(bt_int_class, bt_int_Elt);
   R_set_altinteger_Get_region_method(bt_int_class, bt_int_Get_region);
+
+  bt_str_class = R_make_altstring_class("bt_lazy_str", "basetable", dll);
+  R_set_altrep_Length_method(bt_str_class, bt_Length);
+  R_set_altrep_Inspect_method(bt_str_class, bt_Inspect);
+  R_set_altvec_Dataptr_method(bt_str_class, bt_str_Dataptr);
+  R_set_altvec_Dataptr_or_null_method(bt_str_class, bt_str_Dataptr_or_null);
+  R_set_altstring_Elt_method(bt_str_class, bt_str_Elt);
+  R_set_altstring_Set_elt_method(bt_str_class, bt_str_Set_elt);
 }
 
 static SEXP bt_make_altrep(SEXP xptr, int col, bool is_int) {
@@ -128,4 +164,12 @@ extern "C" SEXP bt_make_altrep_real(SEXP xptr, int col) {
 }
 extern "C" SEXP bt_make_altrep_int(SEXP xptr, int col) {
   return bt_make_altrep(xptr, col, true);
+}
+extern "C" SEXP bt_make_altrep_str(SEXP xptr, int col) {
+  SEXP d1 = PROTECT(Rf_allocVector(VECSXP, 2));
+  SET_VECTOR_ELT(d1, 0, xptr);
+  SET_VECTOR_ELT(d1, 1, Rf_ScalarInteger(col));
+  SEXP res = R_new_altrep(bt_str_class, d1, R_NilValue);
+  UNPROTECT(1);
+  return res;
 }
