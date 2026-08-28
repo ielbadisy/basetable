@@ -1,9 +1,9 @@
 Package: basetable
-Title: Base R Tables Powered by Data.table
+Title: Base R Tables Powered by a Native C++ Engine
 Version: 0.9.0
 Authors@R:
     person("Imad", "El Badisy", email = "elbadisyimad@gmail.com", role = c("aut", "cre"))
-Description: A tabular data manipulation toolkit with a base R-style interface, a data.table execution backend,
+Description: A tabular data manipulation toolkit with a base R-style interface, a native C++ execution engine,
     and explicit semantics.
 License: MIT + file LICENSE
 URL: https://github.com/ielbadisy/basetable

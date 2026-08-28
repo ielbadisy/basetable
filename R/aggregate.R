@@ -25,12 +25,9 @@ aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TR
 }
 
 count <- function(data, by, sort = TRUE, name = "n") {
-  dt <- bt_as_data_table_ro(data)
-  by <- bt_resolve_cols(dt, by)
-  out <- dt[, list(N = .N), by = by]
-  data.table::setnames(out, "N", name)
+  out <- bt_engine_count(data, by = by, name = name)
   if (sort) {
-    data.table::setorderv(out, name, order = -1L)
+    out <- bt_engine_order(out, by = name, decreasing = TRUE)
   }
-  bt_as_data_table(out)
+  out
 }

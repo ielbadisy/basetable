@@ -2,6 +2,19 @@
 
 ## New features
 
+* Added the first in-memory native C++ execution layer for the existing public
+  basetable API. `pick()`, `drop()`, `subset()`, `orderrows()`, `uniquerows()`,
+  `duplicaterows()`, `removeduplicates()`, `firstrows()`, `lastrows()`,
+  `reverse()`, and `count()` now route their table movement, row materialisation,
+  ordering, duplicate masks, and grouped row counts through registered `.Call`
+  kernels instead of delegating those hot paths to `data.table`.
+* Added dense integer/logical grouping kernels for `count()`, `uniquerows()`,
+  and duplicate detection. On a 1M-row integer-key sanity benchmark, `count()`
+  and `uniquerows()` beat the equivalent direct `data.table` calls on the
+  reference machine while preserving the same exported function names.
+* Exported the existing `stack()` wrapper so `stack()` consistently returns a
+  `data.table` and masks `utils::stack()` like the rest of the base-flavored API.
+
 * A fused **file -> result** engine, built on `btread()`'s memory map,
   parallel row indexer and reader. Each verb scans the file **once**,
   extracting only the fields it needs and never materialising the
