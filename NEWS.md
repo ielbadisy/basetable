@@ -12,6 +12,28 @@
   and duplicate detection. On a 1M-row integer-key sanity benchmark, `count()`
   and `uniquerows()` beat the equivalent direct `data.table` calls on the
   reference machine while preserving the same exported function names.
+* Added native in-memory grouped aggregation for common reducers (`sum()`,
+  `mean()`, `min()`, `max()`, `var()`, `sd()`, and `"n"`/`"length"`). Custom R
+  functions continue to use the compatibility fallback, but the high-frequency
+  numeric reducer path now executes in the basetable C++ engine.
+* Routed `semimerge()` and `antimerge()` through a native key-membership mask,
+  preserving the same exposed function names while removing another join hot
+  path from the `data.table` backend.
+* Added native join materialisation kernels and moved the remaining join verbs
+  onto them: `merge()` (inner/left/right/full with `sort` and `suffixes`),
+  `crossmerge()`, `completegrid()`, and `updatemerge()` now run through a C++
+  equi-join / first-match engine, while `nonequimerge()`, `overlapmerge()`, and
+  `rangemerge()` share a native predicate join (equi keys plus `<`, `<=`, `>`,
+  `>=`, `==` comparisons) and `rollingmerge()` runs on a native rolling join
+  (`backward` / `forward` / `nearest`, with `tolerance`). Function names and
+  return shapes are unchanged; no join path calls `data.table` anymore.
+* Removed the lazy ALTSTRING raw data-pointer hook so compiled-code checks no
+  longer flag non-API R calls. Lazy character columns continue to support
+  element access and serialization; direct subassignment to an unmaterialised
+  lazy character column now errors instead of forcing through a non-API pointer.
+* Added `inst/benchmarks/benchmark-competitors.R`, a standalone harness for
+  basetable vs `data.table`, `collapse`, and Polars across projection,
+  filtering, grouping, aggregation, and semi-join workloads.
 * Exported the existing `stack()` wrapper so `stack()` consistently returns a
   `data.table` and masks `utils::stack()` like the rest of the base-flavored API.
 

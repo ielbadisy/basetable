@@ -14,8 +14,8 @@ test_that("uniquerows with no cols returns unique rows of the whole table", {
 })
 
 test_that("uniquerows does not mutate its input", {
-  input <- data.table::data.table(id = c(1L, 1L, 2L), value = c(3, 3, 1))
-  original <- data.table::copy(input)
+  input <- data.frame(id = c(1L, 1L, 2L), value = c(3, 3, 1))
+  original <- input
 
   uniquerows(input)
 

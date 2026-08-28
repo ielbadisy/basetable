@@ -3,30 +3,150 @@ bt_as_data_table <- function(data) {
     stop("`data` must be a data.frame or data.table.", call. = FALSE)
   }
 
-  data.table::as.data.table(data)
+  out <- as.data.frame(data, stringsAsFactors = FALSE)
+  class(out) <- unique(c("data.table", "data.frame"))
+  attr(out, "row.names") <- c(NA_integer_, -nrow(out))
+  out
 }
 
-# Like bt_as_data_table(), but skips the defensive copy when `data` is
-# already a data.table. Only safe for callers that never mutate the
-# result in place (no `:=`, no `set*()`, no `x[[nm]][...] <-`); such
-# callers must use bt_as_data_table() instead.
+bt_data_mask <- function(data, parent = parent.frame()) {
+  list2env(as.list(data), parent = parent)
+}
+
+# Like bt_as_data_table(), but skips the defensive copy when `data` is already
+# a compatible table. Only safe for callers that never mutate the result in
+# place.
 bt_as_data_table_ro <- function(data) {
-  if (data.table::is.data.table(data)) {
-    return(data)
-  }
   if (!inherits(data, "data.frame")) {
     stop("`data` must be a data.frame or data.table.", call. = FALSE)
   }
 
-  data.table::as.data.table(data)
+  bt_as_data_frame(data)
 }
 
 bt_as_data_frame <- function(data) {
-  as.data.frame(data, stringsAsFactors = FALSE)
+  out <- as.data.frame(data, stringsAsFactors = FALSE)
+  if (inherits(out, "data.table")) {
+    class(out) <- setdiff(class(out), "data.table")
+  }
+  out
 }
 
-# Errors when a shared column name carries different classes across inputs
-# instead of letting rbindlist() silently coerce it.
+bt_group_rows <- function(group_id) {
+  n <- if (length(group_id) == 0L) 0L else max(group_id)
+  rows <- vector("list", n)
+  for (g in seq_len(n)) {
+    rows[[g]] <- which(group_id == g)
+  }
+  rows
+}
+
+bt_rbind_fill <- function(dfs, fill = TRUE, id = NULL) {
+  if (length(dfs) == 0L) {
+    return(bt_as_data_table(data.frame()))
+  }
+  dfs <- lapply(dfs, bt_as_data_frame)
+  cols <- if (fill) unique(unlist(lapply(dfs, names), use.names = FALSE)) else names(dfs[[1L]])
+  rows <- vector("list", length(dfs))
+  id_values <- names(dfs)
+  for (i in seq_along(dfs)) {
+    df <- dfs[[i]]
+    out <- vector("list", length(cols))
+    names(out) <- cols
+    for (nm in cols) {
+      out[[nm]] <- if (nm %in% names(df)) df[[nm]] else rep(NA, nrow(df))
+    }
+    rows[[i]] <- as.data.frame(out, stringsAsFactors = FALSE)
+    if (!is.null(id)) {
+      rows[[i]][[id]] <- if (!is.null(id_values) && nzchar(id_values[[i]])) id_values[[i]] else i
+    }
+  }
+  bt_as_data_table(do.call(rbind, rows))
+}
+
+# Comparison-operator codes shared with the native range-join kernel.
+bt_cmp_ops <- c("<" = 0L, "<=" = 1L, ">" = 2L, ">=" = 3L, "==" = 4L)
+
+bt_first_match <- function(x, y, by) {
+  x <- bt_as_data_frame(x)
+  y <- bt_as_data_frame(y)
+  by <- bt_resolve_cols(x, by)
+  bt_resolve_cols(y, by)
+  .Call(
+    bt_first_match_, x, y,
+    as.integer(match(by, names(x))),
+    as.integer(match(by, names(y)))
+  )
+}
+
+bt_join_rows <- function(x, y, by, all.x = FALSE, all.y = FALSE, suffixes = c(".x", ".y")) {
+  x <- bt_as_data_frame(x)
+  y <- bt_as_data_frame(y)
+  by <- bt_resolve_cols(x, by)
+  bt_resolve_cols(y, by)
+  bt_as_data_table(.Call(
+    bt_join_, x, y,
+    as.integer(match(by, names(x))),
+    as.integer(match(by, names(y))),
+    isTRUE(all.x), isTRUE(all.y),
+    as.character(suffixes)
+  ))
+}
+
+# Equi keys (optional) plus (x col, op, y col) comparison predicates. Output is
+# every x column followed by `y_cols`; unmatched x rows survive with NA y values
+# when all.x is TRUE.
+bt_range_join <- function(x, y, by = character(0), predicates = list(),
+                          y_cols, all.x = FALSE) {
+  x <- bt_as_data_frame(x)
+  y <- bt_as_data_frame(y)
+  by <- if (length(by) == 0L) character(0) else bt_resolve_cols(x, by)
+  if (length(by) > 0L) bt_resolve_cols(y, by)
+  px <- vapply(predicates, function(p) p$x, character(1))
+  py <- vapply(predicates, function(p) p$y, character(1))
+  ops <- vapply(predicates, function(p) unname(bt_cmp_ops[[p$op]]), integer(1))
+  if (length(px) > 0L) {
+    bt_resolve_cols(x, px)
+    bt_resolve_cols(y, py)
+  }
+  y_cols <- bt_resolve_cols(y, y_cols)
+  bt_as_data_table(.Call(
+    bt_range_join_, x, y,
+    as.integer(match(by, names(x))),
+    as.integer(match(by, names(y))),
+    as.integer(match(px, names(x))),
+    as.integer(match(py, names(y))),
+    as.integer(ops),
+    as.integer(match(y_cols, names(y))),
+    isTRUE(all.x)
+  ))
+}
+
+# Exact keys (optional) plus one ordered roll key. direction: "backward" (y<=x),
+# "forward" (y>=x), or "nearest". Every x row is kept.
+bt_rolling_join <- function(x, y, exact = character(0), x_roll, y_roll,
+                            direction = "backward", tolerance = Inf, y_cols) {
+  x <- bt_as_data_frame(x)
+  y <- bt_as_data_frame(y)
+  exact <- if (length(exact) == 0L) character(0) else bt_resolve_cols(x, exact)
+  if (length(exact) > 0L) bt_resolve_cols(y, exact)
+  x_roll <- bt_resolve_cols(x, x_roll)
+  y_roll <- bt_resolve_cols(y, y_roll)
+  y_cols <- bt_resolve_cols(y, y_cols)
+  dir <- match(direction, c("backward", "forward", "nearest")) - 1L
+  bt_as_data_table(.Call(
+    bt_rolling_join_, x, y,
+    as.integer(match(exact, names(x))),
+    as.integer(match(exact, names(y))),
+    as.integer(match(x_roll, names(x))),
+    as.integer(match(y_roll, names(y))),
+    as.integer(dir),
+    as.numeric(tolerance),
+    as.integer(match(y_cols, names(y)))
+  ))
+}
+
+# Errors when a shared column name carries different classes across inputs.
 bt_assert_no_type_conflicts <- function(dfs) {
   seen <- list()
   for (i in seq_along(dfs)) {
@@ -58,8 +178,7 @@ bt_renamecols_old_name <- function(expr, enclos) {
   value
 }
 
-# Vectorized last-observation-carried-forward, works for any atomic vector
-# type (unlike data.table::nafill(), which is numeric-only).
+# Vectorized last-observation-carried-forward for atomic vectors.
 bt_locf <- function(x) {
   ok <- !is.na(x)
   idx <- cumsum(ok)
@@ -132,7 +251,11 @@ bt_top_values <- function(x, n = 3L) {
 }
 
 bt_distinct_n <- function(x) {
-  data.table::uniqueN(x, na.rm = FALSE)
+  length(unique(x, incomparables = FALSE))
+}
+
+bt_need_data_table <- function(feature) {
+  stop(sprintf("%s is not wired to the basetable engine yet.", feature), call. = FALSE)
 }
 
 bt_is_blank <- function(x) {
@@ -177,7 +300,7 @@ bt_order_data <- function(df, by, decreasing = FALSE, na.last = TRUE) {
 }
 
 bt_eval_in_data <- function(expr, data) {
-  eval(expr, envir = as.list(data), enclos = parent.frame())
+  eval(expr, envir = bt_data_mask(data), enclos = parent.frame())
 }
 
 bt_eval_logical <- function(expr, data, n) {
@@ -190,9 +313,18 @@ bt_eval_logical <- function(expr, data, n) {
 }
 
 bt_split_by <- function(data, by, drop = FALSE, keepby = FALSE) {
-  dt <- bt_as_data_table_ro(data)
-  by <- bt_resolve_cols(dt, by)
-  base::split(dt, by = by, drop = drop, keep.by = keepby, sorted = TRUE)
+  df <- bt_as_data_frame(data)
+  by <- bt_resolve_cols(df, by)
+  group_info <- bt_engine_groups(df, by)
+  groups <- bt_group_rows(group_info$id)
+  out <- lapply(groups, function(idx) {
+    piece <- bt_engine_subset(df, rows = idx)
+    if (!isTRUE(keepby)) piece <- bt_engine_subset(piece, cols = setdiff(names(piece), by))
+    piece
+  })
+  keys <- df[group_info$first, by, drop = FALSE]
+  names(out) <- apply(keys, 1L, paste, collapse = ".")
+  out
 }
 
 bt_group_keys <- function(data, by) {
@@ -235,6 +367,40 @@ bt_engine_count <- function(data, by, name = "n") {
   df <- bt_as_data_frame(data)
   by_pos <- bt_col_positions(df, by)
   bt_as_data_table(.Call(bt_count_, df, by_pos, as.character(name)))
+}
+
+bt_engine_groups <- function(data, by) {
+  df <- bt_as_data_frame(data)
+  by_pos <- bt_col_positions(df, by)
+  .Call(bt_group_id_, df, by_pos)
+}
+
+bt_aggregate_fun_name <- function(expr, value) {
+  if (is.character(value) && length(value) == 1L) {
+    return(value)
+  }
+  if (is.symbol(expr)) {
+    nm <- as.character(expr)
+    if (nm %in% c("sum", "mean", "min", "max", "var", "sd", "n", "length")) {
+      return(nm)
+    }
+  }
+  NULL
+}
+
+bt_engine_aggregate <- function(data, by, value, fun, na.rm = FALSE) {
+  df <- bt_as_data_frame(data)
+  by_pos <- bt_col_positions(df, by)
+  value_pos <- bt_col_positions(df, value)
+  bt_as_data_table(.Call(bt_group_agg_, df, by_pos, value_pos, fun, isTRUE(na.rm)))
+}
+
+bt_engine_match_mask <- function(x, y, by) {
+  x_df <- bt_as_data_frame(x)
+  y_df <- bt_as_data_frame(y)
+  x_by <- bt_col_positions(x_df, by)
+  y_by <- bt_col_positions(y_df, by)
+  .Call(bt_match_mask_, x_df, y_df, x_by, y_by)
 }
 
 bt_set_row_names <- function(x, n) {

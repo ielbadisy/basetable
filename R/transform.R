@@ -4,10 +4,10 @@ transform <- function(data, ..., .keep = TRUE, by = NULL) {
 }
 
 bt_transform <- function(data, dots, env, keep = TRUE, by = NULL) {
-  dt <- bt_as_data_table(data)
+  df <- bt_as_data_frame(data)
 
   if (length(dots) == 0L) {
-    return(dt)
+    return(bt_as_data_table(df))
   }
 
   nms <- names(dots)
@@ -19,28 +19,36 @@ bt_transform <- function(data, dots, env, keep = TRUE, by = NULL) {
   if (is.null(by)) {
     for (i in seq_along(dots)) {
       nm <- nms[[i]]
-      value <- eval(dots[[i]], envir = dt, enclos = env)
-      data.table::set(dt, j = nm, value = value)
+      value <- eval(dots[[i]], envir = bt_data_mask(df, env), enclos = env)
+      df[[nm]] <- bt_set_row_names(value, nrow(df))
       created <- c(created, nm)
     }
   } else {
-    by_cols <- bt_resolve_cols(dt, by)
-    call_env <- new.env(parent = env)
-    call_env$dt <- dt
-    call_env$by_cols <- by_cols
+    by_cols <- bt_resolve_cols(df, by)
+    groups <- bt_group_rows(bt_engine_groups(df, by_cols)$id)
     for (i in seq_along(dots)) {
       nm <- nms[[i]]
-      assign_call <- bquote(dt[, (.(nm)) := .(dots[[i]]), by = by_cols])
-      eval(assign_call, envir = call_env)
+      out <- vector("list", length(groups))
+      for (g in seq_along(groups)) {
+        idx <- groups[[g]]
+        mask <- bt_data_mask(df[idx, , drop = FALSE], env)
+        value <- eval(dots[[i]], envir = mask, enclos = env)
+        out[[g]] <- bt_set_row_names(value, length(idx))
+      }
+      value <- vector(typeof(out[[1L]]), nrow(df))
+      for (g in seq_along(groups)) {
+        value[groups[[g]]] <- out[[g]]
+      }
+      df[[nm]] <- value
       created <- c(created, nm)
     }
   }
 
   if (!isTRUE(keep)) {
-    dt <- dt[, unique(created), with = FALSE]
+    df <- df[, unique(created), drop = FALSE]
   }
 
-  dt
+  bt_as_data_table(df)
 }
 
 within <- function(data, expr) {

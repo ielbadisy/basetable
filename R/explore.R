@@ -72,26 +72,31 @@ profile <- function(data, cols = NULL, top_n = 3) {
 }
 
 freq <- function(data, column, by = NULL, prop = FALSE, sort = TRUE) {
-  dt <- bt_as_data_table_ro(data)
-  column <- bt_resolve_cols(dt, column)
+  df <- bt_as_data_frame(data)
+  column <- bt_resolve_cols(df, column)
   if (length(column) != 1L) {
     stop("`column` must name exactly one column.", call. = FALSE)
   }
 
-  by <- if (is.null(by)) character(0) else bt_resolve_cols(dt, by)
+  by <- if (is.null(by)) character(0) else bt_resolve_cols(df, by)
   groups <- c(by, column)
-  out <- dt[, list(n = .N), by = groups]
+  out <- count(df, by = groups, sort = FALSE)
 
   if (prop) {
     if (length(by) == 0L) {
-      out[, prop := n / sum(n)]
+      out[["prop"]] <- out[["n"]] / sum(out[["n"]])
     } else {
-      out[, prop := n / sum(n), by = by]
+      group_info <- bt_engine_groups(out, by)
+      group_rows <- bt_group_rows(group_info$id)
+      out[["prop"]] <- NA_real_
+      for (idx in group_rows) {
+        out[["prop"]][idx] <- out[["n"]][idx] / sum(out[["n"]][idx])
+      }
     }
   }
 
   if (sort) {
-    data.table::setorderv(out, "n", order = -1L)
+    out <- bt_engine_order(out, by = "n", decreasing = TRUE)
   }
 
   bt_as_data_table(out)
@@ -261,7 +266,7 @@ compare <- function(x, y, by = NULL) {
     out$key_overlap <- data.frame(
       x_unique = nrow(x_keys),
       y_unique = nrow(y_keys),
-      common = nrow(merge(x_keys, y_keys, by = by)),
+      common = nrow(bt_join_rows(x_keys, y_keys, by = by)),
       stringsAsFactors = FALSE
     )
   }

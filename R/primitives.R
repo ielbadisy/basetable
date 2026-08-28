@@ -217,7 +217,7 @@ renamecols <- function(data, ...) {
 
   old_names <- vapply(dots, bt_renamecols_old_name, character(1), enclos = parent.frame())
   old_names <- bt_resolve_cols(dt, old_names)
-  data.table::setnames(dt, old = old_names, new = new_names)
+  names(dt)[match(old_names, names(dt))] <- new_names
   dt
 }
 
@@ -674,7 +674,6 @@ bt_roll_apply <- function(x, width, FUN, align = c("right", "left", "center"), f
 #' @return A numeric vector of rolling means.
 #' @export
 rollmean <- function(x, width, align = c("right", "left", "center"), fill = NA, partial = FALSE, na.rm = FALSE) {
-  if (exists("frollmean", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollmean(x, n = width, align = match.arg(align), fill = fill, na.rm = na.rm, partial = partial))
   bt_roll_apply(x, width, mean, align = align, fill = fill, partial = partial, na.rm = na.rm)
 }
 
@@ -690,7 +689,6 @@ rollmean <- function(x, width, align = c("right", "left", "center"), fill = NA, 
 #' @return A numeric vector of rolling sums.
 #' @export
 rollsum <- function(x, width, align = c("right", "left", "center"), fill = NA, partial = FALSE, na.rm = FALSE) {
-  if (exists("frollsum", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollsum(x, n = width, align = match.arg(align), fill = fill, na.rm = na.rm, partial = partial))
   bt_roll_apply(x, width, sum, align = align, fill = fill, partial = partial, na.rm = na.rm)
 }
 
@@ -706,7 +704,6 @@ rollsum <- function(x, width, align = c("right", "left", "center"), fill = NA, p
 #' @return A numeric vector of rolling minimums.
 #' @export
 rollmin <- function(x, width, align = c("right", "left", "center"), fill = NA, partial = FALSE, na.rm = FALSE) {
-  if (exists("frollmin", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollmin(x, n = width, align = match.arg(align), fill = fill, na.rm = na.rm, partial = partial))
   bt_roll_apply(x, width, min, align = align, fill = fill, partial = partial, na.rm = na.rm)
 }
 
@@ -722,7 +719,6 @@ rollmin <- function(x, width, align = c("right", "left", "center"), fill = NA, p
 #' @return A numeric vector of rolling maximums.
 #' @export
 rollmax <- function(x, width, align = c("right", "left", "center"), fill = NA, partial = FALSE, na.rm = FALSE) {
-  if (exists("frollmax", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollmax(x, n = width, align = match.arg(align), fill = fill, na.rm = na.rm, partial = partial))
   bt_roll_apply(x, width, max, align = align, fill = fill, partial = partial, na.rm = na.rm)
 }
 
@@ -738,7 +734,6 @@ rollmax <- function(x, width, align = c("right", "left", "center"), fill = NA, p
 #' @return A numeric vector of rolling medians.
 #' @export
 rollmedian <- function(x, width, align = c("right", "left", "center"), fill = NA, partial = FALSE, na.rm = FALSE) {
-  if (exists("frollmedian", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollmedian(x, n = width, align = match.arg(align), fill = fill, na.rm = na.rm, partial = partial))
   bt_roll_apply(x, width, stats::median, align = align, fill = fill, partial = partial, na.rm = na.rm)
 }
 
@@ -754,7 +749,6 @@ rollmedian <- function(x, width, align = c("right", "left", "center"), fill = NA
 #' @return A numeric vector of rolling standard deviations.
 #' @export
 rollsd <- function(x, width, align = c("right", "left", "center"), fill = NA, partial = FALSE, na.rm = FALSE) {
-  if (exists("frollsd", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollsd(x, n = width, align = match.arg(align), fill = fill, na.rm = na.rm, partial = partial))
   bt_roll_apply(x, width, stats::sd, align = align, fill = fill, partial = partial, na.rm = na.rm)
 }
 
@@ -770,7 +764,6 @@ rollsd <- function(x, width, align = c("right", "left", "center"), fill = NA, pa
 #' @return A numeric vector of rolling variances.
 #' @export
 rollvar <- function(x, width, align = c("right", "left", "center"), fill = NA, partial = FALSE, na.rm = FALSE) {
-  if (exists("frollvar", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollvar(x, n = width, align = match.arg(align), fill = fill, na.rm = na.rm, partial = partial))
   bt_roll_apply(x, width, stats::var, align = align, fill = fill, partial = partial, na.rm = na.rm)
 }
 
@@ -786,7 +779,6 @@ rollvar <- function(x, width, align = c("right", "left", "center"), fill = NA, p
 #' @return A numeric vector of rolling products.
 #' @export
 rollprod <- function(x, width, align = c("right", "left", "center"), fill = NA, partial = FALSE, na.rm = FALSE) {
-  if (exists("frollprod", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollprod(x, n = width, align = match.arg(align), fill = fill, na.rm = na.rm, partial = partial))
   bt_roll_apply(x, width, prod, align = align, fill = fill, partial = partial, na.rm = na.rm)
 }
 
@@ -803,7 +795,6 @@ rollprod <- function(x, width, align = c("right", "left", "center"), fill = NA, 
 #' @return A vector with one result per window.
 #' @export
 rollapply <- function(x, width, FUN, ..., align = c("right", "left", "center"), fill = NA, partial = FALSE) {
-  if (exists("frollapply", asNamespace("data.table"), inherits = FALSE)) return(data.table::frollapply(x, N = width, FUN = FUN, ..., align = match.arg(align), fill = fill, partial = partial))
   bt_roll_apply(x, width, FUN, align = align, fill = fill, partial = partial, ...)
 }
 
@@ -876,9 +867,10 @@ propcount <- function(data, by, margin = NULL) {
     return(out)
   }
   margin <- bt_resolve_cols(out, margin)
-  out_dt <- data.table::as.data.table(out)
-  out_dt[, prop := n / sum(n), by = margin]
-  bt_as_data_table(out_dt)
+  group_rows <- bt_group_rows(bt_engine_groups(out, margin)$id)
+  out$prop <- NA_real_
+  for (idx in group_rows) out$prop[idx] <- out$n[idx] / sum(out$n[idx])
+  bt_as_data_table(out)
 }
 
 #' Apply a function to each group
@@ -896,7 +888,7 @@ applyby <- function(data, by, fun, ..., bind = FALSE, id = ".group") {
   pieces <- bt_split_by(data, by = by, keepby = TRUE)
   out <- lapply(pieces, function(piece) fun(piece, ...))
   if (!bind) return(out)
-  bt_as_data_table(data.table::rbindlist(out, fill = TRUE, idcol = id))
+  bt_rbind_fill(out, fill = TRUE, id = id)
 }
 
 #' Distinct keys of `x` absent from `y`
@@ -908,12 +900,11 @@ applyby <- function(data, by, fun, ..., bind = FALSE, id = ".group") {
 #' @return Rows of `x` whose key is not present in `y`.
 #' @export
 unmatchedkeys <- function(x, y, by) {
-  x_dt <- bt_as_data_table_ro(x)
-  y_dt <- bt_as_data_table_ro(y)
+  x_dt <- bt_as_data_frame(x)
+  y_dt <- bt_as_data_frame(y)
   by <- bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
-  y_keys <- unique(y_dt[, by, with = FALSE])
-  unique(x_dt, by = by)[!y_keys, on = by]
+  antimerge(x_dt, y_dt, by = by)
 }
 
 #' Rows of `x` whose key is present in `y`
@@ -925,12 +916,11 @@ unmatchedkeys <- function(x, y, by) {
 #' @return Rows of `x` whose key is present in `y`.
 #' @export
 matchedkeys <- function(x, y, by) {
-  x_dt <- bt_as_data_table_ro(x)
-  y_dt <- bt_as_data_table_ro(y)
+  x_dt <- bt_as_data_frame(x)
+  y_dt <- bt_as_data_frame(y)
   by <- bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
-  y_keys <- unique(y_dt[, by, with = FALSE])
-  x_dt[y_keys, on = by, nomatch = NULL]
+  semimerge(x_dt, y_dt, by = by)
 }
 
 #' Cardinality of a join key relationship
@@ -977,7 +967,7 @@ nearestmerge <- function(x, y, by, tolerance = Inf) {
 #' @param typeconflict How to handle a column whose type differs across
 #'   inputs. `"error"` (the default) stops with a message naming the column
 #'   and the conflicting types before any coercion happens. `"coerce"` skips
-#'   the check and lets [data.table::rbindlist()] coerce as usual.
+#'   the check and allows ordinary vector coercion while binding.
 #'
 #' @return A combined data.table.
 #' @export
@@ -987,7 +977,7 @@ rbindfill <- function(..., id = NULL, fill = TRUE, typeconflict = c("error", "co
   if (length(dots) == 1L && is.list(dots[[1L]]) && !inherits(dots[[1L]], "data.frame")) dots <- dots[[1L]]
   dfs <- lapply(dots, bt_as_data_frame)
   if (typeconflict == "error") bt_assert_no_type_conflicts(dfs)
-  bt_as_data_table(data.table::rbindlist(dfs, fill = fill, idcol = id))
+  bt_rbind_fill(dfs, fill = fill, id = id)
 }
 
 #' Set union of rows
@@ -1042,12 +1032,10 @@ equalrows <- function(x, y, by = NULL) {
   x_df <- bt_as_data_frame(x); y_df <- bt_as_data_frame(y)
   if (is.null(by)) return(identical(x_df, y_df))
   by <- bt_resolve_cols(x_df, by); bt_resolve_cols(y_df, by)
-  x_dt <- data.table::as.data.table(x_df)
-  y_dt <- data.table::as.data.table(y_df)
-  data.table::setcolorder(x_dt, c(by, setdiff(names(x_dt), by)))
-  data.table::setcolorder(y_dt, c(by, setdiff(names(y_dt), by)))
-  data.table::setorderv(x_dt, names(x_dt))
-  data.table::setorderv(y_dt, names(y_dt))
+  x_dt <- x_df[c(by, setdiff(names(x_df), by))]
+  y_dt <- y_df[c(by, setdiff(names(y_df), by))]
+  x_dt <- bt_engine_order(x_dt, by = names(x_dt))
+  y_dt <- bt_engine_order(y_dt, by = names(y_dt))
   isTRUE(all.equal(x_dt, y_dt, check.attributes = FALSE))
 }
 
@@ -1066,7 +1054,15 @@ tolong <- function(data, cols, names = "variable", values = "value", idcols = NU
   df <- bt_as_data_frame(data)
   cols <- bt_resolve_cols(df, cols)
   idcols <- if (is.null(idcols)) setdiff(names(df), cols) else bt_resolve_cols(df, idcols)
-  bt_as_data_table(data.table::melt(data.table::as.data.table(df), id.vars = idcols, measure.vars = cols, variable.name = names, value.name = values, na.rm = na.rm))
+  rows <- list()
+  for (col in cols) {
+    piece <- df[idcols]
+    piece[[names]] <- col
+    piece[[values]] <- df[[col]]
+    if (na.rm) piece <- piece[!is.na(piece[[values]]), , drop = FALSE]
+    rows[[length(rows) + 1L]] <- piece
+  }
+  bt_rbind_fill(rows)
 }
 
 #' Reshape rows into columns
@@ -1083,14 +1079,22 @@ tolong <- function(data, cols, names = "variable", values = "value", idcols = NU
 towide <- function(data, names, values, idcols = NULL, fun = NULL, fill = NA) {
   df <- bt_as_data_frame(data)
   idcols <- if (is.null(idcols)) setdiff(names(df), c(names, values)) else bt_resolve_cols(df, idcols)
-  lhs <- if (length(idcols)) paste(idcols, collapse = " + ") else "."
-  bt_as_data_table(data.table::dcast(
-    data.table::as.data.table(df),
-    formula = stats::reformulate(names, response = lhs),
-    value.var = values,
-    fun.aggregate = fun %||% length,
-    fill = fill
-  ))
+  bt_resolve_cols(df, c(names, values, idcols))
+  keys <- if (length(idcols)) bt_engine_unique(df, by = idcols, keep_all = FALSE) else data.frame(.bt_row = 1L)
+  levels <- unique(df[[names]])
+  out <- bt_as_data_frame(keys)
+  for (lvl in levels) out[[as.character(lvl)]] <- fill
+  for (i in seq_len(nrow(out))) {
+    idx <- rep(TRUE, nrow(df))
+    for (id in idcols) idx <- idx & df[[id]] == out[[id]][[i]]
+    for (lvl in levels) {
+      hit <- idx & df[[names]] == lvl
+      vals <- df[[values]][hit]
+      out[[as.character(lvl)]][[i]] <- if (length(vals) == 0L) fill else (fun %||% length)(vals)
+    }
+  }
+  if (!length(idcols)) out$.bt_row <- NULL
+  bt_as_data_table(out)
 }
 
 #' Split one column into several
@@ -2346,9 +2350,7 @@ addedrows <- function(old, new, by = NULL) {
   old_df <- bt_as_data_frame(old); new_df <- bt_as_data_frame(new)
   if (is.null(by)) return(bt_as_data_table(setdiff(new_df, old_df)))
   by <- bt_resolve_cols(old_df, by); bt_resolve_cols(new_df, by)
-  old_dt <- bt_as_data_table(old_df); new_dt <- bt_as_data_table(new_df)
-  old_keys <- unique(old_dt[, by, with = FALSE])
-  bt_as_data_table(new_dt[!old_keys, on = by])
+  antimerge(new_df, old_df, by = by)
 }
 #' Rows present in `old` but not in `new`
 #'

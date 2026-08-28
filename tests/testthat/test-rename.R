@@ -6,8 +6,8 @@ test_that("renamecols changes column names", {
 })
 
 test_that("renamecols does not mutate its input", {
-  input <- data.table::data.table(id = c(1L, 1L, 2L), value = c(3, 3, 1))
-  original <- data.table::copy(input)
+  input <- data.frame(id = c(1L, 1L, 2L), value = c(3, 3, 1))
+  original <- input
 
   renamecols(input, key = id)
 

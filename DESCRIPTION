@@ -14,13 +14,13 @@ RoxygenNote: 7.3.3
 Depends: 
     R (>= 4.2.0)
 Imports:
-    data.table,
     parallel,
     stats,
     stringi,
     utils
 Suggests:
     bench,
+    data.table,
     dplyr,
     ggplot2,
     knitr,

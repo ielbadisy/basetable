@@ -131,9 +131,7 @@ bt_aggregate <- function(file,
   if (only_n && is.null(value)) names(out)[length(out)] <- "n"
 
   if (as == "data.table") {
-    if (!requireNamespace("data.table", quietly = TRUE))
-      stop("bt_aggregate: as = 'data.table' needs data.table", call. = FALSE)
-    data.table::setDT(out)
+    out <- bt_as_data_table(out)
   }
   out
 }
@@ -177,7 +175,7 @@ bt_distinct <- function(file, cols, where = NULL, delim = NULL, quote = "\"",
                   comment = comment, header = header, skip = skip, n_max = n_max,
                   na = na, n_threads = n_threads, as = "data.frame")
   out[["n"]] <- NULL
-  if (match.arg(as) == "data.table") data.table::setDT(out)
+  if (match.arg(as) == "data.table") out <- bt_as_data_table(out)
   out
 }
 
@@ -198,9 +196,9 @@ bt_freq <- function(file, by, where = NULL, sort = TRUE, delim = NULL,
                   comment = comment, header = header, skip = skip, n_max = n_max,
                   na = na, n_threads = n_threads, as = "data.frame")
   out[["prop"]] <- out[["n"]] / sum(out[["n"]])
-  if (isTRUE(sort)) out <- out[order(-out[["n"]]), , drop = FALSE]
+  if (isTRUE(sort)) out <- bt_engine_order(out, by = "n", decreasing = TRUE)
   row.names(out) <- NULL
-  if (match.arg(as) == "data.table") data.table::setDT(out)
+  if (match.arg(as) == "data.table") out <- bt_as_data_table(out)
   out
 }
 

@@ -10,10 +10,10 @@ completegrid <- function(data, cols, fill = list()) {
   }
 
   values <- lapply(df[cols], unique)
-  grid <- do.call(data.table::CJ, c(values, list(sorted = FALSE)))
+  grid <- do.call(expand.grid, c(values, list(stringsAsFactors = FALSE)))
   names(grid) <- cols
 
-  out <- data.table::merge.data.table(grid, df, by = cols, all.x = TRUE, sort = FALSE)
+  out <- bt_join_rows(grid, df, by = cols, all.x = TRUE)
 
   if (length(fill) > 0L) {
     for (nm in names(fill)) {

@@ -20,6 +20,16 @@
 
 namespace {
 
+enum AggFun {
+  AGG_SUM = 0,
+  AGG_MEAN = 1,
+  AGG_MIN = 2,
+  AGG_MAX = 3,
+  AGG_VAR = 4,
+  AGG_SD = 5,
+  AGG_N = 6
+};
+
 struct Frame {
   R_xlen_t nrow;
   R_xlen_t ncol;
@@ -169,20 +179,17 @@ void append_value_key(std::string& key, SEXP col, R_xlen_t i) {
   key.push_back(':');
   switch (TYPEOF(col)) {
     case LGLSXP:
-      key.append(std::to_string(LOGICAL(col)[i]));
+      key.append(reinterpret_cast<const char*>(&LOGICAL(col)[i]), sizeof(int));
       break;
     case INTSXP:
-      key.append(std::to_string(INTEGER(col)[i]));
+      key.append(reinterpret_cast<const char*>(&INTEGER(col)[i]), sizeof(int));
       break;
     case REALSXP: {
       double v = REAL(col)[i];
-      if (ISNA(v)) key.append("NA");
-      else if (std::isnan(v)) key.append("NaN");
-      else {
-        uint64_t bits;
-        std::memcpy(&bits, &v, sizeof(double));
-        key.append(std::to_string(bits));
-      }
+      if (ISNA(v)) key.push_back(1);
+      else if (std::isnan(v)) key.push_back(2);
+      else key.push_back(0);
+      key.append(reinterpret_cast<const char*>(&v), sizeof(double));
       break;
     }
     case STRSXP: {
@@ -198,6 +205,101 @@ void append_value_key(std::string& key, SEXP col, R_xlen_t i) {
       Rf_error("basetable: unsupported key column type '%s'", Rf_type2char(TYPEOF(col)));
   }
   key.push_back('\037');
+}
+
+bool parse_agg_fun(SEXP s_fun, AggFun& fun) {
+  if (TYPEOF(s_fun) != STRSXP || Rf_xlength(s_fun) != 1) return false;
+  const char* f = CHAR(STRING_ELT(s_fun, 0));
+  if (!std::strcmp(f, "sum")) { fun = AGG_SUM; return true; }
+  if (!std::strcmp(f, "mean")) { fun = AGG_MEAN; return true; }
+  if (!std::strcmp(f, "min")) { fun = AGG_MIN; return true; }
+  if (!std::strcmp(f, "max")) { fun = AGG_MAX; return true; }
+  if (!std::strcmp(f, "var")) { fun = AGG_VAR; return true; }
+  if (!std::strcmp(f, "sd")) { fun = AGG_SD; return true; }
+  if (!std::strcmp(f, "n") || !std::strcmp(f, "length")) { fun = AGG_N; return true; }
+  return false;
+}
+
+struct AggState {
+  double sum = 0.0;
+  double sq = 0.0;
+  double min = R_PosInf;
+  double max = R_NegInf;
+  int n = 0;
+  bool bad = false;
+};
+
+double value_as_double(SEXP col, R_xlen_t i, bool& na) {
+  na = false;
+  switch (TYPEOF(col)) {
+    case LGLSXP: {
+      int v = LOGICAL(col)[i];
+      if (v == NA_LOGICAL) { na = true; return NA_REAL; }
+      return (double)v;
+    }
+    case INTSXP: {
+      int v = INTEGER(col)[i];
+      if (v == NA_INTEGER) { na = true; return NA_REAL; }
+      return (double)v;
+    }
+    case REALSXP: {
+      double v = REAL(col)[i];
+      if (ISNAN(v)) { na = true; return NA_REAL; }
+      return v;
+    }
+    default:
+      Rf_error("basetable: aggregate value columns must be numeric, integer, or logical");
+  }
+}
+
+double agg_finish(const AggState& s, AggFun fun, bool na_rm) {
+  if (!na_rm && s.bad) return NA_REAL;
+  switch (fun) {
+    case AGG_SUM:
+      return s.sum;
+    case AGG_MEAN:
+      return s.n > 0 ? s.sum / s.n : NA_REAL;
+    case AGG_MIN:
+      return s.n > 0 ? s.min : NA_REAL;
+    case AGG_MAX:
+      return s.n > 0 ? s.max : NA_REAL;
+    case AGG_VAR:
+      return s.n > 1 ? (s.sq - s.sum * s.sum / s.n) / (s.n - 1) : NA_REAL;
+    case AGG_SD:
+      return s.n > 1 ? std::sqrt((s.sq - s.sum * s.sum / s.n) / (s.n - 1)) : NA_REAL;
+    case AGG_N:
+      return (double)s.n;
+  }
+  return NA_REAL;
+}
+
+void agg_update(AggState& s, AggFun fun, double x) {
+  switch (fun) {
+    case AGG_SUM:
+      s.sum += x;
+      break;
+    case AGG_MEAN:
+      s.sum += x;
+      ++s.n;
+      break;
+    case AGG_MIN:
+      if (x < s.min) s.min = x;
+      ++s.n;
+      break;
+    case AGG_MAX:
+      if (x > s.max) s.max = x;
+      ++s.n;
+      break;
+    case AGG_VAR:
+    case AGG_SD:
+      s.sum += x;
+      s.sq += x * x;
+      ++s.n;
+      break;
+    case AGG_N:
+      ++s.n;
+      break;
+  }
 }
 
 std::string row_key(SEXP df, const std::vector<int>& cols, R_xlen_t i) {
@@ -467,6 +569,238 @@ bool count_single(SEXP df, int by, R_xlen_t nrow, SEXP s_name, SEXP* out) {
   }
 }
 
+bool group_agg_int_single(SEXP df, int by, const std::vector<int>& val, AggFun fun,
+                          bool na_rm, SEXP* out_ptr) {
+  Frame f = frame_from(df);
+  SEXP key_col = VECTOR_ELT(df, by);
+  if (TYPEOF(key_col) != INTSXP && TYPEOF(key_col) != LGLSXP) return false;
+  const int* key = TYPEOF(key_col) == INTSXP ? INTEGER(key_col) : LOGICAL(key_col);
+  const int nv = (int)val.size();
+
+  int minv = INT_MAX, maxv = INT_MIN;
+  for (R_xlen_t i = 0; i < f.nrow; ++i) {
+    int k = key[i];
+    if (k == NA_INTEGER) continue;
+    if (k < minv) minv = k;
+    if (k > maxv) maxv = k;
+  }
+  if (minv != INT_MAX) {
+    uint64_t span = (uint64_t)((int64_t)maxv - (int64_t)minv + 1);
+    if (span <= (uint64_t)f.nrow * 4 && span <= 10000000ULL) {
+      if (nv == 1 && (fun == AGG_MEAN || fun == AGG_SUM)) {
+        SEXP vcol = VECTOR_ELT(df, val[0]);
+        if (TYPEOF(vcol) == REALSXP || TYPEOF(vcol) == INTSXP || TYPEOF(vcol) == LGLSXP) {
+          std::vector<int> group_for((size_t)span, -1);
+          int na_group = -1;
+          std::vector<R_xlen_t> first;
+          std::vector<double> sums;
+          std::vector<int> counts;
+          std::vector<char> bad;
+          first.reserve((size_t)std::min<R_xlen_t>(f.nrow, (R_xlen_t)span + 1));
+
+          for (R_xlen_t i = 0; i < f.nrow; ++i) {
+            int g;
+            int k = key[i];
+            if (k == NA_INTEGER) {
+              if (na_group < 0) {
+                na_group = (int)first.size();
+                first.push_back(i);
+                sums.push_back(0.0);
+                counts.push_back(0);
+                bad.push_back(0);
+              }
+              g = na_group;
+            } else {
+              size_t slot = (size_t)((int64_t)k - (int64_t)minv);
+              if (group_for[slot] < 0) {
+                group_for[slot] = (int)first.size();
+                first.push_back(i);
+                sums.push_back(0.0);
+                counts.push_back(0);
+                bad.push_back(0);
+              }
+              g = group_for[slot];
+            }
+
+            bool na = false;
+            double x = value_as_double(vcol, i, na);
+            if (na) {
+              if (!na_rm) bad[(size_t)g] = 1;
+              continue;
+            }
+            sums[(size_t)g] += x;
+            ++counts[(size_t)g];
+          }
+
+          std::vector<int> by_cols{by};
+          SEXP keys = PROTECT(build_frame(df, first, by_cols));
+          SEXP result = PROTECT(Rf_allocVector(VECSXP, 2));
+          SEXP names = PROTECT(Rf_allocVector(STRSXP, 2));
+          SET_VECTOR_ELT(result, 0, VECTOR_ELT(keys, 0));
+          SET_STRING_ELT(names, 0, STRING_ELT(Rf_getAttrib(keys, R_NamesSymbol), 0));
+          SEXP out_col = PROTECT(Rf_allocVector(REALSXP, (R_xlen_t)first.size()));
+          for (R_xlen_t g = 0; g < (R_xlen_t)first.size(); ++g) {
+            if (!na_rm && bad[(size_t)g]) REAL(out_col)[g] = NA_REAL;
+            else if (fun == AGG_MEAN) REAL(out_col)[g] = counts[(size_t)g] > 0 ? sums[(size_t)g] / counts[(size_t)g] : NA_REAL;
+            else REAL(out_col)[g] = sums[(size_t)g];
+          }
+          SET_VECTOR_ELT(result, 1, out_col);
+          SET_STRING_ELT(names, 1, STRING_ELT(Rf_getAttrib(df, R_NamesSymbol), val[0]));
+          Rf_setAttrib(result, R_NamesSymbol, names);
+          Rf_setAttrib(result, R_RowNamesSymbol, make_row_names((R_xlen_t)first.size()));
+          Rf_setAttrib(result, R_ClassSymbol, Rf_mkString("data.frame"));
+          UNPROTECT(4);
+          *out_ptr = result;
+          return true;
+        }
+      }
+      std::vector<int> group_for((size_t)span, -1);
+      int na_group = -1;
+      std::vector<R_xlen_t> first;
+      std::vector<AggState> state;
+      first.reserve((size_t)std::min<R_xlen_t>(f.nrow, (R_xlen_t)span + 1));
+
+      for (R_xlen_t i = 0; i < f.nrow; ++i) {
+        int g;
+        int k = key[i];
+        if (k == NA_INTEGER) {
+          if (na_group < 0) {
+            na_group = (int)first.size();
+            first.push_back(i);
+            state.resize(state.size() + nv);
+          }
+          g = na_group;
+        } else {
+          size_t slot = (size_t)((int64_t)k - (int64_t)minv);
+          if (group_for[slot] < 0) {
+            group_for[slot] = (int)first.size();
+            first.push_back(i);
+            state.resize(state.size() + nv);
+          }
+          g = group_for[slot];
+        }
+
+        for (int j = 0; j < nv; ++j) {
+          AggState& s = state[(size_t)g * nv + j];
+          if (fun == AGG_N) {
+            ++s.n;
+            continue;
+          }
+          bool na = false;
+          double x = value_as_double(VECTOR_ELT(df, val[(size_t)j]), i, na);
+          if (na) {
+            if (!na_rm) s.bad = true;
+            continue;
+          }
+          agg_update(s, fun, x);
+        }
+      }
+
+      std::vector<int> by_cols{by};
+      SEXP keys = PROTECT(build_frame(df, first, by_cols));
+      SEXP result = PROTECT(Rf_allocVector(VECSXP, 1 + nv));
+      SEXP names = PROTECT(Rf_allocVector(STRSXP, 1 + nv));
+      SET_VECTOR_ELT(result, 0, VECTOR_ELT(keys, 0));
+      SET_STRING_ELT(names, 0, STRING_ELT(Rf_getAttrib(keys, R_NamesSymbol), 0));
+
+      SEXP df_names = Rf_getAttrib(df, R_NamesSymbol);
+      for (int j = 0; j < nv; ++j) {
+        SEXP col = PROTECT(Rf_allocVector(REALSXP, (R_xlen_t)first.size()));
+        double* p = REAL(col);
+        for (R_xlen_t g = 0; g < (R_xlen_t)first.size(); ++g)
+          p[g] = agg_finish(state[(size_t)g * nv + j], fun, na_rm);
+        SET_VECTOR_ELT(result, 1 + j, col);
+        SET_STRING_ELT(names, 1 + j, STRING_ELT(df_names, val[(size_t)j]));
+        UNPROTECT(1);
+      }
+
+      Rf_setAttrib(result, R_NamesSymbol, names);
+      Rf_setAttrib(result, R_RowNamesSymbol, make_row_names((R_xlen_t)first.size()));
+      Rf_setAttrib(result, R_ClassSymbol, Rf_mkString("data.frame"));
+      UNPROTECT(3);
+      *out_ptr = result;
+      return true;
+    }
+  }
+
+  std::unordered_map<int, int> pos;
+  pos.reserve((size_t)f.nrow);
+  std::vector<R_xlen_t> first;
+  std::vector<AggState> state;
+
+  for (R_xlen_t i = 0; i < f.nrow; ++i) {
+    int k = key[i];
+    auto it = pos.find(k);
+    int g;
+    if (it == pos.end()) {
+      g = (int)first.size();
+      pos.emplace(k, g);
+      first.push_back(i);
+      state.resize(state.size() + nv);
+    } else {
+      g = it->second;
+    }
+
+    for (int j = 0; j < nv; ++j) {
+      AggState& s = state[(size_t)g * nv + j];
+      if (fun == AGG_N) {
+        ++s.n;
+        continue;
+      }
+      bool na = false;
+      double x = value_as_double(VECTOR_ELT(df, val[(size_t)j]), i, na);
+      if (na) {
+        if (!na_rm) s.bad = true;
+        continue;
+      }
+      agg_update(s, fun, x);
+    }
+  }
+
+  std::vector<int> by_cols{by};
+  SEXP keys = PROTECT(build_frame(df, first, by_cols));
+  SEXP result = PROTECT(Rf_allocVector(VECSXP, 1 + nv));
+  SEXP names = PROTECT(Rf_allocVector(STRSXP, 1 + nv));
+  SET_VECTOR_ELT(result, 0, VECTOR_ELT(keys, 0));
+  SET_STRING_ELT(names, 0, STRING_ELT(Rf_getAttrib(keys, R_NamesSymbol), 0));
+
+  SEXP df_names = Rf_getAttrib(df, R_NamesSymbol);
+  for (int j = 0; j < nv; ++j) {
+    SEXP col = PROTECT(Rf_allocVector(REALSXP, (R_xlen_t)first.size()));
+    double* p = REAL(col);
+    for (R_xlen_t g = 0; g < (R_xlen_t)first.size(); ++g)
+      p[g] = agg_finish(state[(size_t)g * nv + j], fun, na_rm);
+    SET_VECTOR_ELT(result, 1 + j, col);
+    SET_STRING_ELT(names, 1 + j, STRING_ELT(df_names, val[(size_t)j]));
+    UNPROTECT(1);
+  }
+
+  Rf_setAttrib(result, R_NamesSymbol, names);
+  Rf_setAttrib(result, R_RowNamesSymbol, make_row_names((R_xlen_t)first.size()));
+  Rf_setAttrib(result, R_ClassSymbol, Rf_mkString("data.frame"));
+  UNPROTECT(3);
+  *out_ptr = result;
+  return true;
+}
+
+bool match_mask_int_single(SEXP x, SEXP y, int x_by, int y_by, SEXP out) {
+  SEXP xc = VECTOR_ELT(x, x_by);
+  SEXP yc = VECTOR_ELT(y, y_by);
+  if ((TYPEOF(xc) != INTSXP && TYPEOF(xc) != LGLSXP) ||
+      (TYPEOF(yc) != INTSXP && TYPEOF(yc) != LGLSXP)) return false;
+  Frame xf = frame_from(x);
+  Frame yf = frame_from(y);
+  const int* xp = TYPEOF(xc) == INTSXP ? INTEGER(xc) : LOGICAL(xc);
+  const int* yp = TYPEOF(yc) == INTSXP ? INTEGER(yc) : LOGICAL(yc);
+  std::unordered_set<int> keys;
+  keys.reserve((size_t)yf.nrow);
+  for (R_xlen_t i = 0; i < yf.nrow; ++i) keys.emplace(yp[i]);
+  int* p = LOGICAL(out);
+  for (R_xlen_t i = 0; i < xf.nrow; ++i)
+    p[i] = keys.find(xp[i]) == keys.end() ? FALSE : TRUE;
+  return true;
+}
+
 int cmp_value(SEXP col, R_xlen_t a, R_xlen_t b, bool na_last) {
   switch (TYPEOF(col)) {
     case LGLSXP: {
@@ -509,6 +843,99 @@ int cmp_value(SEXP col, R_xlen_t a, R_xlen_t b, bool na_last) {
     default:
       Rf_error("basetable: unsupported order column type '%s'", Rf_type2char(TYPEOF(col)));
   }
+}
+
+// ---- join kernels ---------------------------------------------------------
+
+void set_na_elt(SEXP col, R_xlen_t i) {
+  switch (TYPEOF(col)) {
+    case LGLSXP: LOGICAL(col)[i] = NA_LOGICAL; break;
+    case INTSXP: INTEGER(col)[i] = NA_INTEGER; break;
+    case REALSXP: REAL(col)[i] = NA_REAL; break;
+    case CPLXSXP: { Rcomplex z; z.r = NA_REAL; z.i = NA_REAL; COMPLEX(col)[i] = z; break; }
+    case STRSXP: SET_STRING_ELT(col, i, NA_STRING); break;
+    case VECSXP: SET_VECTOR_ELT(col, i, R_NilValue); break;
+    default:
+      Rf_error("basetable: unsupported column type '%s'", Rf_type2char(TYPEOF(col)));
+  }
+}
+
+void copy_elt(SEXP dst, R_xlen_t di, SEXP src, R_xlen_t si) {
+  switch (TYPEOF(dst)) {
+    case LGLSXP: LOGICAL(dst)[di] = LOGICAL(src)[si]; break;
+    case INTSXP: INTEGER(dst)[di] = INTEGER(src)[si]; break;
+    case REALSXP: REAL(dst)[di] = REAL(src)[si]; break;
+    case CPLXSXP: COMPLEX(dst)[di] = COMPLEX(src)[si]; break;
+    case STRSXP: SET_STRING_ELT(dst, di, STRING_ELT(src, si)); break;
+    case VECSXP: SET_VECTOR_ELT(dst, di, VECTOR_ELT(src, si)); break;
+    default:
+      Rf_error("basetable: unsupported column type '%s'", Rf_type2char(TYPEOF(dst)));
+  }
+}
+
+// Build one output column: element r is src[rows[r]], or NA when rows[r] < 0.
+SEXP join_take(SEXP src, const std::vector<R_xlen_t>& rows) {
+  R_xlen_t n = (R_xlen_t)rows.size();
+  SEXP out = PROTECT(Rf_allocVector(TYPEOF(src), n));
+  for (R_xlen_t i = 0; i < n; ++i) {
+    R_xlen_t s = rows[(size_t)i];
+    if (s < 0) set_na_elt(out, i);
+    else copy_elt(out, i, src, s);
+  }
+  copy_common_attrs(out, src);
+  UNPROTECT(1);
+  return out;
+}
+
+// Merged key column: take from the x row when present, else the matching y row.
+SEXP join_take_key(SEXP xc, SEXP yc,
+                   const std::vector<R_xlen_t>& xrows,
+                   const std::vector<R_xlen_t>& yrows) {
+  if (TYPEOF(xc) != TYPEOF(yc))
+    Rf_error("basetable: join key columns must share a type");
+  R_xlen_t n = (R_xlen_t)xrows.size();
+  SEXP out = PROTECT(Rf_allocVector(TYPEOF(xc), n));
+  for (R_xlen_t i = 0; i < n; ++i) {
+    if (xrows[(size_t)i] >= 0) copy_elt(out, i, xc, xrows[(size_t)i]);
+    else if (yrows[(size_t)i] >= 0) copy_elt(out, i, yc, yrows[(size_t)i]);
+    else set_na_elt(out, i);
+  }
+  copy_common_attrs(out, xc);
+  UNPROTECT(1);
+  return out;
+}
+
+// Signed comparison of x[xi] against y[yi]: -1, 0, 1, or -2 when either is NA.
+int pred_sign(SEXP xc, R_xlen_t xi, SEXP yc, R_xlen_t yi) {
+  if (TYPEOF(xc) == STRSXP || TYPEOF(yc) == STRSXP) {
+    if (TYPEOF(xc) != STRSXP || TYPEOF(yc) != STRSXP)
+      Rf_error("basetable: cannot compare a character column with a non-character column");
+    SEXP xs = STRING_ELT(xc, xi), ys = STRING_ELT(yc, yi);
+    if (xs == NA_STRING || ys == NA_STRING) return -2;
+    int c = std::strcmp(CHAR(xs), CHAR(ys));
+    return (c > 0) - (c < 0);
+  }
+  bool na = false;
+  double xv = value_as_double(xc, xi, na);
+  if (na) return -2;
+  double yv = value_as_double(yc, yi, na);
+  if (na) return -2;
+  return (xv > yv) - (xv < yv);
+}
+
+// Comparison op codes shared with the R layer.
+enum CmpOp { CMP_LT = 0, CMP_LE = 1, CMP_GT = 2, CMP_GE = 3, CMP_EQ = 4 };
+
+bool pred_ok(int sign, int op) {
+  if (sign == -2) return false;
+  switch (op) {
+    case CMP_LT: return sign < 0;
+    case CMP_LE: return sign <= 0;
+    case CMP_GT: return sign > 0;
+    case CMP_GE: return sign >= 0;
+    case CMP_EQ: return sign == 0;
+  }
+  return false;
 }
 
 } // namespace
@@ -628,4 +1055,449 @@ extern "C" SEXP bt_count_(SEXP df, SEXP s_by, SEXP s_name) {
   Rf_setAttrib(with_n, R_ClassSymbol, Rf_mkString("data.frame"));
   UNPROTECT(4);
   return with_n;
+}
+
+extern "C" SEXP bt_group_agg_(SEXP df, SEXP s_by, SEXP s_value, SEXP s_fun, SEXP s_na_rm) {
+  Frame f = frame_from(df);
+  std::vector<int> by = col_index(s_by, f.ncol);
+  std::vector<int> val = col_index(s_value, f.ncol);
+  AggFun fun;
+  if (!parse_agg_fun(s_fun, fun))
+    Rf_error("basetable: unsupported aggregate function for native engine");
+  bool na_rm = Rf_asLogical(s_na_rm) == TRUE;
+
+  if (by.size() == 1) {
+    SEXP fast = R_NilValue;
+    if (group_agg_int_single(df, by[0], val, fun, na_rm, &fast)) return fast;
+  }
+
+  std::unordered_map<std::string, int> pos;
+  pos.reserve((size_t)f.nrow);
+  std::vector<R_xlen_t> first;
+  std::vector<AggState> state;
+  const int nv = (int)val.size();
+
+  for (R_xlen_t i = 0; i < f.nrow; ++i) {
+    std::string key = row_key(df, by, i);
+    auto it = pos.find(key);
+    int g;
+    if (it == pos.end()) {
+      g = (int)first.size();
+      pos.emplace(std::move(key), g);
+      first.push_back(i);
+      state.resize(state.size() + nv);
+    } else {
+      g = it->second;
+    }
+
+    for (int j = 0; j < nv; ++j) {
+      AggState& s = state[(size_t)g * nv + j];
+      if (fun == AGG_N) {
+        ++s.n;
+        continue;
+      }
+      bool na = false;
+      double x = value_as_double(VECTOR_ELT(df, val[(size_t)j]), i, na);
+      if (na) {
+        if (!na_rm) s.bad = true;
+        continue;
+      }
+      agg_update(s, fun, x);
+    }
+  }
+
+  SEXP out = PROTECT(build_frame(df, first, by));
+  R_xlen_t nk = Rf_xlength(out);
+  SEXP result = PROTECT(Rf_allocVector(VECSXP, nk + nv));
+  SEXP names = PROTECT(Rf_allocVector(STRSXP, nk + nv));
+  SEXP key_names = Rf_getAttrib(out, R_NamesSymbol);
+  for (R_xlen_t j = 0; j < nk; ++j) {
+    SET_VECTOR_ELT(result, j, VECTOR_ELT(out, j));
+    SET_STRING_ELT(names, j, STRING_ELT(key_names, j));
+  }
+
+  SEXP df_names = Rf_getAttrib(df, R_NamesSymbol);
+  for (int j = 0; j < nv; ++j) {
+    SEXP col = PROTECT(Rf_allocVector(REALSXP, (R_xlen_t)first.size()));
+    double* p = REAL(col);
+    for (R_xlen_t g = 0; g < (R_xlen_t)first.size(); ++g) {
+      p[g] = agg_finish(state[(size_t)g * nv + j], fun, na_rm);
+    }
+    SET_VECTOR_ELT(result, nk + j, col);
+    SET_STRING_ELT(names, nk + j, STRING_ELT(df_names, val[(size_t)j]));
+    UNPROTECT(1);
+  }
+
+  Rf_setAttrib(result, R_NamesSymbol, names);
+  Rf_setAttrib(result, R_RowNamesSymbol, make_row_names((R_xlen_t)first.size()));
+  Rf_setAttrib(result, R_ClassSymbol, Rf_mkString("data.frame"));
+  UNPROTECT(3);
+  return result;
+}
+
+extern "C" SEXP bt_match_mask_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by) {
+  Frame xf = frame_from(x);
+  Frame yf = frame_from(y);
+  std::vector<int> x_by = col_index(s_x_by, xf.ncol);
+  std::vector<int> y_by = col_index(s_y_by, yf.ncol);
+  if (x_by.size() != y_by.size())
+    Rf_error("basetable: join key length mismatch");
+
+  std::unordered_set<std::string> keys;
+  keys.reserve((size_t)yf.nrow);
+  for (R_xlen_t i = 0; i < yf.nrow; ++i) {
+    keys.emplace(row_key(y, y_by, i));
+  }
+
+  SEXP out = PROTECT(Rf_allocVector(LGLSXP, xf.nrow));
+  if (x_by.size() == 1 && match_mask_int_single(x, y, x_by[0], y_by[0], out)) {
+    UNPROTECT(1);
+    return out;
+  }
+  int* p = LOGICAL(out);
+  for (R_xlen_t i = 0; i < xf.nrow; ++i) {
+    p[i] = keys.find(row_key(x, x_by, i)) == keys.end() ? FALSE : TRUE;
+  }
+  UNPROTECT(1);
+  return out;
+}
+
+extern "C" SEXP bt_group_id_(SEXP df, SEXP s_by) {
+  Frame f = frame_from(df);
+  std::vector<int> by = col_index(s_by, f.ncol);
+  SEXP ids = PROTECT(Rf_allocVector(INTSXP, f.nrow));
+  std::unordered_map<std::string, int> pos;
+  pos.reserve((size_t)f.nrow);
+  std::vector<R_xlen_t> first;
+
+  for (R_xlen_t i = 0; i < f.nrow; ++i) {
+    std::string key = row_key(df, by, i);
+    auto it = pos.find(key);
+    int g;
+    if (it == pos.end()) {
+      g = (int)first.size() + 1;
+      pos.emplace(std::move(key), g);
+      first.push_back(i + 1);
+    } else {
+      g = it->second;
+    }
+    INTEGER(ids)[i] = g;
+  }
+
+  SEXP firsts = PROTECT(Rf_allocVector(INTSXP, (R_xlen_t)first.size()));
+  for (R_xlen_t i = 0; i < (R_xlen_t)first.size(); ++i) {
+    INTEGER(firsts)[i] = (int)first[(size_t)i];
+  }
+
+  SEXP out = PROTECT(Rf_allocVector(VECSXP, 2));
+  SEXP names = PROTECT(Rf_allocVector(STRSXP, 2));
+  SET_VECTOR_ELT(out, 0, ids);
+  SET_VECTOR_ELT(out, 1, firsts);
+  SET_STRING_ELT(names, 0, Rf_mkChar("id"));
+  SET_STRING_ELT(names, 1, Rf_mkChar("first"));
+  Rf_setAttrib(out, R_NamesSymbol, names);
+  UNPROTECT(4);
+  return out;
+}
+
+// Full equi-join materialisation. Column layout mirrors data.table's
+// merge.data.table: join keys first (named after x), then x's remaining
+// columns, then y's remaining columns, with `suffixes` applied to names that
+// collide between the two non-key sets. An empty key set produces the
+// Cartesian product.
+extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
+                         SEXP s_all_x, SEXP s_all_y, SEXP s_suffixes) {
+  Frame xf = frame_from(x);
+  Frame yf = frame_from(y);
+  std::vector<int> x_by = col_index(s_x_by, xf.ncol);
+  std::vector<int> y_by = col_index(s_y_by, yf.ncol);
+  if (x_by.size() != y_by.size())
+    Rf_error("basetable: join key length mismatch");
+  bool all_x = Rf_asLogical(s_all_x) == TRUE;
+  bool all_y = Rf_asLogical(s_all_y) == TRUE;
+
+  std::vector<char> x_is_key((size_t)xf.ncol, 0), y_is_key((size_t)yf.ncol, 0);
+  for (int c : x_by) x_is_key[(size_t)c] = 1;
+  for (int c : y_by) y_is_key[(size_t)c] = 1;
+  std::vector<int> x_extra, y_extra;
+  for (int j = 0; j < xf.ncol; ++j) if (!x_is_key[(size_t)j]) x_extra.push_back(j);
+  for (int j = 0; j < yf.ncol; ++j) if (!y_is_key[(size_t)j]) y_extra.push_back(j);
+
+  bool cross = x_by.empty();
+  std::unordered_map<std::string, std::vector<R_xlen_t>> ymap;
+  std::vector<R_xlen_t> all_y_rows;
+  if (cross) {
+    all_y_rows.reserve((size_t)yf.nrow);
+    for (R_xlen_t j = 0; j < yf.nrow; ++j) all_y_rows.push_back(j);
+  } else {
+    ymap.reserve((size_t)yf.nrow);
+    for (R_xlen_t j = 0; j < yf.nrow; ++j)
+      ymap[row_key(y, y_by, j)].push_back(j);
+  }
+
+  std::vector<R_xlen_t> xrows, yrows;
+  std::vector<char> y_matched(all_y ? (size_t)yf.nrow : 0, 0);
+  for (R_xlen_t i = 0; i < xf.nrow; ++i) {
+    const std::vector<R_xlen_t>* matches = nullptr;
+    if (cross) {
+      matches = &all_y_rows;
+    } else {
+      auto it = ymap.find(row_key(x, x_by, i));
+      if (it != ymap.end()) matches = &it->second;
+    }
+    if (matches && !matches->empty()) {
+      for (R_xlen_t yi : *matches) {
+        xrows.push_back(i);
+        yrows.push_back(yi);
+        if (all_y) y_matched[(size_t)yi] = 1;
+      }
+    } else if (all_x) {
+      xrows.push_back(i);
+      yrows.push_back(-1);
+    }
+  }
+  if (all_y) {
+    for (R_xlen_t j = 0; j < yf.nrow; ++j)
+      if (!y_matched[(size_t)j]) { xrows.push_back(-1); yrows.push_back(j); }
+  }
+
+  R_xlen_t nout = (R_xlen_t)xrows.size();
+  R_xlen_t ncol_out = (R_xlen_t)(x_by.size() + x_extra.size() + y_extra.size());
+  SEXP x_names = Rf_getAttrib(x, R_NamesSymbol);
+  SEXP y_names = Rf_getAttrib(y, R_NamesSymbol);
+
+  std::unordered_set<std::string> x_extra_names;
+  for (int c : x_extra) x_extra_names.insert(CHAR(STRING_ELT(x_names, c)));
+  std::unordered_set<std::string> dup;
+  for (int c : y_extra) {
+    std::string nm = CHAR(STRING_ELT(y_names, c));
+    if (x_extra_names.count(nm)) dup.insert(nm);
+  }
+  const char* sfx_x = ".x";
+  const char* sfx_y = ".y";
+  if (TYPEOF(s_suffixes) == STRSXP && Rf_xlength(s_suffixes) == 2) {
+    sfx_x = CHAR(STRING_ELT(s_suffixes, 0));
+    sfx_y = CHAR(STRING_ELT(s_suffixes, 1));
+  }
+
+  SEXP out = PROTECT(Rf_allocVector(VECSXP, ncol_out));
+  SEXP names = PROTECT(Rf_allocVector(STRSXP, ncol_out));
+  R_xlen_t p = 0;
+  for (size_t k = 0; k < x_by.size(); ++k) {
+    SET_VECTOR_ELT(out, p, join_take_key(VECTOR_ELT(x, x_by[k]), VECTOR_ELT(y, y_by[k]), xrows, yrows));
+    SET_STRING_ELT(names, p, STRING_ELT(x_names, x_by[k]));
+    ++p;
+  }
+  for (int c : x_extra) {
+    SET_VECTOR_ELT(out, p, join_take(VECTOR_ELT(x, c), xrows));
+    std::string nm = CHAR(STRING_ELT(x_names, c));
+    if (dup.count(nm)) { nm += sfx_x; SET_STRING_ELT(names, p, Rf_mkChar(nm.c_str())); }
+    else SET_STRING_ELT(names, p, STRING_ELT(x_names, c));
+    ++p;
+  }
+  for (int c : y_extra) {
+    SET_VECTOR_ELT(out, p, join_take(VECTOR_ELT(y, c), yrows));
+    std::string nm = CHAR(STRING_ELT(y_names, c));
+    if (dup.count(nm)) { nm += sfx_y; SET_STRING_ELT(names, p, Rf_mkChar(nm.c_str())); }
+    else SET_STRING_ELT(names, p, STRING_ELT(y_names, c));
+    ++p;
+  }
+  Rf_setAttrib(out, R_NamesSymbol, names);
+  Rf_setAttrib(out, R_RowNamesSymbol, make_row_names(nout));
+  Rf_setAttrib(out, R_ClassSymbol, Rf_mkString("data.frame"));
+  UNPROTECT(2);
+  return out;
+}
+
+// First matching y row (1-based) for each x row on an equi key, NA when none.
+extern "C" SEXP bt_first_match_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by) {
+  Frame xf = frame_from(x);
+  Frame yf = frame_from(y);
+  std::vector<int> x_by = col_index(s_x_by, xf.ncol);
+  std::vector<int> y_by = col_index(s_y_by, yf.ncol);
+  if (x_by.size() != y_by.size())
+    Rf_error("basetable: join key length mismatch");
+
+  std::unordered_map<std::string, int> first;
+  first.reserve((size_t)yf.nrow);
+  for (R_xlen_t j = 0; j < yf.nrow; ++j)
+    first.emplace(row_key(y, y_by, j), (int)(j + 1));
+
+  SEXP out = PROTECT(Rf_allocVector(INTSXP, xf.nrow));
+  int* p = INTEGER(out);
+  for (R_xlen_t i = 0; i < xf.nrow; ++i) {
+    auto it = first.find(row_key(x, x_by, i));
+    p[i] = it == first.end() ? NA_INTEGER : it->second;
+  }
+  UNPROTECT(1);
+  return out;
+}
+
+// Join on zero or more equi keys plus a list of (x col, op, y col) comparison
+// predicates (op codes: 0 '<', 1 '<=', 2 '>', 3 '>=', 4 '=='). Output is every
+// x column followed by the requested y columns; unmatched x rows are kept with
+// NA y values when all_x is TRUE.
+extern "C" SEXP bt_range_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
+                               SEXP s_px, SEXP s_py, SEXP s_pop,
+                               SEXP s_y_cols, SEXP s_all_x) {
+  Frame xf = frame_from(x);
+  Frame yf = frame_from(y);
+  std::vector<int> x_by = col_index(s_x_by, xf.ncol);
+  std::vector<int> y_by = col_index(s_y_by, yf.ncol);
+  std::vector<int> px = col_index(s_px, xf.ncol);
+  std::vector<int> py = col_index(s_py, yf.ncol);
+  if (TYPEOF(s_pop) != INTSXP)
+    Rf_error("basetable: predicate op codes must be integer");
+  std::vector<int> pop(INTEGER(s_pop), INTEGER(s_pop) + Rf_xlength(s_pop));
+  if (x_by.size() != y_by.size() || px.size() != py.size() || px.size() != pop.size())
+    Rf_error("basetable: join predicate arity mismatch");
+  std::vector<int> y_cols = col_index(s_y_cols, yf.ncol);
+  bool all_x = Rf_asLogical(s_all_x) == TRUE;
+
+  bool has_keys = !x_by.empty();
+  std::unordered_map<std::string, std::vector<R_xlen_t>> ymap;
+  std::vector<R_xlen_t> all_y_rows;
+  if (has_keys) {
+    ymap.reserve((size_t)yf.nrow);
+    for (R_xlen_t j = 0; j < yf.nrow; ++j)
+      ymap[row_key(y, y_by, j)].push_back(j);
+  } else {
+    all_y_rows.reserve((size_t)yf.nrow);
+    for (R_xlen_t j = 0; j < yf.nrow; ++j) all_y_rows.push_back(j);
+  }
+
+  std::vector<R_xlen_t> xrows, yrows;
+  for (R_xlen_t i = 0; i < xf.nrow; ++i) {
+    const std::vector<R_xlen_t>* bucket = nullptr;
+    if (has_keys) {
+      auto it = ymap.find(row_key(x, x_by, i));
+      if (it != ymap.end()) bucket = &it->second;
+    } else {
+      bucket = &all_y_rows;
+    }
+    bool hit = false;
+    if (bucket) {
+      for (R_xlen_t j : *bucket) {
+        bool ok = true;
+        for (size_t k = 0; k < px.size(); ++k) {
+          if (!pred_ok(pred_sign(VECTOR_ELT(x, px[k]), i, VECTOR_ELT(y, py[k]), j), pop[k])) {
+            ok = false;
+            break;
+          }
+        }
+        if (ok) { xrows.push_back(i); yrows.push_back(j); hit = true; }
+      }
+    }
+    if (!hit && all_x) { xrows.push_back(i); yrows.push_back(-1); }
+  }
+
+  R_xlen_t nout = (R_xlen_t)xrows.size();
+  R_xlen_t nc = xf.ncol + (R_xlen_t)y_cols.size();
+  SEXP xn = Rf_getAttrib(x, R_NamesSymbol);
+  SEXP yn = Rf_getAttrib(y, R_NamesSymbol);
+  SEXP out = PROTECT(Rf_allocVector(VECSXP, nc));
+  SEXP names = PROTECT(Rf_allocVector(STRSXP, nc));
+  for (R_xlen_t j = 0; j < xf.ncol; ++j) {
+    SET_VECTOR_ELT(out, j, join_take(VECTOR_ELT(x, j), xrows));
+    SET_STRING_ELT(names, j, STRING_ELT(xn, j));
+  }
+  for (size_t k = 0; k < y_cols.size(); ++k) {
+    SET_VECTOR_ELT(out, xf.ncol + (R_xlen_t)k, join_take(VECTOR_ELT(y, y_cols[k]), yrows));
+    SET_STRING_ELT(names, xf.ncol + (R_xlen_t)k, STRING_ELT(yn, y_cols[k]));
+  }
+  Rf_setAttrib(out, R_NamesSymbol, names);
+  Rf_setAttrib(out, R_RowNamesSymbol, make_row_names(nout));
+  Rf_setAttrib(out, R_ClassSymbol, Rf_mkString("data.frame"));
+  UNPROTECT(2);
+  return out;
+}
+
+// Rolling join on zero or more exact keys plus one ordered "roll" key.
+// direction: 0 backward (y <= x), 1 forward (y >= x), 2 nearest. For each x row
+// the closest surviving y row within `tolerance` wins (first on ties). Every x
+// row is kept; the requested y columns carry NA when nothing matched, and a y
+// name that collides with an x name gets a ".y" suffix.
+extern "C" SEXP bt_rolling_join_(SEXP x, SEXP y, SEXP s_x_exact, SEXP s_y_exact,
+                                 SEXP s_x_roll, SEXP s_y_roll, SEXP s_dir,
+                                 SEXP s_tol, SEXP s_y_cols) {
+  Frame xf = frame_from(x);
+  Frame yf = frame_from(y);
+  std::vector<int> xe = col_index(s_x_exact, xf.ncol);
+  std::vector<int> ye = col_index(s_y_exact, yf.ncol);
+  if (xe.size() != ye.size())
+    Rf_error("basetable: rolling join key length mismatch");
+  int xr = Rf_asInteger(s_x_roll) - 1;
+  int yr = Rf_asInteger(s_y_roll) - 1;
+  if (xr < 0 || xr >= xf.ncol || yr < 0 || yr >= yf.ncol)
+    Rf_error("basetable: rolling key out of bounds");
+  int dir = Rf_asInteger(s_dir);
+  double tol = Rf_asReal(s_tol);
+  std::vector<int> y_cols = col_index(s_y_cols, yf.ncol);
+
+  bool has_exact = !xe.empty();
+  std::unordered_map<std::string, std::vector<R_xlen_t>> ymap;
+  std::vector<R_xlen_t> all_y_rows;
+  if (has_exact) {
+    ymap.reserve((size_t)yf.nrow);
+    for (R_xlen_t j = 0; j < yf.nrow; ++j)
+      ymap[row_key(y, ye, j)].push_back(j);
+  } else {
+    all_y_rows.reserve((size_t)yf.nrow);
+    for (R_xlen_t j = 0; j < yf.nrow; ++j) all_y_rows.push_back(j);
+  }
+
+  SEXP xroll = VECTOR_ELT(x, xr);
+  SEXP yroll = VECTOR_ELT(y, yr);
+  std::vector<R_xlen_t> matchrow((size_t)xf.nrow, -1);
+  for (R_xlen_t i = 0; i < xf.nrow; ++i) {
+    const std::vector<R_xlen_t>* bucket = nullptr;
+    if (has_exact) {
+      auto it = ymap.find(row_key(x, xe, i));
+      if (it != ymap.end()) bucket = &it->second;
+    } else {
+      bucket = &all_y_rows;
+    }
+    if (!bucket) continue;
+    bool xna = false;
+    double xv = value_as_double(xroll, i, xna);
+    if (xna) continue;
+    double best = R_PosInf;
+    R_xlen_t bestj = -1;
+    for (R_xlen_t j : *bucket) {
+      bool yna = false;
+      double yv = value_as_double(yroll, j, yna);
+      if (yna) continue;
+      double delta = yv - xv;
+      bool okdir = dir == 0 ? delta <= 0 : (dir == 1 ? delta >= 0 : true);
+      if (!okdir) continue;
+      double ad = std::fabs(delta);
+      if (ad > tol) continue;
+      if (ad < best) { best = ad; bestj = j; }
+    }
+    matchrow[(size_t)i] = bestj;
+  }
+
+  std::unordered_set<std::string> x_name_set;
+  SEXP xn = Rf_getAttrib(x, R_NamesSymbol);
+  SEXP yn = Rf_getAttrib(y, R_NamesSymbol);
+  for (R_xlen_t j = 0; j < xf.ncol; ++j) x_name_set.insert(CHAR(STRING_ELT(xn, j)));
+
+  R_xlen_t nc = xf.ncol + (R_xlen_t)y_cols.size();
+  SEXP out = PROTECT(Rf_allocVector(VECSXP, nc));
+  SEXP names = PROTECT(Rf_allocVector(STRSXP, nc));
+  for (R_xlen_t j = 0; j < xf.ncol; ++j) {
+    SET_VECTOR_ELT(out, j, VECTOR_ELT(x, j));
+    SET_STRING_ELT(names, j, STRING_ELT(xn, j));
+  }
+  for (size_t k = 0; k < y_cols.size(); ++k) {
+    SET_VECTOR_ELT(out, xf.ncol + (R_xlen_t)k, join_take(VECTOR_ELT(y, y_cols[k]), matchrow));
+    std::string nm = CHAR(STRING_ELT(yn, y_cols[k]));
+    if (x_name_set.count(nm)) { nm += ".y"; SET_STRING_ELT(names, xf.ncol + (R_xlen_t)k, Rf_mkChar(nm.c_str())); }
+    else SET_STRING_ELT(names, xf.ncol + (R_xlen_t)k, STRING_ELT(yn, y_cols[k]));
+  }
+  Rf_setAttrib(out, R_NamesSymbol, names);
+  Rf_setAttrib(out, R_RowNamesSymbol, make_row_names(xf.nrow));
+  Rf_setAttrib(out, R_ClassSymbol, Rf_mkString("data.frame"));
+  UNPROTECT(2);
+  return out;
 }

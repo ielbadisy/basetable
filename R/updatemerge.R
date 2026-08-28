@@ -1,6 +1,6 @@
 updatemerge <- function(x, y, by, cols = NULL) {
-  x_dt <- bt_as_data_table(x)
-  y_dt <- bt_as_data_table(y)
+  x_dt <- bt_as_data_frame(x)
+  y_dt <- bt_as_data_frame(y)
   by <- bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
 
@@ -9,8 +9,8 @@ updatemerge <- function(x, y, by, cols = NULL) {
   }
   cols <- bt_resolve_cols(x_dt, cols)
 
-  y_first <- y_dt[!duplicated(y_dt, by = by)]
-  idx <- y_first[x_dt, on = by, which = TRUE]
+  y_first <- bt_as_data_frame(bt_engine_unique(y_dt, by = by, keep_all = TRUE))
+  idx <- bt_first_match(x_dt, y_first, by)
 
   for (nm in cols) {
     values <- y_first[[nm]][idx]
@@ -18,5 +18,5 @@ updatemerge <- function(x, y, by, cols = NULL) {
     x_dt[[nm]][keep] <- values[keep]
   }
 
-  x_dt
+  bt_as_data_table(x_dt)
 }

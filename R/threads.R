@@ -1,28 +1,26 @@
-#' Set data.table thread count for the session
+#' Set basetable thread count for the session
 #'
-#' Wrapper around [data.table::setDTthreads()] that makes thread control
-#' available from `basetable` without exposing it on every verb.
+#' Controls the default thread count used by basetable's native reader and
+#' writer when a verb does not receive `n_threads` explicitly.
 #'
 #' @param threads Integer thread count, or `NULL` to reread environment
 #'   settings.
-#' @param restore_after_fork Whether to restore multithreading after a fork.
 #' @param percent Percentage of detected logical CPUs to use.
-#' @param throttle Passed through to `data.table::setDTthreads()`.
+#' @param restore_after_fork Ignored; kept for API compatibility.
+#' @param throttle Ignored; kept for API compatibility.
 #'
 #' @return The previous thread count.
 #' @export
 setthreads <- function(threads = NULL, restore_after_fork = NULL, percent = NULL, throttle = NULL) {
+  old <- getOption("basetable.threads", bt_default_threads())
   if (!is.null(percent)) {
-    data.table::setDTthreads(
-      percent = percent,
-      restore_after_fork = restore_after_fork,
-      throttle = throttle
-    )
+    cores <- max(1L, parallel::detectCores(logical = TRUE))
+    threads <- max(1L, floor(cores * as.numeric(percent) / 100))
+  } else if (is.null(threads)) {
+    threads <- max(1L, parallel::detectCores(logical = TRUE))
   } else {
-    data.table::setDTthreads(
-      threads = threads,
-      restore_after_fork = restore_after_fork,
-      throttle = throttle
-    )
+    threads <- as.integer(threads)
   }
+  options(basetable.threads = as.integer(max(1L, threads)))
+  invisible(old)
 }

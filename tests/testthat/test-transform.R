@@ -62,8 +62,8 @@ test_that("transform(by =) resolves external variables from its caller", {
 })
 
 test_that("transform(by =) does not mutate its input", {
-  input <- data.table::data.table(g = c("a", "a", "b"), x = c(1, 2, 3))
-  original <- data.table::copy(input)
+  input <- data.frame(g = c("a", "a", "b"), x = c(1, 2, 3))
+  original <- input
 
   transform(input, cumx = cumsum(x), by = "g")
 

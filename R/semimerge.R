@@ -1,13 +1,12 @@
 semimerge <- function(x, y, by) {
-  x_dt <- bt_as_data_table_ro(x)
-  y_dt <- bt_as_data_table_ro(y)
-  by <- bt_resolve_cols(x_dt, by)
-  bt_resolve_cols(y_dt, by)
+  x_df <- bt_as_data_frame(x)
+  y_df <- bt_as_data_frame(y)
+  by <- bt_resolve_cols(x_df, by)
+  bt_resolve_cols(y_df, by)
 
   if (length(by) < 1L) {
     stop("`by` must contain at least one column.", call. = FALSE)
   }
 
-  y_keys <- unique(y_dt[, by, with = FALSE])
-  x_dt[y_keys, on = by, nomatch = NULL]
+  bt_engine_subset(x_df, rows = bt_engine_match_mask(x_df, y_df, by))
 }

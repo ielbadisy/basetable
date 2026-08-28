@@ -8,10 +8,8 @@ common_names <- function(x, y) {
 }
 
 duplicated_keys <- function(data, by) {
-  dt <- bt_as_data_table_ro(data)
-  by <- bt_resolve_cols(dt, by)
-  out <- dt[, list(N = .N), by = by][N > 1L]
-  bt_as_data_table(out)
+  out <- count(data, by = by, sort = FALSE, name = "N")
+  bt_engine_subset(out, rows = out$N > 1L)
 }
 
 assert_key <- function(data, by) {

@@ -1,5 +1,4 @@
-import(data.table)
-useDynLib(basetable, btread_, btwrite_, bt_agg_, bt_subset_, bt_order_, bt_unique_, bt_duplicated_, bt_count_)
+useDynLib(basetable, btread_, btwrite_, bt_agg_, bt_subset_, bt_order_, bt_unique_, bt_duplicated_, bt_count_, bt_group_agg_, bt_match_mask_, bt_group_id_, bt_join_, bt_first_match_, bt_range_join_, bt_rolling_join_)
 importFrom(parallel, detectCores)
 export(addedrows)
 export(adddays)

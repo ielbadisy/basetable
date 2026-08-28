@@ -70,7 +70,7 @@ test_that("summaries, uniquerows, row slicing, move, and rbindfill work together
   uniq <- uniquerows(mtcars, cols = "cyl")
   expect_equal(nrow(uniq), length(unique(mtcars$cyl)))
 
-  two <- data.table::as.data.table(mtcars)[1:2]
+  two <- firstrows(mtcars, 2)
   expect_equal(nrow(two), 2L)
 
   moved <- move(mtcars, "hp", before = "mpg")
@@ -85,11 +85,11 @@ test_that("summaries, uniquerows, row slicing, move, and rbindfill work together
 })
 
 test_that("core verbs do not mutate their input", {
-  input <- data.table::data.table(
+  input <- data.frame(
     id = c(1L, 1L, 2L),
     value = c(3, 3, 1)
   )
-  original <- data.table::copy(input)
+  original <- input
 
   subset(input, value > 1)
   renamecols(input, key = id)
@@ -101,19 +101,14 @@ test_that("core verbs do not mutate their input", {
   expect_identical(input, original)
 })
 
-test_that("setthreads forwards to data.table", {
-  old <- data.table::getDTthreads()
-  on.exit(data.table::setDTthreads(old), add = TRUE)
+test_that("setthreads controls basetable defaults", {
+  old <- getOption("basetable.threads", bt_default_threads())
+  on.exit(options(basetable.threads = old), add = TRUE)
 
-  new <- if (old == 1L) 0L else 1L
-  data.table::setDTthreads(new)
-  expected <- data.table::getDTthreads()
-  data.table::setDTthreads(old)
-
-  prev <- setthreads(new)
+  prev <- setthreads(1L)
 
   expect_equal(prev, old)
-  expect_equal(data.table::getDTthreads(), expected)
+  expect_equal(bt_default_threads(), 1L)
 })
 
 test_that("split and applyby operate on ordinary frames", {

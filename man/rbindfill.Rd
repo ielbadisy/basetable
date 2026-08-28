@@ -18,7 +18,7 @@ have different columns.}
 \item{typeconflict}{How to handle a column whose type differs across
 inputs. \code{"error"} (the default) stops with a message naming the column
 and the conflicting types before any coercion happens. \code{"coerce"} skips
-the check and lets \code{\link[data.table:rbindlist]{data.table::rbindlist()}} coerce as usual.}
+the check and allows ordinary vector coercion while binding.}
 }
 \value{
 A combined data.table.

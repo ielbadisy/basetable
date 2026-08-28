@@ -121,9 +121,7 @@ btread <- function(file,
                isTRUE(lazy))
 
   if (as == "data.table") {
-    if (!requireNamespace("data.table", quietly = TRUE))
-      stop("btread: as = 'data.table' needs the data.table package", call. = FALSE)
-    data.table::setDT(out)
+    out <- bt_as_data_table(out)
   }
   out
 }
@@ -188,7 +186,7 @@ btwrite <- function(x,
 # --- internal helpers -------------------------------------------------------
 
 bt_default_threads <- function() {
-  n <- tryCatch(data.table::getDTthreads(), error = function(e) NA_integer_)
+  n <- getOption("basetable.threads", NA_integer_)
   if (is.na(n) || n < 1L) n <- max(1L, parallel::detectCores(logical = TRUE))
   as.integer(min(n, 8L))
 }

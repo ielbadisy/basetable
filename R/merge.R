@@ -6,8 +6,8 @@ merge <- function(x,
                   all.y = all,
                   sort = FALSE,
                   suffixes = c(".x", ".y")) {
-  x_dt <- bt_as_data_table_ro(x)
-  y_dt <- bt_as_data_table_ro(y)
+  x_dt <- bt_as_data_frame(x)
+  y_dt <- bt_as_data_frame(y)
 
   if (is.null(by)) {
     by <- common_names(x_dt, y_dt)
@@ -18,15 +18,8 @@ merge <- function(x,
   by <- bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
 
-  out <- data.table::merge.data.table(
-    x = x_dt,
-    y = y_dt,
-    by = by,
-    all.x = all.x,
-    all.y = all.y,
-    sort = sort,
-    suffixes = suffixes
-  )
+  out <- bt_join_rows(x_dt, y_dt, by = by, all.x = all.x, all.y = all.y, suffixes = suffixes)
+  if (sort) out <- bt_engine_order(out, by = by)
 
   out
 }

@@ -108,13 +108,6 @@ static SEXP bt_str_materialise(SEXP x) {
   UNPROTECT(1);
   return v;
 }
-static void* bt_str_Dataptr(SEXP x, Rboolean) {
-  return DATAPTR(bt_str_materialise(x));
-}
-static const void* bt_str_Dataptr_or_null(SEXP x) {
-  SEXP c = R_altrep_data2(x);
-  return c == R_NilValue ? nullptr : DATAPTR(c);
-}
 static SEXP bt_str_Elt(SEXP x, R_xlen_t i) {
   return STRING_ELT(bt_str_materialise(x), i);
 }
@@ -144,8 +137,6 @@ extern "C" void bt_init_altrep(DllInfo* dll) {
   bt_str_class = R_make_altstring_class("bt_lazy_str", "basetable", dll);
   R_set_altrep_Length_method(bt_str_class, bt_Length);
   R_set_altrep_Inspect_method(bt_str_class, bt_Inspect);
-  R_set_altvec_Dataptr_method(bt_str_class, bt_str_Dataptr);
-  R_set_altvec_Dataptr_or_null_method(bt_str_class, bt_str_Dataptr_or_null);
   R_set_altstring_Elt_method(bt_str_class, bt_str_Elt);
   R_set_altstring_Set_elt_method(bt_str_class, bt_str_Set_elt);
 }

@@ -1,9 +1,9 @@
 overlapmerge <- function(x, y, startx, endx, starty, endy, by = NULL) {
-  x_dt <- bt_as_data_table_ro(x)
-  y_dt <- bt_as_data_table_ro(y)
+  x_dt <- bt_as_data_frame(x)
+  y_dt <- bt_as_data_frame(y)
 
   by <- if (is.null(by)) character(0) else bt_resolve_cols(x_dt, by)
-  bt_resolve_cols(y_dt, by)
+  if (length(by) > 0L) bt_resolve_cols(y_dt, by)
   startx <- bt_resolve_cols(x_dt, startx)
   endx <- bt_resolve_cols(x_dt, endx)
   starty <- bt_resolve_cols(y_dt, starty)
@@ -13,24 +13,14 @@ overlapmerge <- function(x, y, startx, endx, starty, endy, by = NULL) {
     stop("`startx`, `endx`, `starty`, and `endy` must each name one column.", call. = FALSE)
   }
 
-  x_tmp <- data.table::copy(x_dt)
-  y_tmp <- data.table::copy(y_dt)
-
-  x_start_tmp <- "__bt_startx"
-  x_end_tmp <- "__bt_endx"
-
-  data.table::setnames(x_tmp, c(startx, endx), c(x_start_tmp, x_end_tmp))
-  data.table::setkeyv(y_tmp, c(by, starty, endy))
-
-  out <- data.table::foverlaps(
-    x_tmp,
-    y_tmp,
-    by.x = c(by, x_start_tmp, x_end_tmp),
-    by.y = data.table::key(y_tmp),
-    type = "any",
-    nomatch = NA
+  bt_range_join(
+    x_dt, y_dt,
+    by = by,
+    predicates = list(
+      list(x = startx, op = "<=", y = endy),
+      list(x = endx, op = ">=", y = starty)
+    ),
+    y_cols = setdiff(names(y_dt), by),
+    all.x = TRUE
   )
-
-  data.table::setnames(out, c(x_start_tmp, x_end_tmp), c(startx, endx))
-  out
 }

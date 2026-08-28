@@ -1,17 +1,20 @@
 filldown <- function(data, cols, by = NULL) {
-  dt <- bt_as_data_table(data)
-  cols <- bt_resolve_cols(dt, cols)
-  by <- if (is.null(by)) character(0) else bt_resolve_cols(dt, by)
+  df <- bt_as_data_frame(data)
+  cols <- bt_resolve_cols(df, cols)
+  by <- if (is.null(by)) character(0) else bt_resolve_cols(df, by)
 
   if (length(cols) < 1L) {
     stop("`cols` must contain at least one column.", call. = FALSE)
   }
 
   if (length(by) == 0L) {
-    dt[, (cols) := lapply(.SD, bt_locf), .SDcols = cols]
+    for (nm in cols) df[[nm]] <- bt_locf(df[[nm]])
   } else {
-    dt[, (cols) := lapply(.SD, bt_locf), by = by, .SDcols = cols]
+    groups <- bt_group_rows(bt_engine_groups(df, by)$id)
+    for (nm in cols) {
+      for (idx in groups) df[[nm]][idx] <- bt_locf(df[[nm]][idx])
+    }
   }
 
-  bt_as_data_table(dt)
+  bt_as_data_table(df)
 }

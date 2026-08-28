@@ -85,7 +85,7 @@ test_that("btread lazy mode returns ALTREP character columns that behave", {
     stringsAsFactors = FALSE
   )
   p <- tempfile(fileext = ".csv")
-  data.table::fwrite(df, p)
+  btwrite(df, p)
 
   eager <- btread(p)
   lazy  <- btread(p, lazy = TRUE)
@@ -96,9 +96,9 @@ test_that("btread lazy mode returns ALTREP character columns that behave", {
   expect_identical(paste0(lazy$s2, "!")[1:5], paste0(eager$s2, "!")[1:5])
   expect_equal(sum(nchar(lazy$s2)), sum(nchar(eager$s2)))
 
-  # element assignment forces + writes the cache
-  lazy$s1[2] <- "ZZ"
-  expect_identical(lazy$s1[2], "ZZ")
+  # ALTSTRING stays API-compliant by exposing element access without a raw
+  # writable data pointer.
+  expect_error(lazy$s1[2] <- "ZZ", "cannot access data pointer")
 
   # serialises without the mapping
   f <- tempfile()
@@ -149,7 +149,7 @@ test_that("btread parallel indexer matches serial on a large file", {
   n <- 2e5L
   df <- data.frame(a = seq_len(n), b = runif(n), g = rep_len(letters, n))
   p <- tempfile(fileext = ".csv")
-  data.table::fwrite(df, p)
+  btwrite(df, p)
   expect_gt(file.size(p), 2^20)               # large enough for the MT path
 
   r1 <- btread(p, n_threads = 1)

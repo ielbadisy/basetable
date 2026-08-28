@@ -1,6 +1,6 @@
 rangemerge <- function(x, y, by, lower, upper, value) {
-  x_dt <- bt_as_data_table_ro(x)
-  y_dt <- bt_as_data_table_ro(y)
+  x_dt <- bt_as_data_frame(x)
+  y_dt <- bt_as_data_frame(y)
   by <- bt_resolve_cols(x_dt, by)
   bt_resolve_cols(y_dt, by)
   lower <- bt_resolve_cols(x_dt, lower)
@@ -17,20 +17,14 @@ rangemerge <- function(x, y, by, lower, upper, value) {
     stop("`value` must name one column.", call. = FALSE)
   }
 
-  x_tmp <- data.table::copy(x_dt)
-  y_tmp <- data.table::copy(y_dt)
-  value_end <- "__bt_value_end"
-  y_tmp[[value_end]] <- y_tmp[[value]]
-  data.table::setkeyv(y_tmp, c(by, value, value_end))
-
-  out <- data.table::foverlaps(
-    x_tmp,
-    y_tmp,
-    by.x = c(by, lower, upper),
-    by.y = data.table::key(y_tmp),
-    type = "any",
-    nomatch = NA
+  bt_range_join(
+    x_dt, y_dt,
+    by = by,
+    predicates = list(
+      list(x = lower, op = "<=", y = value),
+      list(x = upper, op = ">=", y = value)
+    ),
+    y_cols = setdiff(names(y_dt), by),
+    all.x = TRUE
   )
-  out[[value_end]] <- NULL
-  out[]
 }
