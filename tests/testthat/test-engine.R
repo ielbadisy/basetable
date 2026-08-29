@@ -256,3 +256,31 @@ test_that("overlapmerge (two-column interval predicate) still works via the scan
                       starty = "starty", endy = "endy", by = "id")
   expect_equal(out$value, c("a", "b"))
 })
+
+test_that("threaded and single-threaded orderrows agree on a large frame", {
+  skip_on_cran()
+  set.seed(99)
+  n <- 2e6
+  d <- data.frame(
+    s = sample(c(letters, LETTERS, month.name), n, TRUE),
+    g = sample(1:5000, n, TRUE),
+    r = round(rnorm(n), 3),
+    stringsAsFactors = FALSE
+  )
+  d$s[sample(n, 200)] <- NA
+  d$r[sample(n, 200)] <- NA
+
+  old <- getOption("basetable.threads")
+  on.exit(options(basetable.threads = old), add = TRUE)
+
+  options(basetable.threads = 1L)
+  a <- as.data.frame(orderrows(d, by = c("s", "g", "r")))
+  options(basetable.threads = 8L)
+  b <- as.data.frame(orderrows(d, by = c("s", "g", "r")))
+  expect_identical(a, b)
+
+  ref <- d[order(d$s, d$g, d$r, method = "radix", na.last = TRUE), ]
+  rownames(a) <- NULL
+  rownames(ref) <- NULL
+  expect_equal(a, ref)
+})

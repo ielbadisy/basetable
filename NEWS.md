@@ -5,8 +5,13 @@
 * `orderrows()` now sorts with a stable multi-column LSD radix sort over
   order-preserving integer codes (character columns ranked in `strcmp` order,
   integers/factors shifted, doubles bit-mapped) instead of a comparison sort.
-  A 1e6-row string+numeric sort dropped from about 9x to about 3-4x of
-  `data.table` and is roughly 20x faster than base `order()`.
+  The radix carries the (code, row) pairs through every pass so key reads stay
+  sequential, and the passes run on threads (`setthreads()`) above ~250k rows.
+  A 1e6-row string+numeric sort dropped from about 9x to roughly 2.5x of
+  `data.table` and is about 20-25x faster than base `order()`; at 20M rows the
+  earlier super-linear slowdown is gone. Fully matching `data.table` here needs
+  a cache-blocked parallel radix across the whole sort pipeline (codes,
+  gather, materialise), tracked in ENGINE-ROADMAP.md.
 * `subset()` gained a fast path for a single column-vs-column or column-vs-scalar
   comparison: the mask is written in one pass with no intermediate numeric
   vector, bringing filtering close to `data.table`.

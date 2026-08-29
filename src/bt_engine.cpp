@@ -9,6 +9,7 @@
 #include <Rinternals.h>
 
 #include <algorithm>
+#include <array>
 #include <climits>
 #include <cmath>
 #include <cstdint>
@@ -1096,27 +1097,72 @@ std::vector<uint64_t> order_codes(SEXP col, R_xlen_t nrow, bool na_last, bool de
 
 // Stable LSD radix sort of a permutation by a uint64 key, 8 bits per pass,
 // skipping passes whose byte is constant.
-void radix_order_by(std::vector<R_xlen_t>& ord, const std::vector<uint64_t>& key) {
-  size_t n = ord.size();
+// Stable LSD radix that sorts `idx` by `key`, carrying both arrays through
+// every pass so key reads stay sequential (no gather through a permutation).
+// `key` is reordered in place alongside `idx`. Parallel when nth > 1 and n is
+// large: per-chunk histograms and scatter run on threads, chunks being
+// contiguous slices so within-bin order matches the pre-pass order.
+void radix_pairs(std::vector<uint64_t>& key, std::vector<R_xlen_t>& idx, int nth) {
+  size_t n = key.size();
   if (n < 2) return;
-  std::vector<R_xlen_t> buf(n);
+  std::vector<uint64_t> kbuf(n);
+  std::vector<R_xlen_t> ibuf(n);
+  bool mt = nth >= 2 && n >= 200000;
+  size_t cs = mt ? (n + (size_t)nth - 1) / (size_t)nth : n;
+  int used = mt ? (int)((n + cs - 1) / cs) : 1;
+  std::vector<std::array<size_t, 256>> hist((size_t)used), pos((size_t)used);
+
   for (int shift = 0; shift < 64; shift += 8) {
-    size_t count[256] = {0};
-    uint8_t first = (uint8_t)((key[(size_t)ord[0]] >> shift) & 0xFF);
-    bool constant = true;
-    for (size_t i = 0; i < n; ++i) {
-      uint8_t b = (uint8_t)((key[(size_t)ord[i]] >> shift) & 0xFF);
-      if (b != first) constant = false;
-      ++count[b];
+    auto count_chunk = [&](int t) {
+      auto& h = hist[(size_t)t];
+      h.fill(0);
+      size_t lo = (size_t)t * cs, hi = std::min(n, lo + cs);
+      for (size_t i = lo; i < hi; ++i) ++h[(uint8_t)((key[i] >> shift) & 0xFF)];
+    };
+    if (mt) {
+      std::vector<std::thread> pool;
+      for (int t = 0; t < used; ++t) pool.emplace_back(count_chunk, t);
+      for (auto& x : pool) x.join();
+    } else {
+      count_chunk(0);
     }
-    if (constant) continue;
+
+    size_t tot[256];
+    int nz = 0;
+    for (int b = 0; b < 256; ++b) {
+      size_t s = 0;
+      for (int t = 0; t < used; ++t) s += hist[(size_t)t][b];
+      tot[b] = s;
+      if (s) ++nz;
+    }
+    if (nz <= 1) continue;
+
     size_t acc = 0;
-    for (int b = 0; b < 256; ++b) { size_t c = count[b]; count[b] = acc; acc += c; }
-    for (size_t i = 0; i < n; ++i) {
-      uint8_t b = (uint8_t)((key[(size_t)ord[i]] >> shift) & 0xFF);
-      buf[count[b]++] = ord[i];
+    for (int b = 0; b < 256; ++b) {
+      size_t a = acc;
+      for (int t = 0; t < used; ++t) { pos[(size_t)t][b] = a; a += hist[(size_t)t][b]; }
+      acc += tot[b];
     }
-    ord.swap(buf);
+
+    auto scatter = [&](int t) {
+      auto& p = pos[(size_t)t];
+      size_t lo = (size_t)t * cs, hi = std::min(n, lo + cs);
+      for (size_t i = lo; i < hi; ++i) {
+        uint8_t b = (uint8_t)((key[i] >> shift) & 0xFF);
+        size_t d = p[b]++;
+        kbuf[d] = key[i];
+        ibuf[d] = idx[i];
+      }
+    };
+    if (mt) {
+      std::vector<std::thread> pool;
+      for (int t = 0; t < used; ++t) pool.emplace_back(scatter, t);
+      for (auto& x : pool) x.join();
+    } else {
+      scatter(0);
+    }
+    key.swap(kbuf);
+    idx.swap(ibuf);
   }
 }
 
@@ -1301,12 +1347,14 @@ extern "C" SEXP bt_subset_(SEXP df, SEXP s_rows, SEXP s_cols) {
   return build_frame(df, rows, cols);
 }
 
-extern "C" SEXP bt_order_(SEXP df, SEXP s_by, SEXP s_decreasing, SEXP s_na_last) {
+extern "C" SEXP bt_order_(SEXP df, SEXP s_by, SEXP s_decreasing, SEXP s_na_last,
+                          SEXP s_n_threads) {
   Frame f = frame_from(df);
   std::vector<int> by = col_index(s_by, f.ncol);
   if (Rf_xlength(s_decreasing) != (R_xlen_t)by.size())
     Rf_error("basetable: decreasing length mismatch");
   bool na_last = Rf_asLogical(s_na_last) == TRUE;
+  int nth = clamp_threads(s_n_threads, f.nrow, 250000);
 
   std::vector<R_xlen_t> ord((size_t)f.nrow);
   for (R_xlen_t i = 0; i < f.nrow; ++i) ord[(size_t)i] = i;
@@ -1323,7 +1371,15 @@ extern "C" SEXP bt_order_(SEXP df, SEXP s_by, SEXP s_decreasing, SEXP s_na_last)
   }
 
   if (radix_ok) {
-    for (size_t kk = by.size(); kk-- > 0;) radix_order_by(ord, codes[kk]);
+    // Sort by the last key column first; between columns, gather the next
+    // column's codes into the current row order so each radix pass is
+    // sequential.
+    std::vector<uint64_t> keyv((size_t)f.nrow);
+    for (size_t kk = by.size(); kk-- > 0;) {
+      const std::vector<uint64_t>& c = codes[kk];
+      for (R_xlen_t i = 0; i < f.nrow; ++i) keyv[(size_t)i] = c[(size_t)ord[(size_t)i]];
+      radix_pairs(keyv, ord, nth);
+    }
   } else {
     std::stable_sort(ord.begin(), ord.end(), [&](R_xlen_t a, R_xlen_t b) {
       for (size_t k = 0; k < by.size(); ++k) {

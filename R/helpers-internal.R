@@ -437,7 +437,10 @@ bt_engine_order <- function(data, by, decreasing = FALSE, na.last = TRUE) {
   df <- bt_as_data_frame(data)
   by_pos <- bt_col_positions(df, by)
   decreasing <- bt_recycle_flag(decreasing, length(by_pos), "decreasing")
-  bt_as_data_table(.Call(bt_order_, df, by_pos, as.logical(decreasing), isTRUE(na.last)))
+  bt_as_data_table(.Call(
+    bt_order_, df, by_pos, as.logical(decreasing), isTRUE(na.last),
+    as.integer(bt_default_threads())
+  ))
 }
 
 bt_engine_unique <- function(data, by = NULL, keep_all = FALSE) {

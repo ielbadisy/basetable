@@ -44,6 +44,10 @@ base-style argument handling and NSE until expression compilation exists.
 
 - Interval-overlap joins (`overlapmerge`, two-y-column non-equi conditions)
   still scan the bucket; add an interval-tree or sweepline path.
+- `orderrows()` radix passes run on threads, but the codes pass, the
+  inter-column gather and the final materialise are serial, so the speedup
+  caps around 1.5x. A cache-blocked parallel radix over the whole pipeline is
+  what would match `data.table`.
 - Parallelise the rest: the `group_single` dictionary pass, the dense
   integer-key aggregate path, `bt_group_id_`, `bt_count_`, and join build /
   probe. (Grouped `aggregate()` with a dense code path already reduces in
