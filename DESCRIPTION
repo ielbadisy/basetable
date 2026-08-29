@@ -1,5 +1,5 @@
 Package: basetable
-Title: Fast Base R Table Manipulation
+Title: Fast and Memory-Efficient Base R Table Manipulation
 Version: 1.0.0
 Authors@R:
     person("Imad", "El Badisy", email = "elbadisyimad@gmail.com", role = c("aut", "cre"))
@@ -7,8 +7,11 @@ Description: A tabular data manipulation, exploration and validation toolkit
     with a base R-style interface (subset, transform, aggregate, merge, split)
     and no external computation dependency. Grouping, joins, ordering,
     filtering, reshaping and delimited-file reading run in a bundled C++
-    engine that uses multiple threads for the heavier operations. Results are
-    returned as an ordinary data frame with a light 'basetable' class.
+    engine that uses multiple threads for the heavier operations. Grouped
+    reducers accumulate in compiled code without materialising intermediate
+    columns, so grouped aggregation and counting allocate close to nothing.
+    Results are returned as an ordinary data frame with a light 'basetable'
+    class.
 License: MIT + file LICENSE
 URL: https://github.com/ielbadisy/basetable
 BugReports: https://github.com/ielbadisy/basetable/issues
