@@ -284,3 +284,24 @@ test_that("threaded and single-threaded orderrows agree on a large frame", {
   rownames(ref) <- NULL
   expect_equal(a, ref)
 })
+
+test_that("rbindfill bulk-copies matching columns and preserves shared class", {
+  a <- data.frame(d = as.Date("2024-01-01") + 0:2, n = 1:3, s = c("a", "b", "c"),
+                  stringsAsFactors = FALSE)
+  b <- data.frame(d = as.Date("2024-02-01") + 0:1, n = 4:5, s = c("d", "e"),
+                  stringsAsFactors = FALSE)
+
+  r <- rbindfill(list(a, b))
+  expect_s3_class(r, "basetable")
+  expect_s3_class(r$d, "Date")
+  expect_equal(r$d, c(a$d, b$d))
+  expect_equal(r$n, c(1:3, 4:5))
+  expect_equal(r$s, c("a", "b", "c", "d", "e"))
+
+  # column present in only one frame -> NA fill; type promotion still applies
+  x <- data.frame(k = 1:2, extra = c(TRUE, FALSE))
+  y <- data.frame(k = c("3", "4"))
+  rr <- as.data.frame(rbindfill(list(x, y), typeconflict = "coerce"))
+  expect_equal(rr$k, c("1", "2", "3", "4"))
+  expect_equal(rr$extra, c(TRUE, FALSE, NA, NA))
+})

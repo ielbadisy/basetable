@@ -2250,38 +2250,79 @@ extern "C" SEXP bt_rbind_(SEXP frames, SEXP s_fill, SEXP s_id_name, SEXP s_id_va
     UNPROTECT(1);
   }
 
+  // Per (frame, output column) source index, resolved once.
+  std::vector<int> src_of((size_t)nf * (size_t)ncol, -1);
+  for (R_xlen_t f = 0; f < nf; ++f) {
+    SEXP df = VECTOR_ELT(frames, f);
+    SEXP nm = Rf_getAttrib(df, R_NamesSymbol);
+    for (R_xlen_t j = 0; j < Rf_xlength(df); ++j) {
+      auto it = col_pos.find(CHAR(STRING_ELT(nm, j)));
+      if (it != col_pos.end()) src_of[(size_t)f * (size_t)ncol + (size_t)it->second] = (int)j;
+    }
+  }
+
   for (int c = 0; c < ncol; ++c) {
     SEXPTYPE tt = out_type[(size_t)c];
     SEXP col = PROTECT(Rf_allocVector(tt, total));
+
+    // Preserve a shared class (Date, POSIXct, ...) when every contributing
+    // column has the same one and no type promotion happened.
+    SEXP shared_class = R_NilValue;
+    bool class_ok = true, any_promote = false;
+    for (R_xlen_t f = 0; f < nf && class_ok; ++f) {
+      int src = src_of[(size_t)f * (size_t)ncol + (size_t)c];
+      if (src < 0) continue;
+      SEXP s = VECTOR_ELT(VECTOR_ELT(frames, f), src);
+      if (Rf_isFactor(s) || (SEXPTYPE)TYPEOF(s) != tt) { any_promote = true; continue; }
+      SEXP cl = Rf_getAttrib(s, R_ClassSymbol);
+      if (shared_class == R_NilValue) shared_class = cl;
+      else if (!R_compute_identical(shared_class, cl, 0)) class_ok = false;
+    }
+    if (class_ok && !any_promote && shared_class != R_NilValue)
+      Rf_setAttrib(col, R_ClassSymbol, shared_class);
+
     R_xlen_t at = 0;
     for (R_xlen_t f = 0; f < nf; ++f) {
-      SEXP df = VECTOR_ELT(frames, f);
-      SEXP nm = Rf_getAttrib(df, R_NamesSymbol);
-      int src = -1;
-      for (R_xlen_t j = 0; j < Rf_xlength(df); ++j)
-        if (!std::strcmp(CHAR(STRING_ELT(nm, j)), col_names[(size_t)c].c_str())) { src = (int)j; break; }
       R_xlen_t rn = nrows[(size_t)f];
+      int src = src_of[(size_t)f * (size_t)ncol + (size_t)c];
       if (src < 0) {
-        for (R_xlen_t i = 0; i < rn; ++i) set_na_elt(col, at + i);
+        if (tt == STRSXP || tt == VECSXP) { for (R_xlen_t i = 0; i < rn; ++i) set_na_elt(col, at + i); }
+        else if (tt == REALSXP) { for (R_xlen_t i = 0; i < rn; ++i) REAL(col)[at + i] = NA_REAL; }
+        else if (tt == INTSXP)  { for (R_xlen_t i = 0; i < rn; ++i) INTEGER(col)[at + i] = NA_INTEGER; }
+        else                    { for (R_xlen_t i = 0; i < rn; ++i) LOGICAL(col)[at + i] = NA_LOGICAL; }
         at += rn;
         continue;
       }
-      SEXP s = VECTOR_ELT(df, src);
-      for (R_xlen_t i = 0; i < rn; ++i, ++at) {
-        if (tt == STRSXP) {
-          SET_STRING_ELT(col, at, key_str_or_coerce(s, i));
-        } else if (tt == REALSXP) {
+      SEXP s = VECTOR_ELT(VECTOR_ELT(frames, f), src);
+      bool same_prim = !Rf_isFactor(s) && (SEXPTYPE)TYPEOF(s) == tt;
+
+      if (same_prim && (tt == REALSXP || tt == INTSXP || tt == LGLSXP)) {
+        size_t w = tt == REALSXP ? sizeof(double) : sizeof(int);
+        std::memcpy((tt == REALSXP ? (void*)(REAL(col) + at)
+                                   : (void*)(INTEGER(col) + at)),
+                    (tt == REALSXP ? (const void*)REAL(s) : (const void*)INTEGER(s)),
+                    (size_t)rn * w);
+      } else if (same_prim && tt == STRSXP) {
+        for (R_xlen_t i = 0; i < rn; ++i) SET_STRING_ELT(col, at + i, STRING_ELT(s, i));
+      } else if (tt == STRSXP) {
+        for (R_xlen_t i = 0; i < rn; ++i) SET_STRING_ELT(col, at + i, key_str_or_coerce(s, i));
+      } else if (tt == REALSXP) {
+        for (R_xlen_t i = 0; i < rn; ++i) {
           int kind = 0;
           double v = key_is_numeric(s) ? key_num(s, i, kind) : (kind = 1, 0.0);
-          REAL(col)[at] = kind == 0 ? v : (kind == 2 ? R_NaN : NA_REAL);
-        } else if (tt == INTSXP) {
-          if (TYPEOF(s) == INTSXP) INTEGER(col)[at] = INTEGER(s)[i];
-          else if (TYPEOF(s) == LGLSXP) INTEGER(col)[at] = LOGICAL(s)[i];
-          else INTEGER(col)[at] = NA_INTEGER;
-        } else {  // LGLSXP
-          LOGICAL(col)[at] = TYPEOF(s) == LGLSXP ? LOGICAL(s)[i] : NA_LOGICAL;
+          REAL(col)[at + i] = kind == 0 ? v : (kind == 2 ? R_NaN : NA_REAL);
         }
+      } else if (tt == INTSXP) {
+        for (R_xlen_t i = 0; i < rn; ++i) {
+          if (TYPEOF(s) == INTSXP) INTEGER(col)[at + i] = INTEGER(s)[i];
+          else if (TYPEOF(s) == LGLSXP) INTEGER(col)[at + i] = LOGICAL(s)[i];
+          else INTEGER(col)[at + i] = NA_INTEGER;
+        }
+      } else {
+        for (R_xlen_t i = 0; i < rn; ++i)
+          LOGICAL(col)[at + i] = TYPEOF(s) == LGLSXP ? LOGICAL(s)[i] : NA_LOGICAL;
       }
+      at += rn;
     }
     SET_VECTOR_ELT(out, c + extra, col);
     SET_STRING_ELT(names, c + extra, Rf_mkChar(col_names[(size_t)c].c_str()));

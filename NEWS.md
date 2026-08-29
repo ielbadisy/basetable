@@ -51,9 +51,13 @@
   preserving the same exposed function names while removing another join hot
   path from the `data.table` backend.
 * Added a native row-bind kernel (`bt_rbind_`): `rbindfill()`, `applyby(bind =
-  TRUE)`, and the long-reshape path now union columns, fill gaps with `NA`, and
+  TRUE)`, and the long-reshape path union columns, fill gaps with `NA`, and
   promote per-column types (logical < integer < double < character) in one C++
-  pass instead of `do.call(rbind, ...)`.
+  pass instead of `do.call(rbind, ...)`. Columns that already share a type
+  across every input are bulk-copied (`memcpy` for atomics, a bare
+  `SET_STRING_ELT` loop for character) and a shared column class such as
+  `Date` is now kept, bringing `rbindfill()` from 3-7x `data.table::rbindlist()`
+  to roughly parity.
 * `towide()` now groups its id columns through the native grouping engine and
   buckets rows once, instead of an O(rows x levels x rows) triple loop.
 * `rollingmerge()` sorts each equi-key bucket by the roll key once and then
