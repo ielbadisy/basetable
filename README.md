@@ -100,12 +100,11 @@ goal.
 The `Benchmarks` vignette has the full reproducible report against base R,
 `data.table`, `dplyr`, `collapse` and `polars`.
 
-## Why not `data.table` / `collapse` / `polars` / `dplyr`?
+## How basetable compares
 
-Use those if raw throughput on large data is the priority — on many grouped
-and columnar workloads they are faster, and they have far larger ecosystems.
-
-Reach for `basetable` when you want:
+`data.table`, `collapse` and `polars` are faster on many grouped and columnar
+workloads and have far larger ecosystems; `dplyr` is the tidyverse standard.
+`basetable` is a good fit when you want:
 
 - **base-R syntax** and semantics, not `[i, j, by]`, tidy evaluation, or a
   method-chained frame object;
