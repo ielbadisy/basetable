@@ -2260,8 +2260,15 @@ enum ExprOp {
 };
 
 struct ExprVal {
-  std::vector<double> data;  // size 1 (scalar) or n
+  std::vector<double> data;   // size 1 (scalar) or n, unless `ext` is set
+  const double* ext = nullptr;  // borrowed length-n view of a REALSXP column
   bool logical = false;
+
+  bool is_scalar() const { return ext == nullptr && data.size() == 1; }
+  double get(R_xlen_t i) const {
+    if (ext) return ext[i];
+    return data.size() == 1 ? data[0] : data[(size_t)i];
+  }
 };
 
 double col_as_double(SEXP col, R_xlen_t i) {
@@ -2320,7 +2327,7 @@ inline double bin_bool(int op, double a, double b) {
 
 }  // namespace
 
-extern "C" SEXP bt_expr_(SEXP df, SEXP s_code, SEXP s_args, SEXP s_consts) {
+extern "C" SEXP bt_expr_(SEXP df, SEXP s_code, SEXP s_args, SEXP s_consts, SEXP s_na_false) {
   Frame f = frame_from(df);
   R_xlen_t n = f.nrow;
   if (TYPEOF(s_code) != INTSXP || TYPEOF(s_args) != INTSXP || TYPEOF(s_consts) != REALSXP)
@@ -2336,9 +2343,7 @@ extern "C" SEXP bt_expr_(SEXP df, SEXP s_code, SEXP s_args, SEXP s_consts) {
   std::vector<ExprVal> stack;
   stack.reserve(8);
 
-  auto at = [](const ExprVal& v, R_xlen_t i) -> double {
-    return v.data.size() == 1 ? v.data[0] : v.data[(size_t)i];
-  };
+  auto at = [](const ExprVal& v, R_xlen_t i) -> double { return v.get(i); };
 
   for (R_xlen_t ip = 0; ip < ncode; ++ip) {
     int op = code[ip];
@@ -2348,9 +2353,13 @@ extern "C" SEXP bt_expr_(SEXP df, SEXP s_code, SEXP s_args, SEXP s_consts) {
         if (cj < 0 || cj >= f.ncol) Rf_error("basetable: expression column out of range");
         SEXP col = VECTOR_ELT(df, cj);
         ExprVal v;
-        v.data.resize((size_t)n);
-        for (R_xlen_t i = 0; i < n; ++i) v.data[(size_t)i] = col_as_double(col, i);
-        v.logical = TYPEOF(col) == LGLSXP;
+        if (TYPEOF(col) == REALSXP) {
+          v.ext = REAL(col);  // no copy: read the column in place
+        } else {
+          v.data.resize((size_t)n);
+          for (R_xlen_t i = 0; i < n; ++i) v.data[(size_t)i] = col_as_double(col, i);
+          v.logical = TYPEOF(col) == LGLSXP;
+        }
         stack.push_back(std::move(v));
         break;
       }
@@ -2370,33 +2379,53 @@ extern "C" SEXP bt_expr_(SEXP df, SEXP s_code, SEXP s_args, SEXP s_consts) {
         if (stack.size() < 2) Rf_error("basetable: expression stack underflow");
         ExprVal b = std::move(stack.back()); stack.pop_back();
         ExprVal a = std::move(stack.back()); stack.pop_back();
-        bool scalar = a.data.size() == 1 && b.data.size() == 1;
-        ExprVal r;
-        r.data.resize(scalar ? 1 : (size_t)n);
+        bool a_sc = a.is_scalar(), b_sc = b.is_scalar();
         bool cmp = (op >= EX_LT && op <= EX_NE);
         bool boolean = (op == EX_AND || op == EX_OR);
+        R_xlen_t m = (a_sc && b_sc) ? 1 : n;
+        ExprVal r;
+        r.data.resize((size_t)m);
         r.logical = cmp || boolean;
-        R_xlen_t m = scalar ? 1 : n;
-        for (R_xlen_t i = 0; i < m; ++i) {
-          double av = at(a, i), bv = at(b, i);
-          r.data[(size_t)i] = boolean ? bin_bool(op, av, bv)
-                            : cmp     ? bin_cmp(op, av, bv)
-                                      : bin_arith(op, av, bv);
+        double* rp = r.data.data();
+        // Hoist the operand kind and the operator out of the element loop.
+        const double* ap = a.ext ? a.ext : a.data.data();
+        const double* bp = b.ext ? b.ext : b.data.data();
+        double as = a_sc ? a.data[0] : 0.0, bs = b_sc ? b.data[0] : 0.0;
+        #define BT_BINLOOP(EXPR) \
+          for (R_xlen_t i = 0; i < m; ++i) { \
+            double av = a_sc ? as : ap[i]; double bv = b_sc ? bs : bp[i]; \
+            rp[i] = (EXPR); }
+        switch (op) {
+          case EX_ADD: BT_BINLOOP((ISNAN(av) || ISNAN(bv)) ? NA_REAL : av + bv) break;
+          case EX_SUB: BT_BINLOOP((ISNAN(av) || ISNAN(bv)) ? NA_REAL : av - bv) break;
+          case EX_MUL: BT_BINLOOP((ISNAN(av) || ISNAN(bv)) ? NA_REAL : av * bv) break;
+          case EX_DIV: BT_BINLOOP((ISNAN(av) || ISNAN(bv)) ? NA_REAL : av / bv) break;
+          case EX_LT: BT_BINLOOP((ISNAN(av) || ISNAN(bv)) ? NA_REAL : (av <  bv ? 1.0 : 0.0)) break;
+          case EX_LE: BT_BINLOOP((ISNAN(av) || ISNAN(bv)) ? NA_REAL : (av <= bv ? 1.0 : 0.0)) break;
+          case EX_GT: BT_BINLOOP((ISNAN(av) || ISNAN(bv)) ? NA_REAL : (av >  bv ? 1.0 : 0.0)) break;
+          case EX_GE: BT_BINLOOP((ISNAN(av) || ISNAN(bv)) ? NA_REAL : (av >= bv ? 1.0 : 0.0)) break;
+          case EX_EQ: BT_BINLOOP((ISNAN(av) || ISNAN(bv)) ? NA_REAL : (av == bv ? 1.0 : 0.0)) break;
+          case EX_NE: BT_BINLOOP((ISNAN(av) || ISNAN(bv)) ? NA_REAL : (av != bv ? 1.0 : 0.0)) break;
+          case EX_AND: BT_BINLOOP(bin_bool(EX_AND, av, bv)) break;
+          case EX_OR:  BT_BINLOOP(bin_bool(EX_OR, av, bv)) break;
+          default:     BT_BINLOOP(bin_arith(op, av, bv)) break;  // POW, MOD
         }
+        #undef BT_BINLOOP
         stack.push_back(std::move(r));
         break;
       }
       case EX_NEG: case EX_POS: case EX_NOT: {
         if (stack.empty()) Rf_error("basetable: expression stack underflow");
         ExprVal a = std::move(stack.back()); stack.pop_back();
+        R_xlen_t m = a.is_scalar() ? 1 : n;
         ExprVal r;
-        r.data.resize(a.data.size());
+        r.data.resize((size_t)m);
         r.logical = (op == EX_NOT);
-        for (size_t i = 0; i < a.data.size(); ++i) {
-          double av = a.data[i];
-          if (op == EX_NOT) r.data[i] = ISNAN(av) ? NA_REAL : (av == 0.0 ? 1.0 : 0.0);
-          else if (op == EX_NEG) r.data[i] = ISNAN(av) ? NA_REAL : -av;
-          else r.data[i] = av;
+        for (R_xlen_t i = 0; i < m; ++i) {
+          double av = a.get(i);
+          if (op == EX_NOT) r.data[(size_t)i] = ISNAN(av) ? NA_REAL : (av == 0.0 ? 1.0 : 0.0);
+          else if (op == EX_NEG) r.data[(size_t)i] = ISNAN(av) ? NA_REAL : -av;
+          else r.data[(size_t)i] = av;
         }
         stack.push_back(std::move(r));
         break;
@@ -2406,7 +2435,7 @@ extern "C" SEXP bt_expr_(SEXP df, SEXP s_code, SEXP s_args, SEXP s_consts) {
         ExprVal no = std::move(stack.back()); stack.pop_back();
         ExprVal yes = std::move(stack.back()); stack.pop_back();
         ExprVal cond = std::move(stack.back()); stack.pop_back();
-        bool scalar = cond.data.size() == 1 && yes.data.size() == 1 && no.data.size() == 1;
+        bool scalar = cond.is_scalar() && yes.is_scalar() && no.is_scalar();
         ExprVal r;
         r.data.resize(scalar ? 1 : (size_t)n);
         r.logical = yes.logical && no.logical;
@@ -2427,11 +2456,12 @@ extern "C" SEXP bt_expr_(SEXP df, SEXP s_code, SEXP s_args, SEXP s_consts) {
   ExprVal& top = stack.back();
   SEXP out;
   if (top.logical) {
+    bool na_false = Rf_asLogical(s_na_false) == TRUE;
     out = PROTECT(Rf_allocVector(LGLSXP, n));
     int* p = LOGICAL(out);
     for (R_xlen_t i = 0; i < n; ++i) {
       double v = at(top, i);
-      p[i] = ISNAN(v) ? NA_LOGICAL : (v != 0.0 ? TRUE : FALSE);
+      p[i] = ISNAN(v) ? (na_false ? FALSE : NA_LOGICAL) : (v != 0.0 ? TRUE : FALSE);
     }
   } else {
     out = PROTECT(Rf_allocVector(REALSXP, n));

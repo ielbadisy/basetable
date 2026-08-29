@@ -43,7 +43,7 @@ test_that("kernel matches eval() on NA propagation and three-valued logic", {
   for (p in list(quote(x > 2), quote(x > 2 & y < 4), quote(x > 2 | y < 4),
                  quote(b | x > 3), quote(b & y > 1), quote(!b))) {
     plan <- basetable:::bt_compile_expr(p, df)
-    r_kernel <- .Call(basetable:::bt_expr_, df, plan$code, plan$args, plan$consts)
+    r_kernel <- .Call(basetable:::bt_expr_, df, plan$code, plan$args, plan$consts, FALSE)
     r_eval <- eval(p, df)
     expect_identical(r_kernel, r_eval, info = deparse(p))
   }

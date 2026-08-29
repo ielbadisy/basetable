@@ -379,14 +379,17 @@ bt_compile_expr <- function(expr, df) {
 }
 
 # Evaluate a row predicate: compile to the native kernel when possible, else
-# fall back to eval() in the data mask. Returns the raw vector; the caller is
-# responsible for validating type and length.
+# fall back to eval() in the data mask. A logical result comes back with NA
+# folded to FALSE (row filtering treats NA as "drop"); the caller still
+# validates type and length.
 bt_eval_predicate <- function(expr, df, env) {
   plan <- bt_compile_expr(expr, df)
   if (!is.null(plan)) {
-    return(.Call(bt_expr_, df, plan$code, plan$args, plan$consts))
+    return(.Call(bt_expr_, df, plan$code, plan$args, plan$consts, TRUE))
   }
-  eval(expr, envir = bt_data_mask(df, env), enclos = env)
+  val <- eval(expr, envir = bt_data_mask(df, env), enclos = env)
+  if (is.logical(val) && anyNA(val)) val[is.na(val)] <- FALSE
+  val
 }
 
 bt_eval_logical <- function(expr, data, n) {

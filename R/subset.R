@@ -7,7 +7,6 @@ subset <- function(data, subset = NULL, select = NULL, drop = FALSE) {
     if (!is.logical(rows) || length(rows) != nrow(df)) {
       stop("`subset` must evaluate to a logical vector with one value per row.", call. = FALSE)
     }
-    rows[is.na(rows)] <- FALSE
   } else {
     rows <- NULL
   }
