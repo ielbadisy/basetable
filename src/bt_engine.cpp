@@ -75,7 +75,7 @@ std::vector<int> col_index(SEXP s_cols, R_xlen_t ncol) {
   return cols;
 }
 
-std::vector<R_xlen_t> row_index(SEXP s_rows, R_xlen_t nrow) {
+std::vector<R_xlen_t> row_index(SEXP s_rows, R_xlen_t nrow, int nth = 1) {
   std::vector<R_xlen_t> rows;
   if (Rf_isNull(s_rows)) {
     rows.reserve((size_t)nrow);
@@ -85,10 +85,42 @@ std::vector<R_xlen_t> row_index(SEXP s_rows, R_xlen_t nrow) {
   if (TYPEOF(s_rows) == LGLSXP) {
     if (Rf_xlength(s_rows) != nrow)
       Rf_error("basetable: logical row index has wrong length");
-    rows.reserve((size_t)nrow);
     const int* p = LOGICAL(s_rows);
-    for (R_xlen_t i = 0; i < nrow; ++i)
-      if (p[i] == TRUE) rows.push_back(i);
+    if (nth < 2 || nrow < 200000) {
+      rows.reserve((size_t)nrow);
+      for (R_xlen_t i = 0; i < nrow; ++i)
+        if (p[i] == TRUE) rows.push_back(i);
+      return rows;
+    }
+    // parallel stream compaction: count TRUEs per chunk, prefix sum, scatter
+    size_t cs = ((size_t)nrow + (size_t)nth - 1) / (size_t)nth;
+    int used = (int)(((size_t)nrow + cs - 1) / cs);
+    std::vector<size_t> cnt((size_t)used, 0);
+    {
+      std::vector<std::thread> pool;
+      for (int t = 0; t < used; ++t) {
+        pool.emplace_back([&, t]() {
+          size_t lo = (size_t)t * cs, hi = std::min((size_t)nrow, lo + cs), c = 0;
+          for (size_t i = lo; i < hi; ++i) if (p[i] == TRUE) ++c;
+          cnt[(size_t)t] = c;
+        });
+      }
+      for (auto& x : pool) x.join();
+    }
+    std::vector<size_t> off((size_t)used, 0);
+    size_t acc = 0;
+    for (int t = 0; t < used; ++t) { off[(size_t)t] = acc; acc += cnt[(size_t)t]; }
+    rows.resize(acc);
+    {
+      std::vector<std::thread> pool;
+      for (int t = 0; t < used; ++t) {
+        pool.emplace_back([&, t]() {
+          size_t lo = (size_t)t * cs, hi = std::min((size_t)nrow, lo + cs), w = off[(size_t)t];
+          for (size_t i = lo; i < hi; ++i) if (p[i] == TRUE) rows[w++] = (R_xlen_t)i;
+        });
+      }
+      for (auto& x : pool) x.join();
+    }
     return rows;
   }
   if (TYPEOF(s_rows) == INTSXP || TYPEOF(s_rows) == REALSXP) {
@@ -167,17 +199,74 @@ SEXP subset_vector(SEXP col, const std::vector<R_xlen_t>& rows) {
   return out;
 }
 
-SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<int>& cols) {
-  SEXP out = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)cols.size()));
-  SEXP names = PROTECT(Rf_allocVector(STRSXP, (R_xlen_t)cols.size()));
-  SEXP old_names = Rf_getAttrib(df, R_NamesSymbol);
-  for (R_xlen_t j = 0; j < (R_xlen_t)cols.size(); ++j) {
-    int src_j = cols[(size_t)j];
-    SET_VECTOR_ELT(out, j, subset_vector(VECTOR_ELT(df, src_j), rows));
-    SET_STRING_ELT(names, j, STRING_ELT(old_names, src_j));
+// Gather one atomic column's rows[] into an already-allocated dst. Thread-safe
+// (no R API): only for LGL / INT / REAL.
+void gather_atomic(SEXP dst, SEXP src, const std::vector<R_xlen_t>& rows) {
+  R_xlen_t n = (R_xlen_t)rows.size();
+  switch (TYPEOF(src)) {
+    case LGLSXP: { const int* s = LOGICAL(src); int* d = LOGICAL(dst);
+      for (R_xlen_t i = 0; i < n; ++i) d[i] = s[rows[(size_t)i]]; break; }
+    case INTSXP: { const int* s = INTEGER(src); int* d = INTEGER(dst);
+      for (R_xlen_t i = 0; i < n; ++i) d[i] = s[rows[(size_t)i]]; break; }
+    case REALSXP: { const double* s = REAL(src); double* d = REAL(dst);
+      for (R_xlen_t i = 0; i < n; ++i) d[i] = s[rows[(size_t)i]]; break; }
+    default: break;
   }
+}
+
+SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<int>& cols,
+                 int nth = 1) {
+  R_xlen_t nc = (R_xlen_t)cols.size();
+  R_xlen_t nr = (R_xlen_t)rows.size();
+  SEXP out = PROTECT(Rf_allocVector(VECSXP, nc));
+  SEXP names = PROTECT(Rf_allocVector(STRSXP, nc));
+  SEXP old_names = Rf_getAttrib(df, R_NamesSymbol);
+
+  // Allocate every output column and copy attributes on the R thread; fill
+  // atomic columns on worker threads and string/list columns here.
+  std::vector<SEXP> srcs((size_t)nc), dsts((size_t)nc);
+  std::vector<int> atomic_cols;
+  for (R_xlen_t j = 0; j < nc; ++j) {
+    SEXP src = VECTOR_ELT(df, cols[(size_t)j]);
+    srcs[(size_t)j] = src;
+    int t = TYPEOF(src);
+    SEXP dst;
+    if (t == LGLSXP || t == INTSXP || t == REALSXP) {
+      dst = Rf_allocVector((SEXPTYPE)t, nr);
+      copy_common_attrs(dst, src);
+      atomic_cols.push_back((int)j);
+    } else if (t == STRSXP || t == VECSXP) {
+      dst = subset_vector(src, rows);  // serial, touches R
+    } else {
+      UNPROTECT(2);
+      Rf_error("basetable: unsupported column type '%s'", Rf_type2char(t));
+    }
+    dsts[(size_t)j] = dst;
+    SET_VECTOR_ELT(out, j, dst);
+    SET_STRING_ELT(names, j, STRING_ELT(old_names, cols[(size_t)j]));
+  }
+
+  if (!atomic_cols.empty()) {
+    int use = nth < 2 || nr < 100000 || (int)atomic_cols.size() < 2
+      ? 1 : std::min<int>(nth, (int)atomic_cols.size());
+    if (use <= 1) {
+      for (int j : atomic_cols) gather_atomic(dsts[(size_t)j], srcs[(size_t)j], rows);
+    } else {
+      std::vector<std::thread> pool;
+      for (int w = 0; w < use; ++w) {
+        pool.emplace_back([&, w]() {
+          for (size_t a = (size_t)w; a < atomic_cols.size(); a += (size_t)use) {
+            int j = atomic_cols[a];
+            gather_atomic(dsts[(size_t)j], srcs[(size_t)j], rows);
+          }
+        });
+      }
+      for (auto& x : pool) x.join();
+    }
+  }
+
   Rf_setAttrib(out, R_NamesSymbol, names);
-  Rf_setAttrib(out, R_RowNamesSymbol, make_row_names((R_xlen_t)rows.size()));
+  Rf_setAttrib(out, R_RowNamesSymbol, make_row_names(nr));
   set_table_class(out);
   UNPROTECT(2);
   return out;
@@ -1453,11 +1542,12 @@ bool pred_ok(int sign, int op) {
 
 } // namespace
 
-extern "C" SEXP bt_subset_(SEXP df, SEXP s_rows, SEXP s_cols) {
+extern "C" SEXP bt_subset_(SEXP df, SEXP s_rows, SEXP s_cols, SEXP s_n_threads) {
   Frame f = frame_from(df);
-  std::vector<R_xlen_t> rows = row_index(s_rows, f.nrow);
+  int nth = clamp_threads(s_n_threads, f.nrow, 200000);
+  std::vector<R_xlen_t> rows = row_index(s_rows, f.nrow, nth);
   std::vector<int> cols = col_index(s_cols, f.ncol);
-  return build_frame(df, rows, cols);
+  return build_frame(df, rows, cols, nth);
 }
 
 extern "C" SEXP bt_order_(SEXP df, SEXP s_by, SEXP s_decreasing, SEXP s_na_last,
@@ -2565,44 +2655,56 @@ extern "C" SEXP bt_expr_(SEXP df, SEXP s_code, SEXP s_args, SEXP s_consts, SEXP 
 
   bool na_false = Rf_asLogical(s_na_false) == TRUE;
 
-  // Fast path for the overwhelmingly common `subset()` predicate shape:
-  // one comparison of a column against a column or a scalar. Writes the
-  // logical result in a single pass with no double intermediates.
-  if (ncode == 3) {
-    int lop = code[2];
-    bool a_col = code[0] == EX_COL, a_const = code[0] == EX_CONST;
-    bool b_col = code[1] == EX_COL, b_const = code[1] == EX_CONST;
-    if (lop >= EX_LT && lop <= EX_NE && (a_col || a_const) && (b_col || b_const) && !(a_const && b_const)) {
-      auto num_ptr = [&](int which, const double*& p, double& scal, bool& is_col) {
-        if (code[which] == EX_CONST) { is_col = false; scal = consts[args[which]]; p = nullptr; }
-        else {
-          is_col = true;
-          SEXP col = VECTOR_ELT(df, args[which]);
-          if (TYPEOF(col) != REALSXP) { p = nullptr; return false; }
-          p = REAL(col);
-        }
-        return true;
-      };
+  // Fast path for the common `subset()` predicate shapes: one numeric
+  // comparison, or two comparisons joined by `&`. Each comparison is written
+  // in a single pass over raw pointers with no intermediate numeric vector.
+  {
+    auto is_cmp = [](int o) { return o >= EX_LT && o <= EX_NE; };
+    auto is_leaf = [](int o) { return o == EX_COL || o == EX_CONST; };
+    // resolve one operand to (ptr | scalar); returns false if not REALSXP/const
+    auto operand = [&](int idx, const double*& p, double& scal, bool& is_col) -> bool {
+      if (code[idx] == EX_CONST) { is_col = false; scal = consts[args[idx]]; p = nullptr; return true; }
+      is_col = true;
+      SEXP col = VECTOR_ELT(df, args[idx]);
+      if (TYPEOF(col) != REALSXP) return false;
+      p = REAL(col);
+      return true;
+    };
+    // run comparison at code positions (ia, ib, iop); mode 0 = set rp, 1 = AND into rp
+    auto run_cmp = [&](int ia, int ib, int iop, int* rp, int mode) -> bool {
+      if (!is_leaf(code[ia]) || !is_leaf(code[ib]) || !is_cmp(code[iop])) return false;
+      if (code[ia] == EX_CONST && code[ib] == EX_CONST) return false;
       const double* ap; const double* bp; double as = 0, bs = 0; bool ac, bc;
-      if (num_ptr(0, ap, as, ac) && num_ptr(1, bp, bs, bc)) {
-        SEXP out = PROTECT(Rf_allocVector(LGLSXP, n));
-        int* rp = LOGICAL(out);
-        #define BT_CMP1(EXPR) \
-          for (R_xlen_t i = 0; i < n; ++i) { \
-            double av = ac ? ap[i] : as; double bv = bc ? bp[i] : bs; \
-            rp[i] = (ISNAN(av) || ISNAN(bv)) ? (na_false ? FALSE : NA_LOGICAL) : ((EXPR) ? TRUE : FALSE); }
-        switch (lop) {
-          case EX_LT: BT_CMP1(av <  bv) break;
-          case EX_LE: BT_CMP1(av <= bv) break;
-          case EX_GT: BT_CMP1(av >  bv) break;
-          case EX_GE: BT_CMP1(av >= bv) break;
-          case EX_EQ: BT_CMP1(av == bv) break;
-          case EX_NE: BT_CMP1(av != bv) break;
-        }
-        #undef BT_CMP1
-        UNPROTECT(1);
-        return out;
+      if (!operand(ia, ap, as, ac) || !operand(ib, bp, bs, bc)) return false;
+      int lop = code[iop];
+      #define BT_RUN(EXPR) \
+        for (R_xlen_t i = 0; i < n; ++i) { \
+          double av = ac ? ap[i] : as; double bv = bc ? bp[i] : bs; \
+          int r = (ISNAN(av) || ISNAN(bv)) ? (na_false ? FALSE : NA_LOGICAL) : ((EXPR) ? TRUE : FALSE); \
+          if (mode == 0) rp[i] = r; \
+          else rp[i] = (rp[i] == TRUE && r == TRUE) ? TRUE \
+                     : ((rp[i] == FALSE || r == FALSE) ? FALSE : NA_LOGICAL); }
+      switch (lop) {
+        case EX_LT: BT_RUN(av <  bv) break;
+        case EX_LE: BT_RUN(av <= bv) break;
+        case EX_GT: BT_RUN(av >  bv) break;
+        case EX_GE: BT_RUN(av >= bv) break;
+        case EX_EQ: BT_RUN(av == bv) break;
+        case EX_NE: BT_RUN(av != bv) break;
       }
+      #undef BT_RUN
+      return true;
+    };
+
+    if (ncode == 3) {
+      SEXP out = PROTECT(Rf_allocVector(LGLSXP, n));
+      if (run_cmp(0, 1, 2, LOGICAL(out), 0)) { UNPROTECT(1); return out; }
+      UNPROTECT(1);
+    } else if (ncode == 7 && code[6] == EX_AND) {
+      SEXP out = PROTECT(Rf_allocVector(LGLSXP, n));
+      int* rp = LOGICAL(out);
+      if (run_cmp(0, 1, 2, rp, 0) && run_cmp(3, 4, 5, rp, 1)) { UNPROTECT(1); return out; }
+      UNPROTECT(1);
     }
   }
 

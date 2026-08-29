@@ -20,9 +20,13 @@
   `data.table` at every cardinality on the reference machine, `mean` is at
   parity where it was ~2.5x slower for few groups, and there is no regression
   at high cardinality.
-* `subset()` gained a fast path for a single column-vs-column or column-vs-scalar
-  comparison: the mask is written in one pass with no intermediate numeric
-  vector, bringing filtering close to `data.table`.
+* `subset()` filtering was reworked for speed: a single numeric comparison
+  or two comparisons joined by `&` are written to the logical mask in one
+  pass over raw pointers (no intermediate numeric vector), the mask is
+  compacted to row indices with a parallel prefix-sum + scatter above ~200k
+  rows, and atomic result columns are gathered on threads. A 5e6-row
+  `x > c` filter now runs slightly under `data.table`; a two-term `&` filter
+  is ~1.3-1.5x (was ~2.4x).
 * Portability: `bt_index.cpp` now includes `<io.h>` on Windows, and
   `copy_common_attrs()` uses `Rf_copyMostAttrib()` instead of walking the
   attribute pairlist, so the package compiles on current R across Linux,

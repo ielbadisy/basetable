@@ -430,7 +430,9 @@ bt_col_positions <- function(data, cols, allow_null = FALSE) {
 bt_engine_subset <- function(data, rows = NULL, cols = NULL) {
   df <- bt_as_data_frame(data)
   col_pos <- if (is.null(cols)) NULL else bt_col_positions(df, cols)
-  bt_as_data_table(.Call(bt_subset_, df, rows, col_pos))
+  bt_as_data_table(.Call(
+    bt_subset_, df, rows, col_pos, as.integer(bt_default_threads())
+  ))
 }
 
 bt_engine_order <- function(data, by, decreasing = FALSE, na.last = TRUE) {

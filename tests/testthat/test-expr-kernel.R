@@ -64,3 +64,33 @@ test_that("the single-comparison fast path matches the general kernel and eval()
                  ignore_attr = TRUE, info = deparse(p))
   }
 })
+
+test_that("two-comparison AND fast path matches eval()", {
+  df <- data.frame(a = c(1, NA, 3, 4, 5, 6), b = c(6, 5, NA, 3, 2, 1),
+                   c = c(0, 1, 2, 3, 4, 5))
+  for (p in list(quote(a > 2 & b < 5), quote(a >= b & c < 4),
+                 quote(a < 5 & b > 1), quote(a != c & b >= 2),
+                 quote(3 < a & c <= 3))) {
+    fast <- eval(bquote(basetable::subset(df, .(p))))
+    r <- eval(p, df); r[is.na(r)] <- FALSE
+    expect_equal(as.data.frame(fast), df[r, , drop = FALSE],
+                 ignore_attr = TRUE, info = deparse(p))
+  }
+})
+
+test_that("parallel stream compaction in subset() is correct", {
+  skip_on_cran()
+  set.seed(3)
+  n <- 1.5e6
+  d <- data.frame(x = rnorm(n), i = sample(1:9, n, TRUE),
+                  s = sample(letters, n, TRUE), stringsAsFactors = FALSE)
+  old <- getOption("basetable.threads"); on.exit(options(basetable.threads = old), add = TRUE)
+  options(basetable.threads = 8L)
+  a <- as.data.frame(subset(d, x > 0.3))
+  options(basetable.threads = 1L)
+  b <- as.data.frame(subset(d, x > 0.3))
+  expect_identical(a, b)
+  m <- d$x > 0.3
+  ref <- d[m, , drop = FALSE]; rownames(ref) <- NULL; rownames(a) <- NULL
+  expect_equal(a, ref)
+})
