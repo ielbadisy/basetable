@@ -7,3 +7,12 @@
 ^CONTRIBUTING\.md$
 ^cran-comments\.md$
 ^\.github$
+^\.gitignore$
+^bench$
+^backend-redesign$
+^\.claude$
+^\.agents$
+^\.codex$
+^basetable\.Rcheck$
+^.*\.tar\.gz$
+^vignettes/figure$

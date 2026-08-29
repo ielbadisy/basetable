@@ -72,33 +72,39 @@ summarytab(
 ## Performance
 
 The engine holds its own against `data.table` without depending on it, and
-allocates far less on grouped operations. At 1e6 rows (median of 5, one Linux
-machine; `inst/benchmarks/benchmark-scale.R`), time relative to `data.table`:
+allocates far less on grouped operations. At 1e6 rows on one Linux machine
+with 8 threads (`inst/benchmarks/benchmark-scale.R`), time relative to
+`data.table` (lower is faster; **bold** = basetable ahead):
 
 | Operation | few groups | many groups |
 | --- | ---: | ---: |
-| `uniquerows()` | **0.55x** | **0.58x** |
-| `aggregate(fun = sd)` | **0.87x** | **0.67x** |
-| grouped `count()` | 1.5x | **0.62x** |
-| `merge()` (equi) | **0.84x** | 1.0x |
-| `rollingmerge()` | **0.62x** | 1.9x |
-| `aggregate(fun = sum)` | 2.6x | 1.06x |
-| `subset()` | 2.1x | 1.9x |
-| `orderrows()` (string key) | 8.9x | 4.9x |
+| `uniquerows()` / `distinct()` | **0.8x** | **0.55x** |
+| `aggregate(fun = sd)` | **0.56x** | **0.75x** |
+| grouped `count()` | 1.0x | **0.66x** |
+| `aggregate(fun = mean)` | 1.0x | **0.9x** |
+| `semimerge()` | 0.9x | **0.24x** |
+| `pick()` / projection | **0.65x** | **0.5x** |
+| `merge()` (equi) | **0.9x** | 1.0x |
+| `rbindfill()` | **0.9x** | 1.2x |
+| `subset(x > c)` | 1.1x | 1.0x |
+| `subset(x > a & y < b)` | 1.4x | 1.5x |
+| `orderrows()` (string key) | 2.5x | 2.0x |
 
 Grouped reducers accumulate in C++ without materialising intermediate
-columns, so a grouped `aggregate` or `count` allocates ~0.01 MB where the
-other engines allocate 3-28 MB. Grouped `aggregate` also reduces in parallel
-above ~750k rows.
+columns, so a grouped `aggregate` or `count` allocates near zero where the
+other engines allocate tens of megabytes. The heavier operations
+(aggregation, sort pipeline, filter, join probe) use multiple threads via
+`setthreads()`.
 
-The open gap is **string sorting**: `orderrows()` pre-ranks character
-columns to integers but still runs a comparison sort where `data.table` uses
-a radix sort. `collapse` and `polars` are also 2-20x faster on columnar and
-grouped paths; matching their parallel-radix / Arrow engines is not a near
-goal.
+The remaining gap is **sorting**: `orderrows()` uses a stable parallel radix
+over integer codes and is ~20x faster than base `order()`, but still ~2-2.5x
+of `data.table`, whose hand-tuned parallel radix is the one operation
+basetable does not yet match. `collapse` and `polars` are also faster on
+several columnar and grouped paths; matching their parallel-radix / Arrow
+engines is not a near goal.
 
 The `Benchmarks` vignette has the full reproducible report against base R,
-`data.table`, `dplyr`, `collapse` and `polars`.
+`data.table`, `dplyr` and `collapse`.
 
 ## Positioning
 

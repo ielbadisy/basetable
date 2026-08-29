@@ -1,156 +1,80 @@
-# basetable 0.9.0
+# basetable 1.0.0
+
+basetable is now a self-contained data-manipulation package with a base-R
+interface and a bundled C++ execution engine. It has no external computation
+dependency.
+
+## Breaking changes
+
+* **`data.table` is no longer a dependency.** Every verb runs on basetable's
+  own compiled engine. `data.table` (with `collapse` and `dplyr`) remains in
+  `Suggests` only, as a comparison target in the benchmark vignette.
+* **Verbs return a `basetable`** rather than a `data.table`. A `basetable` is
+  an ordinary data frame with one extra class so it prints compactly and `[`
+  keeps the class and defaults to `drop = FALSE`. `as.data.frame()` returns a
+  plain frame. The `as =` argument of `btread()` and the file readers now
+  takes `"basetable"` in place of `"data.table"`.
+* **The fused file readers lost their `bt_` prefix.** `aggregate()`,
+  `count()`, `distinct()` (new) and `freq()` now accept a single file path as
+  their first argument and route to the one-pass scan, so there is one name
+  per operation whether the input is a data frame or a delimited file.
+  `bt_aggregate()`, `bt_count()`, `bt_distinct()` and `bt_freq()` are removed.
+
+## Native C++ engine
+
+* All the table-shape work now runs in registered `.Call` kernels:
+  projection, row subsetting, ordering, distinct and duplicate detection,
+  grouping, grouped reducers (`sum`/`mean`/`min`/`max`/`var`/`sd`/`n`), all
+  join kinds (equi, semi, anti, update, cross, non-equi, range, rolling),
+  row-bind, and `subset()` predicate evaluation. Custom aggregation
+  functions still run as ordinary R closures per group.
+* A composite key codec replaces the old byte-string keys used by grouping
+  and joins: numeric columns fold into one value domain, character and factor
+  columns are dictionary encoded and matched by label, and a join builds one
+  dictionary that its probe side reuses read-only.
+* `orderrows()` sorts with a stable multi-column radix over order-preserving
+  integer codes (character columns ranked in `strcmp` order) instead of a
+  comparison sort; ordering is unchanged (C-locale byte order).
+* `subset()` compiles a supported predicate (column and scalar references;
+  `+ - * / ^ %%`; comparisons; `& | !`; unary `-`; `ifelse()`) to a small
+  stack machine, with an `eval()` fallback for anything outside that grammar.
+* The heavier kernels use multiple threads, controlled by `setthreads()`:
+  grouped aggregation, the sort pipeline, the filter mask compaction and
+  column gather, and the join membership probe.
+* Delimited-file reading is native (`btread()` / `btwrite()`, memory-mapped,
+  RFC 4180, threaded parsing, optional ALTREP lazy columns), and
+  `aggregate()` / `count()` / `distinct()` / `freq()` on a file path fuse the
+  parse with the grouping so unused columns are never materialised.
+
+## Performance
+
+Measured against `data.table` at 1e6 rows on the reference machine (Linux, 8
+threads); see the `Benchmarks` vignette for the full report.
+
+* Faster than `data.table`: `uniquerows()` / `distinct()`, `sd` / `var` by
+  group at every cardinality, `count` and `mean` by group at high
+  cardinality, `semimerge()` (parity at low cardinality down to ~0.25x at
+  high), `pick()` / column projection.
+* Roughly at parity: `merge()`, `mean` by group at low cardinality, a single
+  `subset()` comparison, `rbindfill()`.
+* Slower than `data.table`: string and integer `orderrows()` (~2.5x; the
+  radix byte passes are memory-bandwidth bound), and multi-term `subset()`
+  predicates. `data.table`'s parallel radix sort is the one operation
+  basetable does not yet match.
+* Grouped reducers accumulate in C++ without materialising intermediate
+  columns, so a grouped `aggregate()` or `count()` allocates near zero where
+  the other engines allocate tens of megabytes.
 
 ## New features
 
-* `orderrows()` now sorts with a stable multi-column LSD radix sort over
-  order-preserving integer codes (character columns ranked in `strcmp` order,
-  integers/factors shifted, doubles bit-mapped) instead of a comparison sort.
-  The radix carries the (code, row) pairs through every pass so key reads stay
-  sequential, and the passes run on threads (`setthreads()`) above ~250k rows.
-  A 1e6-row string+numeric sort dropped from about 9x to roughly 2.5x of
-  `data.table` and is about 20-25x faster than base `order()`; at 20M rows the
-  earlier super-linear slowdown is gone. Fully matching `data.table` here needs
-  a cache-blocked parallel radix across the whole sort pipeline (codes,
-  gather, materialise), tracked in ENGINE-ROADMAP.md.
-* Grouped `aggregate()` / `count()` with a single key column now pick a
-  grouping algorithm by cardinality (estimated from a sample): below a few
-  thousand groups, a fused parallel pass keeps a tiny per-thread dictionary
-  and per-thread accumulators and merges them once; above that it keeps the
-  shared-dictionary plus parallel-reduce path. `sd`/`var` by group now beat
-  `data.table` at every cardinality on the reference machine, `mean` is at
-  parity where it was ~2.5x slower for few groups, and there is no regression
-  at high cardinality.
-* `subset()` filtering was reworked for speed: a single numeric comparison
-  or two comparisons joined by `&` are written to the logical mask in one
-  pass over raw pointers (no intermediate numeric vector), the mask is
-  compacted to row indices with a parallel prefix-sum + scatter above ~200k
-  rows, and atomic result columns are gathered on threads. A 5e6-row
-  `x > c` filter now runs slightly under `data.table`; a two-term `&` filter
-  is ~1.3-1.5x (was ~2.4x).
-* Portability: `bt_index.cpp` now includes `<io.h>` on Windows, and
-  `copy_common_attrs()` uses `Rf_copyMostAttrib()` instead of walking the
-  attribute pairlist, so the package compiles on current R across Linux,
-  macOS and Windows.
-* The fused file readers lost their `bt_` prefix: `aggregate()`, `count()`,
-  `distinct()` (new) and `freq()` now accept a single file path as their first
-  argument and route to the one-pass scan, so there is one name per operation
-  whether the input is a data frame or a delimited file. `bt_aggregate()`,
-  `bt_count()`, `bt_distinct()` and `bt_freq()` are removed.
-* **basetable no longer depends on `data.table` in any form.** It has been
-  removed from `Suggests`, and every verb runs entirely on basetable's own
-  compiled engine.
-* Verbs now return a `basetable`: a plain data.frame with an added class that
-  prints compactly and whose `[` keeps the class and defaults to
-  `drop = FALSE`. It carries no `data.table` machinery; `as.data.frame()`
-  returns an ordinary frame. The `as =` argument of `btread()` and the
-  file readers now takes `"basetable"` instead of `"data.table"`.
-
-* Added the first in-memory native C++ execution layer for the existing public
-  basetable API. `pick()`, `drop()`, `subset()`, `orderrows()`, `uniquerows()`,
-  `duplicaterows()`, `removeduplicates()`, `firstrows()`, `lastrows()`,
-  `reverse()`, and `count()` now route their table movement, row materialisation,
-  ordering, duplicate masks, and grouped row counts through registered `.Call`
-  kernels instead of delegating those hot paths to `data.table`.
-* Added dense integer/logical grouping kernels for `count()`, `uniquerows()`,
-  and duplicate detection. On a 1M-row integer-key sanity benchmark, `count()`
-  and `uniquerows()` beat the equivalent direct `data.table` calls on the
-  reference machine while preserving the same exported function names.
-* Added native in-memory grouped aggregation for common reducers (`sum()`,
-  `mean()`, `min()`, `max()`, `var()`, `sd()`, and `"n"`/`"length"`). Custom R
-  functions continue to use the compatibility fallback, but the high-frequency
-  numeric reducer path now executes in the basetable C++ engine.
-* Routed `semimerge()` and `antimerge()` through a native key-membership mask,
-  preserving the same exposed function names while removing another join hot
-  path from the `data.table` backend.
-* Added a native row-bind kernel (`bt_rbind_`): `rbindfill()`, `applyby(bind =
-  TRUE)`, and the long-reshape path union columns, fill gaps with `NA`, and
-  promote per-column types (logical < integer < double < character) in one C++
-  pass instead of `do.call(rbind, ...)`. Columns that already share a type
-  across every input are bulk-copied (`memcpy` for atomics, a bare
-  `SET_STRING_ELT` loop for character) and a shared column class such as
-  `Date` is now kept, bringing `rbindfill()` from 3-7x `data.table::rbindlist()`
-  to roughly parity.
-* `towide()` now groups its id columns through the native grouping engine and
-  buckets rows once, instead of an O(rows x levels x rows) triple loop.
-* `semimerge()` / `antimerge()` / `updatemerge()` probe the key hash on
-  threads (the build side's dictionary is read-only once frozen). A 1e6-row
-  semi-join went from ~2-3x `data.table` at low/mid cardinality to parity,
-  and ~0.25x at high cardinality.
-* The sort pipeline is now parallel around the radix: order codes are
-  generated on threads, the inter-column gather is threaded, and the final
-  materialise reuses the threaded `build_frame`. `pick()` / row-projection
-  now beats `data.table` (~0.5-0.7x) from the same threaded gather. The radix
-  byte passes themselves are still the wall on sort (memory-bound scatter);
-  an MSD / cache-blocked radix is the remaining step.
-* `rollingmerge()` sorts each equi-key bucket by the roll key once and then
-  binary-searches the neighbour per x row, instead of scanning the whole
-  bucket. A 20k x 40k single-group rolling join drops from seconds to a few
-  milliseconds. `backward` / `forward` / `nearest` results are unchanged,
-  including the lowest-y-index tie-break for `nearest`.
-* `rangemerge()` (and any `nonequimerge()` whose conditions all bound one
-  shared numeric y column) now sorts each bucket once and binary-searches the
-  matching window instead of testing every y row. Interval-overlap joins
-  (`overlapmerge()`, and non-equi conditions spanning two y columns) keep the
-  scan. Windows up to 64 rows are emitted in y row order as before; wider
-  multi-match windows come out ordered by the join value.
-* `orderrows()` pre-ranks character key columns into integers once (in
-  `strcmp` order, ties shared, `NA` per `na.last`) so the sort comparator is
-  integer-only. About 5x faster than base R `order()` on a 5e5-row mixed-case
-  string-plus-integer sort; ordering is unchanged (C-locale byte order, as
-  before).
-* Grouped `aggregate()` with a recognised reducer now reduces large inputs in
-  parallel: each thread folds a row range into private accumulators that are
-  merged at the end (no R API calls in the parallel section). Kicks in above
-  ~750k rows and respects `setthreads()`; ~1.7x at 5M rows, ~1.9x at 20M.
-  Smaller inputs keep the single-threaded path. Results are identical bit for
-  bit apart from floating-point summation order.
-* Replaced the byte-string composite key used by grouping, distinct, duplicate
-  detection and every join with a fixed-width integer key codec: numeric
-  columns fold into one value domain, character and factor columns are
-  dictionary encoded (interned once, matched by label so the two interoperate),
-  and joins share one dictionary across build and probe. A single character or
-  factor grouping column now takes a dedicated dense path. On the package
-  benchmark this cut grouped `aggregate()` from ~0.33x to ~1.1x of `data.table`
-  and grouped `count()` from ~0.22x to ~2x, with unchanged results and
-  near-zero allocation.
-* Added a native expression kernel (`bt_expr_`): `subset()` now compiles a
-  supported predicate (column and scalar references; `+ - * / ^ %%`;
-  `< <= > >= == !=`; `& | !`; unary `-`; `ifelse()`) to stack-machine bytecode
-  and evaluates it in one allocation-light pass, matching `eval()` including
-  `NA` propagation and three-valued `&`/`|`. Anything outside that grammar
-  (string comparisons, other function calls, non-column variables) transparently
-  falls back to `eval()`.
-* Added native join materialisation kernels and moved the remaining join verbs
-  onto them: `merge()` (inner/left/right/full with `sort` and `suffixes`),
-  `crossmerge()`, `completegrid()`, and `updatemerge()` now run through a C++
-  equi-join / first-match engine, while `nonequimerge()`, `overlapmerge()`, and
-  `rangemerge()` share a native predicate join (equi keys plus `<`, `<=`, `>`,
-  `>=`, `==` comparisons) and `rollingmerge()` runs on a native rolling join
-  (`backward` / `forward` / `nearest`, with `tolerance`). Function names and
-  return shapes are unchanged; no join path calls `data.table` anymore.
-* Removed the lazy ALTSTRING raw data-pointer hook so compiled-code checks no
-  longer flag non-API R calls. Lazy character columns continue to support
-  element access and serialization; direct subassignment to an unmaterialised
-  lazy character column now errors instead of forcing through a non-API pointer.
-* Added `inst/benchmarks/benchmark-competitors.R`, a standalone harness for
-  basetable vs `data.table`, `collapse`, and Polars across projection,
-  filtering, grouping, aggregation, and semi-join workloads.
-* Exported the existing `stack()` wrapper so `stack()` consistently returns a
-  `basetable` and masks `utils::stack()` like the rest of the base-flavored API.
-
-* A fused **file -> result** engine, built on `btread()`'s memory map,
-  parallel row indexer and reader. Each verb scans the file **once**,
-  extracting only the fields it needs and never materialising the
-  intermediate columns:
-  * `aggregate(file, by, value, fun, where)`: grouped aggregation
-    (`sum`/`mean`/`var`/`sd`/`min`/`max`/`n`), several reducers and value
-    columns at once, with an optional `where =` filter fused into the same
-    pass (predicate pushdown; numeric and string `==`/`!=`, all AND-ed).
-  * `count(file, by, where)`: grouped row counts.
-  * `distinct(file, cols, where)`: distinct key combinations.
-  * `freq(file, by, where)`: counts plus proportions.
-  On wide files this is 2-3x faster end-to-end than reading the whole file
-  and grouping it (`bench/RESULTS.md`).
+* New `distinct()`: `uniquerows()` for a data frame, a fused one-pass scan
+  for a file path.
+* `rbindfill()` bulk-copies columns that already share a type across every
+  input and now keeps a shared column class such as `Date`.
+* `stack()` is exported and consistently returns a `basetable`, masking
+  `utils::stack()` like the rest of the base-flavored API.
+* `inst/benchmarks/benchmark-scale.R`: a size x cardinality harness against
+  base R, `data.table`, `dplyr` and `collapse`.
 
 # basetable 0.8.1
 
