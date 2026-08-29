@@ -1,4 +1,4 @@
-# CRAN submission comments — basetable 0.6.0
+# CRAN submission comments: basetable 0.9.0
 
 ## Test environments
 

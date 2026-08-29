@@ -9,7 +9,7 @@
 **base-R interface** and **no dependencies**. You write `subset()`,
 `transform()`, `aggregate()`, `merge()`, `split()`, and the work runs on the
 package's own C++ engine. There is no `data.table`, no `dplyr`, no Arrow
-underneath — just `parallel`, `stats`, `stringi`, `utils`.
+underneath, just `parallel`, `stats`, `stringi`, `utils`.
 
 Every verb returns a `basetable`: an ordinary `data.frame` with one extra
 class so it prints compactly and `[` keeps the class. `as.data.frame()`
@@ -88,12 +88,12 @@ machine; `inst/benchmarks/benchmark-scale.R`), time relative to `data.table`:
 
 Grouped reducers accumulate in C++ without materialising intermediate
 columns, so a grouped `aggregate` or `count` allocates ~0.01 MB where the
-other engines allocate 3–28 MB. Grouped `aggregate` also reduces in parallel
+other engines allocate 3-28 MB. Grouped `aggregate` also reduces in parallel
 above ~750k rows.
 
-The open gap is **string sorting** — `orderrows()` pre-ranks character
+The open gap is **string sorting**: `orderrows()` pre-ranks character
 columns to integers but still runs a comparison sort where `data.table` uses
-a radix sort. `collapse` and `polars` are also 2–20x faster on columnar and
+a radix sort. `collapse` and `polars` are also 2-20x faster on columnar and
 grouped paths; matching their parallel-radix / Arrow engines is not a near
 goal.
 

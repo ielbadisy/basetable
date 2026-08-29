@@ -24,7 +24,6 @@ Suggests:
     data.table,
     dplyr,
     ggplot2,
-    polars,
     knitr,
     quarto,
     rmarkdown,

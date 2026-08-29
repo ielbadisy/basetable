@@ -24,15 +24,14 @@ have <- function(pkg) requireNamespace(pkg, quietly = TRUE)
 opt <- c(
   data.table = have("data.table"),
   dplyr = have("dplyr"),
-  collapse = have("collapse"),
-  polars = have("polars")
+  collapse = have("collapse")
 )
 ```
 
 `basetable` runs every table operation through its own native C++ engine and
 has **no `data.table` dependency**. These benchmarks still line it up against
-the fastest data-frame tools in R -- **base R**, **`data.table`**, **`dplyr`**,
-**`collapse`**, and **`polars`** -- on four representative operations:
+the fastest data-frame tools in R -- **base R**, **`data.table`**, **`dplyr`**
+and **`collapse`** -- on four representative operations:
 
 - row subsetting and column selection
 - keyed joins
@@ -63,11 +62,6 @@ if (opt[["data.table"]]) {
   mx_dt <- data.table::as.data.table(merge_x)
   my_dt <- data.table::as.data.table(merge_y)
 }
-if (opt[["polars"]]) {
-  tbl_pl <- polars::as_polars_df(tbl)
-  mx_pl <- polars::as_polars_df(merge_x)
-  my_pl <- polars::as_polars_df(merge_y)
-}
 ```
 
 ```{r benchmark}
@@ -83,8 +77,7 @@ run_subset <- function() mark_arms(list(
   `base R`   = quote(base::subset(tbl, value > 0, select = c("id", "grp", "value"))),
   data.table = quote(tbl_dt[value > 0, list(id, grp, value)]),
   dplyr      = quote(dplyr::select(dplyr::filter(tbl, value > 0), id, grp, value)),
-  collapse   = quote(collapse::fsubset(tbl, value > 0, id, grp, value)),
-  polars     = quote(tbl_pl$filter(polars::pl$col("value") > 0)$select("id", "grp", "value"))
+  collapse   = quote(collapse::fsubset(tbl, value > 0, id, grp, value))
 ))
 
 run_merge <- function() mark_arms(list(
@@ -92,8 +85,7 @@ run_merge <- function() mark_arms(list(
   `base R`   = quote(base::merge(merge_x, merge_y, by = "id")),
   data.table = quote(merge(mx_dt, my_dt, by = "id")),
   dplyr      = quote(dplyr::inner_join(merge_x, merge_y, by = "id")),
-  collapse   = quote(collapse::join(merge_x, merge_y, on = "id", how = "inner", verbose = 0)),
-  polars     = quote(mx_pl$join(my_pl, on = "id", how = "inner"))
+  collapse   = quote(collapse::join(merge_x, merge_y, on = "id", how = "inner", verbose = 0))
 ))
 
 run_aggregate <- function() mark_arms(list(
@@ -101,8 +93,7 @@ run_aggregate <- function() mark_arms(list(
   `base R`   = quote(stats::aggregate(value ~ grp, data = tbl, FUN = mean)),
   data.table = quote(tbl_dt[, list(value = mean(value)), by = grp]),
   dplyr      = quote(dplyr::summarise(dplyr::group_by(tbl, grp), value = mean(value), .groups = "drop")),
-  collapse   = quote(collapse::fsummarise(collapse::fgroup_by(tbl, grp), value = collapse::fmean(value))),
-  polars     = quote(tbl_pl$group_by("grp")$agg(polars::pl$col("value")$mean()))
+  collapse   = quote(collapse::fsummarise(collapse::fgroup_by(tbl, grp), value = collapse::fmean(value)))
 ))
 
 run_count <- function() mark_arms(list(
@@ -110,8 +101,7 @@ run_count <- function() mark_arms(list(
   `base R`   = quote(as.data.frame(table(tbl$grp))),
   data.table = quote(tbl_dt[, .N, by = grp]),
   dplyr      = quote(dplyr::count(tbl, grp)),
-  collapse   = quote(collapse::fcount(tbl, grp)),
-  polars     = quote(tbl_pl$group_by("grp")$agg(polars::pl$len()))
+  collapse   = quote(collapse::fcount(tbl, grp))
 ))
 
 summarise_benchmark <- function(x, operation) {

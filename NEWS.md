@@ -94,13 +94,13 @@
   parallel row indexer and reader. Each verb scans the file **once**,
   extracting only the fields it needs and never materialising the
   intermediate columns:
-  * `bt_aggregate(file, by, value, fun, where)` -- grouped aggregation
+  * `bt_aggregate(file, by, value, fun, where)`: grouped aggregation
     (`sum`/`mean`/`var`/`sd`/`min`/`max`/`n`), several reducers and value
     columns at once, with an optional `where =` filter fused into the same
     pass (predicate pushdown; numeric and string `==`/`!=`, all AND-ed).
-  * `bt_count(file, by, where)` -- grouped row counts.
-  * `bt_distinct(file, cols, where)` -- distinct key combinations.
-  * `bt_freq(file, by, where)` -- counts plus proportions.
+  * `bt_count(file, by, where)`: grouped row counts.
+  * `bt_distinct(file, cols, where)`: distinct key combinations.
+  * `bt_freq(file, by, where)`: counts plus proportions.
   On wide files this is 2-3x faster end-to-end than reading the whole file
   and grouping it (`bench/RESULTS.md`).
 
@@ -134,8 +134,8 @@
 
 ## Bug fixes
 
-* `subset(data, select = -colname)` — negative bare-symbol column selection,
-  a base R `subset()` idiom — errored with "object 'colname' not found"
+* `subset(data, select = -colname)`, negative bare-symbol column selection,
+  a base R `subset()` idiom, errored with "object 'colname' not found"
   instead of dropping the column. `select` was being force-evaluated as an
   ordinary argument (via `is.null(select)`/`is.character(select)`) before
   its NSE form ever got a chance to run, and the column-index mask used to
