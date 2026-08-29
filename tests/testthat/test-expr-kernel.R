@@ -94,3 +94,49 @@ test_that("parallel stream compaction in subset() is correct", {
   ref <- d[m, , drop = FALSE]; rownames(ref) <- NULL; rownames(a) <- NULL
   expect_equal(a, ref)
 })
+
+test_that("fused filter kernel: threaded and serial agree, and match eval()", {
+  skip_on_cran()
+  set.seed(11)
+  n <- 1.2e6
+  d <- data.frame(
+    x = rnorm(n), y = rnorm(n),
+    k = sample(1:5, n, TRUE),
+    s = sample(letters, n, TRUE),
+    stringsAsFactors = FALSE
+  )
+  d$x[sample(n, 1000)] <- NA
+  old <- getOption("basetable.threads")
+  on.exit(options(basetable.threads = old), add = TRUE)
+  for (p in list(quote(x > 0.5), quote(x > 0 & y < 0), quote(0.2 < x & y <= 0.3))) {
+    options(basetable.threads = 8L)
+    a <- as.data.frame(eval(bquote(basetable::subset(d, .(p)))))
+    options(basetable.threads = 1L)
+    b <- as.data.frame(eval(bquote(basetable::subset(d, .(p)))))
+    expect_identical(a, b, info = deparse(p))
+    r <- eval(p, d); r[is.na(r)] <- FALSE
+    ref <- d[r, , drop = FALSE]; rownames(ref) <- NULL
+    expect_equal(a, ref, ignore_attr = TRUE, info = deparse(p))
+  }
+})
+
+test_that("fused filter honours select and drops NA rows like base subset()", {
+  set.seed(12)
+  d <- data.frame(x = c(rnorm(50), NA, NA), g = sample(letters[1:3], 52, TRUE),
+                  id = 1:52, stringsAsFactors = FALSE)
+  out <- as.data.frame(basetable::subset(d, x > 0, select = c("g", "id")))
+  ref <- d[d$x > 0 & !is.na(d$x), c("g", "id"), drop = FALSE]; rownames(ref) <- NULL
+  expect_equal(out, ref, ignore_attr = TRUE)
+})
+
+test_that("shapes outside the fused kernel still work via the mask path", {
+  set.seed(13)
+  d <- data.frame(x = rnorm(2000), y = rnorm(2000), i = sample(1:100, 2000, TRUE))
+  cases <- list(quote(x > y), quote(i > 50L), quote(x > 0 | y > 0), quote(abs(x) > 1))
+  for (p in cases) {
+    out <- as.data.frame(eval(bquote(basetable::subset(d, .(p)))))
+    r <- eval(p, d); r[is.na(r)] <- FALSE
+    ref <- d[r, , drop = FALSE]; rownames(ref) <- NULL
+    expect_equal(out, ref, ignore_attr = TRUE, info = deparse(p))
+  }
+})

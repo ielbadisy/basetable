@@ -1575,6 +1575,129 @@ extern "C" SEXP bt_subset_(SEXP df, SEXP s_rows, SEXP s_cols, SEXP s_n_threads) 
   return build_frame(df, rows, cols, nth);
 }
 
+// Fused filter: evaluate a compiled predicate and materialise the surviving
+// rows in one pass, threaded, without ever building an n-length logical mask.
+// Only the common `subset()` shapes are handled here -- one `col <op> scalar`
+// comparison over a REAL column, or two such comparisons joined by `&`. For
+// anything else (col vs col, non-REAL columns, `|`, arithmetic, `!`) the
+// function returns R_NilValue so the caller can take the generic mask path.
+extern "C" SEXP bt_filter_(SEXP df, SEXP s_cols, SEXP s_code, SEXP s_args,
+                           SEXP s_consts, SEXP s_na_false, SEXP s_n_threads) {
+  (void) s_na_false;  // filter always drops NA rows
+  Frame f = frame_from(df);
+  if (TYPEOF(s_code) != INTSXP || TYPEOF(s_args) != INTSXP ||
+      TYPEOF(s_consts) != REALSXP)
+    return R_NilValue;
+  R_xlen_t ncode = Rf_xlength(s_code);
+  const int* code = INTEGER(s_code);
+  const int* args = INTEGER(s_args);
+  const double* consts = REAL(s_consts);
+  R_xlen_t nconst = Rf_xlength(s_consts);
+
+  struct Cmp { const double* p; double s; int op; };
+  Cmp cmp[2];
+  int ncmp = 0;
+
+  auto flip_op = [](int o) -> int {
+    switch (o) {
+      case 20: return 22;  // LT -> GT
+      case 22: return 20;  // GT -> LT
+      case 21: return 23;  // LE -> GE
+      case 23: return 21;  // GE -> LE
+      default: return o;   // EQ / NE unchanged
+    }
+  };
+  // resolve a leaf operand to (column pointer | scalar)
+  auto leaf = [&](int idx, const double*& p, double& sc, bool& is_col) -> bool {
+    if (code[idx] == 2 /*EX_CONST*/) {
+      int ci = args[idx];
+      if (ci < 0 || ci >= nconst) return false;
+      is_col = false; sc = consts[ci]; p = nullptr; return true;
+    }
+    if (code[idx] != 1 /*EX_COL*/) return false;
+    int cj = args[idx];
+    if (cj < 0 || cj >= f.ncol) return false;
+    SEXP col = VECTOR_ELT(df, cj);
+    if (TYPEOF(col) != REALSXP) return false;
+    is_col = true; p = REAL(col); sc = 0.0; return true;
+  };
+  auto take = [&](int ia, int ib, int iop, Cmp& c) -> bool {
+    if (code[iop] < 20 || code[iop] > 25) return false;  // not a comparison
+    const double* ap; const double* bp; double as_ = 0, bs_ = 0; bool ac, bc;
+    if (!leaf(ia, ap, as_, ac) || !leaf(ib, bp, bs_, bc)) return false;
+    if (ac == bc) return false;                          // col-col or const-const
+    if (ac) { c.p = ap; c.s = bs_; c.op = code[iop]; }
+    else    { c.p = bp; c.s = as_; c.op = flip_op(code[iop]); }
+    return true;
+  };
+
+  if (ncode == 3) {
+    if (take(0, 1, 2, cmp[0])) ncmp = 1;
+  } else if (ncode == 7 && code[6] == 30 /*EX_AND*/) {
+    if (take(0, 1, 2, cmp[0]) && take(3, 4, 5, cmp[1])) ncmp = 2;
+  }
+  if (ncmp == 0) return R_NilValue;
+
+  auto keep = [&](R_xlen_t i) -> bool {
+    for (int k = 0; k < ncmp; ++k) {
+      double av = cmp[k].p[i], bv = cmp[k].s;
+      if (ISNAN(av)) return false;
+      bool ok;
+      switch (cmp[k].op) {
+        case 20: ok = av <  bv; break;
+        case 21: ok = av <= bv; break;
+        case 22: ok = av >  bv; break;
+        case 23: ok = av >= bv; break;
+        case 24: ok = av == bv; break;
+        default: ok = av != bv; break;  // 25 NE
+      }
+      if (!ok) return false;
+    }
+    return true;
+  };
+
+  int nth = clamp_threads(s_n_threads, f.nrow, 200000);
+  int T = (nth < 2 || f.nrow < 100000) ? 1 : nth;
+  R_xlen_t chunk = (f.nrow + T - 1) / T;
+  std::vector<std::vector<R_xlen_t>> part((size_t)T);
+  if (T == 1) {
+    auto& v = part[0];
+    v.reserve((size_t)f.nrow / 2 + 16);
+    for (R_xlen_t i = 0; i < f.nrow; ++i) if (keep(i)) v.push_back(i);
+  } else {
+    std::vector<std::thread> pool;
+    for (int t = 0; t < T; ++t) {
+      R_xlen_t lo = (R_xlen_t)t * chunk, hi = std::min<R_xlen_t>(f.nrow, lo + chunk);
+      if (lo >= hi) break;
+      pool.emplace_back([&, t, lo, hi]() {
+        auto& v = part[(size_t)t];
+        v.reserve((size_t)(hi - lo) / 4 + 16);
+        for (R_xlen_t i = lo; i < hi; ++i) if (keep(i)) v.push_back(i);
+      });
+    }
+    for (auto& x : pool) x.join();
+  }
+
+  std::vector<size_t> off(part.size() + 1, 0);
+  for (size_t t = 0; t < part.size(); ++t) off[t + 1] = off[t] + part[t].size();
+  std::vector<R_xlen_t> rows(off.back());
+  if (T == 1) {
+    std::copy(part[0].begin(), part[0].end(), rows.begin());
+  } else {
+    std::vector<std::thread> pool;
+    for (size_t t = 0; t < part.size(); ++t) {
+      if (part[t].empty()) continue;
+      pool.emplace_back([&, t]() {
+        std::copy(part[t].begin(), part[t].end(), rows.begin() + off[t]);
+      });
+    }
+    for (auto& x : pool) x.join();
+  }
+
+  std::vector<int> cols = col_index(s_cols, f.ncol);
+  return build_frame(df, rows, cols, nth);
+}
+
 extern "C" SEXP bt_order_(SEXP df, SEXP s_by, SEXP s_decreasing, SEXP s_na_last,
                           SEXP s_n_threads) {
   Frame f = frame_from(df);

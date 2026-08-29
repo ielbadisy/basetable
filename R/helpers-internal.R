@@ -436,6 +436,21 @@ bt_engine_subset <- function(data, rows = NULL, cols = NULL) {
   ))
 }
 
+# Fused predicate + row materialisation. Tries the native one-pass filter
+# (compiled predicate, threaded, no intermediate logical mask); returns NULL
+# when the predicate shape is outside the fused kernel so the caller can take
+# the mask path.
+bt_engine_filter <- function(data, plan, cols = NULL) {
+  df <- bt_as_data_frame(data)
+  col_pos <- if (is.null(cols)) NULL else bt_col_positions(df, cols)
+  out <- .Call(
+    bt_filter_, df, col_pos, plan$code, plan$args, plan$consts, TRUE,
+    as.integer(bt_default_threads())
+  )
+  if (is.null(out)) return(NULL)
+  bt_as_data_table(out)
+}
+
 bt_engine_order <- function(data, by, decreasing = FALSE, na.last = TRUE) {
   df <- bt_as_data_frame(data)
   by_pos <- bt_col_positions(df, by)

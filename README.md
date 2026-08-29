@@ -89,22 +89,24 @@ with 8 threads (`inst/benchmarks/benchmark-scale.R`), time relative to
 | `pick()` / projection | **0.65x** | **0.5x** |
 | `merge()` (equi) | **0.9x** | 1.0x |
 | `rbindfill()` | **0.9x** | 1.2x |
-| `subset(x > c)` | 1.1x | 1.0x |
-| `subset(x > a & y < b)` | 1.4x | 1.5x |
-| `orderrows()` (string key) | 2.5x | 2.0x |
+| `subset(x > c)` | **0.9x** | 1.0x |
+| `subset(x > a & y < b)` | **0.7x** | **0.8x** |
+| `orderrows()` (string key) | 2.0x | 1.8x |
 
 Grouped reducers accumulate in C++ without materialising intermediate
 columns, so a grouped `aggregate` or `count` allocates near zero where the
 other engines allocate tens of megabytes. The heavier operations
 (aggregation, sort pipeline, filter, join probe) use multiple threads via
-`setthreads()`.
+`setthreads()`. A `subset()` predicate of the common `col <op> scalar` shape
+is compiled and applied in a single threaded pass that emits the surviving
+row positions directly, with no intermediate logical vector.
 
 The remaining gap is **sorting**: `orderrows()` uses a stable parallel radix
-over integer codes and is ~20x faster than base `order()`, but still ~2-2.5x
-of `data.table`, whose hand-tuned parallel radix is the one operation
-basetable does not yet match. `collapse` and `polars` are also faster on
-several columnar and grouped paths; matching their parallel-radix / Arrow
-engines is not a near goal.
+over integer codes and is ~20x faster than base `order()`, but still ~2x of
+`data.table`, whose hand-tuned parallel radix is the one operation basetable
+does not yet match. `collapse` and `polars` are also faster on several
+columnar and grouped paths; matching their parallel-radix / Arrow engines is
+not a near goal.
 
 The `Benchmarks` vignette has the full reproducible report against base R,
 `data.table`, `dplyr` and `collapse`.

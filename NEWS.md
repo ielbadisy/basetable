@@ -54,13 +54,15 @@ threads); see the `Benchmarks` vignette for the full report.
 * Faster than `data.table`: `uniquerows()` / `distinct()`, `sd` / `var` by
   group at every cardinality, `count` and `mean` by group at high
   cardinality, `semimerge()` (parity at low cardinality down to ~0.25x at
-  high), `pick()` / column projection.
-* Roughly at parity: `merge()`, `mean` by group at low cardinality, a single
-  `subset()` comparison, `rbindfill()`.
-* Slower than `data.table`: string and integer `orderrows()` (~2.5x; the
-  radix byte passes are memory-bandwidth bound), and multi-term `subset()`
-  predicates. `data.table`'s parallel radix sort is the one operation
-  basetable does not yet match.
+  high), `pick()` / column projection, and `subset()` on the common
+  `col <op> scalar` shapes (single or `&`-joined comparisons over a numeric
+  column), now evaluated and materialised in one threaded pass with no
+  intermediate logical vector.
+* Roughly at parity: `merge()`, `mean` by group at low cardinality,
+  `rbindfill()`.
+* Slower than `data.table`: string and integer `orderrows()` (~2x; the
+  radix byte passes are memory-bandwidth bound). `data.table`'s parallel
+  radix sort is the one operation basetable does not yet match.
 * Grouped reducers accumulate in C++ without materialising intermediate
   columns, so a grouped `aggregate()` or `count()` allocates near zero where
   the other engines allocate tens of megabytes.
