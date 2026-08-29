@@ -1,4 +1,11 @@
 aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TRUE) {
+  if (is.character(data) && length(data) == 1L) {
+    return(aggregate_from_file(
+      data, by = by, value = value,
+      fun = if (missing(fun)) "sum" else fun,
+      na.rm = if (missing(na.rm)) TRUE else na.rm, ...
+    ))
+  }
   df <- bt_as_data_frame(data)
   by <- bt_resolve_cols(df, by)
 
@@ -45,7 +52,10 @@ aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TR
   out
 }
 
-count <- function(data, by, sort = TRUE, name = "n") {
+count <- function(data, by, sort = TRUE, name = "n", ...) {
+  if (is.character(data) && length(data) == 1L) {
+    return(count_from_file(data, by = by, ...))
+  }
   out <- bt_engine_count(data, by = by, name = name)
   if (sort) {
     out <- bt_engine_order(out, by = name, decreasing = TRUE)

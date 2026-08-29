@@ -2,14 +2,19 @@
 
 ## New features
 
+* The fused file readers lost their `bt_` prefix: `aggregate()`, `count()`,
+  `distinct()` (new) and `freq()` now accept a single file path as their first
+  argument and route to the one-pass scan, so there is one name per operation
+  whether the input is a data frame or a delimited file. `bt_aggregate()`,
+  `bt_count()`, `bt_distinct()` and `bt_freq()` are removed.
 * **basetable no longer depends on `data.table` in any form.** It has been
   removed from `Suggests`, and every verb runs entirely on basetable's own
   compiled engine.
 * Verbs now return a `basetable`: a plain data.frame with an added class that
   prints compactly and whose `[` keeps the class and defaults to
   `drop = FALSE`. It carries no `data.table` machinery; `as.data.frame()`
-  returns an ordinary frame. The `as =` argument of `btread()`, `bt_aggregate()`
-  and friends now takes `"basetable"` instead of `"data.table"`.
+  returns an ordinary frame. The `as =` argument of `btread()` and the
+  file readers now takes `"basetable"` instead of `"data.table"`.
 
 * Added the first in-memory native C++ execution layer for the existing public
   basetable API. `pick()`, `drop()`, `subset()`, `orderrows()`, `uniquerows()`,
@@ -94,13 +99,13 @@
   parallel row indexer and reader. Each verb scans the file **once**,
   extracting only the fields it needs and never materialising the
   intermediate columns:
-  * `bt_aggregate(file, by, value, fun, where)`: grouped aggregation
+  * `aggregate(file, by, value, fun, where)`: grouped aggregation
     (`sum`/`mean`/`var`/`sd`/`min`/`max`/`n`), several reducers and value
     columns at once, with an optional `where =` filter fused into the same
     pass (predicate pushdown; numeric and string `==`/`!=`, all AND-ed).
-  * `bt_count(file, by, where)`: grouped row counts.
-  * `bt_distinct(file, cols, where)`: distinct key combinations.
-  * `bt_freq(file, by, where)`: counts plus proportions.
+  * `count(file, by, where)`: grouped row counts.
+  * `distinct(file, cols, where)`: distinct key combinations.
+  * `freq(file, by, where)`: counts plus proportions.
   On wide files this is 2-3x faster end-to-end than reading the whole file
   and grouping it (`bench/RESULTS.md`).
 

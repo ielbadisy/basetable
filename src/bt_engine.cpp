@@ -122,11 +122,9 @@ void set_table_class(SEXP out) {
 }
 
 void copy_common_attrs(SEXP out, SEXP in) {
-  for (SEXP a = ATTRIB(in); a != R_NilValue; a = CDR(a)) {
-    SEXP tag = TAG(a);
-    if (tag == R_NamesSymbol || tag == R_DimSymbol || tag == R_DimNamesSymbol) continue;
-    Rf_setAttrib(out, tag, CAR(a));
-  }
+  // Copies every attribute except names / dim / dimnames -- exactly what a
+  // reshaped column needs (class, levels, tzone, units, ...).
+  Rf_copyMostAttrib(in, out);
 }
 
 SEXP subset_vector(SEXP col, const std::vector<R_xlen_t>& rows) {
@@ -690,7 +688,6 @@ bool count_int_dense(SEXP df, int by, const int* p, R_xlen_t nrow, SEXP s_name, 
   std::vector<int> counts((size_t)span, 0);
   std::vector<R_xlen_t> first_pos((size_t)span, -1);
   bool has_na = false;
-  R_xlen_t na_first = -1;
   int na_count = 0;
   std::vector<R_xlen_t> first;
   first.reserve((size_t)std::min<R_xlen_t>(nrow, (R_xlen_t)span + 1));
@@ -699,7 +696,6 @@ bool count_int_dense(SEXP df, int by, const int* p, R_xlen_t nrow, SEXP s_name, 
     if (v == NA_INTEGER) {
       if (!has_na) {
         has_na = true;
-        na_first = i;
         first.push_back(i);
       }
       ++na_count;
@@ -2265,7 +2261,7 @@ extern "C" SEXP bt_expr_(SEXP df, SEXP s_code, SEXP s_args, SEXP s_consts) {
   std::vector<ExprVal> stack;
   stack.reserve(8);
 
-  auto at = [n](const ExprVal& v, R_xlen_t i) -> double {
+  auto at = [](const ExprVal& v, R_xlen_t i) -> double {
     return v.data.size() == 1 ? v.data[0] : v.data[(size_t)i];
   };
 

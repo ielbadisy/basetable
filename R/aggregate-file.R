@@ -22,12 +22,12 @@
 #'
 #' @return A data.frame: the `by` columns, then one column per
 #'   `value` x `fun`.
-#' @export
+#' @noRd
 #' @examples
 #' p <- tempfile(fileext = ".csv")
 #' write.csv(data.frame(g = rep(letters[1:3], 4), x = 1:12), p, row.names = FALSE)
-#' bt_aggregate(p, by = "g", value = "x", fun = c("sum", "mean"))
-bt_aggregate <- function(file,
+#' aggregate_from_file(p, by = "g", value = "x", fun = c("sum", "mean"))
+aggregate_from_file <- function(file,
                          by,
                          value = NULL,
                          fun = "sum",
@@ -45,7 +45,7 @@ bt_aggregate <- function(file,
   as <- match.arg(as)
   stopifnot(length(file) == 1L, is.character(file))
   file <- path.expand(file)
-  if (!file.exists(file)) stop("bt_aggregate: file not found: ", file, call. = FALSE)
+  if (!file.exists(file)) stop("aggregate_from_file: file not found: ", file, call. = FALSE)
   if (grepl("\\.gz$", file, ignore.case = TRUE)) {
     file <- bt_gunzip_to_tmp(file); on.exit(unlink(file), add = TRUE)
   }
@@ -53,7 +53,7 @@ bt_aggregate <- function(file,
   valid <- c("sum", "mean", "var", "sd", "min", "max", "n")
   fun <- as.character(fun)
   if (!all(fun %in% valid))
-    stop("bt_aggregate: fun must be one of ", paste(valid, collapse = ", "), call. = FALSE)
+    stop("aggregate_from_file: fun must be one of ", paste(valid, collapse = ", "), call. = FALSE)
 
   delim_chr <- if (is.null(delim)) "" else if (identical(delim, "\t")) "\\t" else as.character(delim)
   comment <- if (is.null(comment) || !nzchar(comment)) "" else substr(comment, 1L, 1L)
@@ -67,7 +67,7 @@ bt_aggregate <- function(file,
     if (is.numeric(x)) as.integer(x)
     else {
       m <- match(x, hdr)
-      if (anyNA(m)) stop("bt_aggregate: unknown column(s): ",
+      if (anyNA(m)) stop("aggregate_from_file: unknown column(s): ",
                          paste(x[is.na(m)], collapse = ", "), call. = FALSE)
       m
     }
@@ -77,7 +77,7 @@ bt_aggregate <- function(file,
   if (is.null(value)) {
     value_idx <- if (only_n) by_idx[1] else setdiff(seq_along(hdr), by_idx)
   } else value_idx <- resolve(value)
-  if (!length(value_idx)) stop("bt_aggregate: no value columns", call. = FALSE)
+  if (!length(value_idx)) stop("aggregate_from_file: no value columns", call. = FALSE)
 
   # predicate pushdown: parse "<col> <op> <literal>"
   w_col <- integer(0); w_op <- integer(0); w_kind <- integer(0)
@@ -88,7 +88,7 @@ bt_aggregate <- function(file,
     for (w in where) {
       m <- regmatches(w, regexec(
         "^\\s*(\\S+?)\\s*(<=|>=|==|!=|<|>)\\s*(.+?)\\s*$", w))[[1]]
-      if (length(m) != 4L) stop("bt_aggregate: cannot parse where clause: ", w, call. = FALSE)
+      if (length(m) != 4L) stop("aggregate_from_file: cannot parse where clause: ", w, call. = FALSE)
       col <- resolve(m[2]); op <- code[[m[3]]]
       lit <- m[4]
       lit <- sub("^([\"'])(.*)\\1$", "\\2", lit)
@@ -139,20 +139,20 @@ bt_aggregate <- function(file,
 #' Count rows per group straight off a delimited file
 #'
 #' One-pass grouped row count. Equivalent to
-#' `bt_aggregate(file, by, fun = "n")` with an `n` column.
+#' `aggregate_from_file(file, by, fun = "n")` with an `n` column.
 #'
-#' @inheritParams bt_aggregate
+#' @inheritParams aggregate_from_file
 #' @return A data.frame: the `by` columns and an `n` count.
-#' @export
+#' @noRd
 #' @examples
 #' p <- tempfile(fileext = ".csv")
 #' write.csv(data.frame(g = rep(letters[1:3], 4)), p, row.names = FALSE)
-#' bt_count(p, by = "g")
-bt_count <- function(file, by, where = NULL, delim = NULL, quote = "\"",
+#' count_from_file(p, by = "g")
+count_from_file <- function(file, by, where = NULL, delim = NULL, quote = "\"",
                      comment = "", header = TRUE, skip = 0, n_max = Inf,
                      na = c("NA", ""), n_threads = bt_default_threads(),
                      as = c("data.frame", "basetable")) {
-  bt_aggregate(file, by = by, value = NULL, fun = "n", where = where,
+  aggregate_from_file(file, by = by, value = NULL, fun = "n", where = where,
                na.rm = TRUE, delim = delim, quote = quote, comment = comment,
                header = header, skip = skip, n_max = n_max, na = na,
                n_threads = n_threads, as = match.arg(as))
@@ -163,15 +163,15 @@ bt_count <- function(file, by, where = NULL, delim = NULL, quote = "\"",
 #' One-pass unique combinations of `cols` (like `unique(x, by = cols)` but
 #' keeping only `cols`).
 #'
-#' @inheritParams bt_aggregate
+#' @inheritParams aggregate_from_file
 #' @param cols Columns whose distinct combinations to return.
 #' @return A data.frame of the distinct combinations.
-#' @export
-bt_distinct <- function(file, cols, where = NULL, delim = NULL, quote = "\"",
+#' @noRd
+distinct_from_file <- function(file, cols, where = NULL, delim = NULL, quote = "\"",
                         comment = "", header = TRUE, skip = 0, n_max = Inf,
                         na = c("NA", ""), n_threads = bt_default_threads(),
                         as = c("data.frame", "basetable")) {
-  out <- bt_count(file, by = cols, where = where, delim = delim, quote = quote,
+  out <- count_from_file(file, by = cols, where = where, delim = delim, quote = quote,
                   comment = comment, header = header, skip = skip, n_max = n_max,
                   na = na, n_threads = n_threads, as = "data.frame")
   out[["n"]] <- NULL
@@ -183,16 +183,16 @@ bt_distinct <- function(file, cols, where = NULL, delim = NULL, quote = "\"",
 #'
 #' One-pass grouped counts plus proportions.
 #'
-#' @inheritParams bt_aggregate
+#' @inheritParams aggregate_from_file
 #' @param sort Logical; order rows by descending count.
 #' @return A data.frame: the `by` columns, `n`, and `prop`.
-#' @export
-bt_freq <- function(file, by, where = NULL, sort = TRUE, delim = NULL,
+#' @noRd
+freq_from_file <- function(file, by, where = NULL, sort = TRUE, delim = NULL,
                     quote = "\"", comment = "", header = TRUE, skip = 0,
                     n_max = Inf, na = c("NA", ""),
                     n_threads = bt_default_threads(),
                     as = c("data.frame", "basetable")) {
-  out <- bt_count(file, by = by, where = where, delim = delim, quote = quote,
+  out <- count_from_file(file, by = by, where = where, delim = delim, quote = quote,
                   comment = comment, header = header, skip = skip, n_max = n_max,
                   na = na, n_threads = n_threads, as = "data.frame")
   out[["prop"]] <- out[["n"]] / sum(out[["n"]])

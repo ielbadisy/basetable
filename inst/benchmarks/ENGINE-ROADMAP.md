@@ -37,8 +37,8 @@ base-style argument handling and NSE until expression compilation exists.
   for `rbindfill()`, `applyby(bind = TRUE)` and long reshape.
 - `basetable` result class stamped directly by the engine (`set_table_class`);
   no `data.table` class, no `data.table` dependency anywhere.
-- File-native `btread()`, `btwrite()`, `bt_aggregate()`, `bt_count()`,
-  `bt_distinct()`, and `bt_freq()`.
+- File-native `btread()` / `btwrite()`; `aggregate()`, `count()`,
+  `distinct()` and `freq()` accept a file path and fuse parse with group-by.
 
 ## Next engine tracks
 

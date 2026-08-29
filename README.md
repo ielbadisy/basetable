@@ -141,13 +141,14 @@ for a shared name. Two fixes:
 | Split / apply | `split()`, `applyby()` | `split()` |
 | Reshaping | `tolong()`, `towide()`, `reshape()`, `stack()`, `unstack()` | base equivalents |
 | Completion | `completegrid()` | `expand.grid()` + join |
-| File I/O | `btread()`, `btwrite()`, `bt_aggregate()`, `bt_count()`, `bt_distinct()`, `bt_freq()` | `read.delim()` / fused file→result |
+| File I/O | `btread()`, `btwrite()`; `aggregate()` / `count()` / `distinct()` / `freq()` also take a file path | `read.delim()`, fused file to result |
 | Inspection | `glimpse()`, `dims()`, `types()`, `headtail()` | `str()`, `dim()`, `head()` |
 | EDA | `describe()`, `missingness()`, `profile()`, `freq()`, `summarytab()`, `compare()` | base summaries |
 
 `btread()` memory-maps the file and, with `lazy = TRUE`, returns columns as
-ALTREP vectors parsed on first access; `bt_aggregate(file, ...)` and friends
-fuse the parse with the grouping so unused columns are never materialised.
+ALTREP vectors parsed on first access. `aggregate()`, `count()`, `distinct()`
+and `freq()` accept a single file path as their first argument and fuse the
+parse with the grouping, so unused columns are never materialised.
 
 ## Status
 

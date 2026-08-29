@@ -71,7 +71,11 @@ profile <- function(data, cols = NULL, top_n = 3) {
   describe(data, cols = cols, top_n = top_n)
 }
 
-freq <- function(data, column, by = NULL, prop = FALSE, sort = TRUE) {
+freq <- function(data, column, by = NULL, prop = FALSE, sort = TRUE, ...) {
+  if (is.character(data) && length(data) == 1L) {
+    groups <- if (!missing(column)) column else by
+    return(freq_from_file(data, by = groups, sort = sort, ...))
+  }
   df <- bt_as_data_frame(data)
   column <- bt_resolve_cols(df, column)
   if (length(column) != 1L) {
