@@ -72,6 +72,12 @@
   to roughly parity.
 * `towide()` now groups its id columns through the native grouping engine and
   buckets rows once, instead of an O(rows x levels x rows) triple loop.
+* The sort pipeline is now parallel around the radix: order codes are
+  generated on threads, the inter-column gather is threaded, and the final
+  materialise reuses the threaded `build_frame`. `pick()` / row-projection
+  now beats `data.table` (~0.5-0.7x) from the same threaded gather. The radix
+  byte passes themselves are still the wall on sort (memory-bound scatter);
+  an MSD / cache-blocked radix is the remaining step.
 * `rollingmerge()` sorts each equi-key bucket by the roll key once and then
   binary-searches the neighbour per x row, instead of scanning the whole
   bucket. A 20k x 40k single-group rolling join drops from seconds to a few

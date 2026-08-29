@@ -233,16 +233,17 @@ SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<i
     SEXP dst;
     if (t == LGLSXP || t == INTSXP || t == REALSXP) {
       dst = Rf_allocVector((SEXPTYPE)t, nr);
+      SET_VECTOR_ELT(out, j, dst);      // protect via `out` before any further alloc
       copy_common_attrs(dst, src);
       atomic_cols.push_back((int)j);
     } else if (t == STRSXP || t == VECSXP) {
-      dst = subset_vector(src, rows);  // serial, touches R
+      dst = subset_vector(src, rows);   // serial, touches R
+      SET_VECTOR_ELT(out, j, dst);
     } else {
       UNPROTECT(2);
       Rf_error("basetable: unsupported column type '%s'", Rf_type2char(t));
     }
     dsts[(size_t)j] = dst;
-    SET_VECTOR_ELT(out, j, dst);
     SET_STRING_ELT(names, j, STRING_ELT(old_names, cols[(size_t)j]));
   }
 
@@ -1225,8 +1226,22 @@ bool match_mask_int_single(SEXP x, SEXP y, int x_by, int y_by, SEXP out) {
 // reproduces R's ordering for that column. NA sorts last (na_last) or first.
 // `decreasing` reverses via bitwise complement, which also flips NA -- matching
 // basetable's existing decreasing behaviour.
+// Run `body(lo, hi)` over [0, nrow) on up to nth threads (serial when small).
+template <typename F>
+void par_rows(R_xlen_t nrow, int nth, F body) {
+  if (nth < 2 || nrow < 100000) { body((R_xlen_t)0, nrow); return; }
+  R_xlen_t cs = (nrow + nth - 1) / nth;
+  std::vector<std::thread> pool;
+  for (int t = 0; t < nth; ++t) {
+    R_xlen_t lo = (R_xlen_t)t * cs, hi = std::min<R_xlen_t>(nrow, lo + cs);
+    if (lo >= hi) break;
+    pool.emplace_back([&body, lo, hi]() { body(lo, hi); });
+  }
+  for (auto& x : pool) x.join();
+}
+
 std::vector<uint64_t> order_codes(SEXP col, R_xlen_t nrow, bool na_last, bool decreasing,
-                                  bool& supported) {
+                                  bool& supported, int nth = 1) {
   supported = true;
   std::vector<uint64_t> code((size_t)nrow);
   const uint64_t NA_HI = ~(uint64_t)0;
@@ -1246,22 +1261,29 @@ std::vector<uint64_t> order_codes(SEXP col, R_xlen_t nrow, bool na_last, bool de
         ? seen[(const void*)distinct[r - 1]] : (int)r + 1;
       seen[(const void*)distinct[r]] = rr;
     }
-    for (R_xlen_t i = 0; i < nrow; ++i) {
-      SEXP s = STRING_ELT(col, i);
-      if (s == NA_STRING) { code[(size_t)i] = na_last ? NA_HI : 0ULL; continue; }
-      uint64_t c = (uint64_t)seen[(const void*)s];
-      code[(size_t)i] = decreasing ? ~c : c;
-    }
+    uint64_t* cp = code.data();
+    par_rows(nrow, nth, [&](R_xlen_t lo, R_xlen_t hi) {
+      for (R_xlen_t i = lo; i < hi; ++i) {
+        SEXP s = STRING_ELT(col, i);
+        if (s == NA_STRING) { cp[i] = na_last ? NA_HI : 0ULL; continue; }
+        uint64_t c = (uint64_t)seen.find((const void*)s)->second;
+        cp[i] = decreasing ? ~c : c;
+      }
+    });
     return code;
   }
 
+  uint64_t* cp = code.data();
   if (Rf_isFactor(col)) {
-    for (R_xlen_t i = 0; i < nrow; ++i) {
-      int v = INTEGER(col)[i];
-      if (v == NA_INTEGER) { code[(size_t)i] = na_last ? NA_HI : 0ULL; continue; }
-      uint64_t c = (uint64_t)v;
-      code[(size_t)i] = decreasing ? ~c : c;
-    }
+    const int* p = INTEGER(col);
+    par_rows(nrow, nth, [&](R_xlen_t lo, R_xlen_t hi) {
+      for (R_xlen_t i = lo; i < hi; ++i) {
+        int v = p[i];
+        if (v == NA_INTEGER) { cp[i] = na_last ? NA_HI : 0ULL; continue; }
+        uint64_t c = (uint64_t)v;
+        cp[i] = decreasing ? ~c : c;
+      }
+    });
     return code;
   }
 
@@ -1269,26 +1291,29 @@ std::vector<uint64_t> order_codes(SEXP col, R_xlen_t nrow, bool na_last, bool de
     case LGLSXP:
     case INTSXP: {
       const int* p = TYPEOF(col) == LGLSXP ? LOGICAL(col) : INTEGER(col);
-      for (R_xlen_t i = 0; i < nrow; ++i) {
-        int v = p[i];
-        if (v == NA_INTEGER) { code[(size_t)i] = na_last ? NA_HI : 0ULL; continue; }
-        uint64_t c = (uint64_t)((int64_t)v - (int64_t)INT_MIN) + 1;
-        code[(size_t)i] = decreasing ? ~c : c;
-      }
+      par_rows(nrow, nth, [&](R_xlen_t lo, R_xlen_t hi) {
+        for (R_xlen_t i = lo; i < hi; ++i) {
+          int v = p[i];
+          if (v == NA_INTEGER) { cp[i] = na_last ? NA_HI : 0ULL; continue; }
+          uint64_t c = (uint64_t)((int64_t)v - (int64_t)INT_MIN) + 1;
+          cp[i] = decreasing ? ~c : c;
+        }
+      });
       return code;
     }
     case REALSXP: {
       const double* p = REAL(col);
-      for (R_xlen_t i = 0; i < nrow; ++i) {
-        double d = p[i];
-        if (ISNAN(d)) { code[(size_t)i] = na_last ? NA_HI : 0ULL; continue; }
-        uint64_t u;
-        std::memcpy(&u, &d, sizeof(u));
-        if ((u << 1) == 0) u = 0;  // -0.0 and +0.0 compare equal
-        // order-preserving: flip sign bit for positives, all bits for negatives
-        u ^= (uint64_t)(-(int64_t)(u >> 63)) | 0x8000000000000000ULL;
-        code[(size_t)i] = decreasing ? ~u : u;
-      }
+      par_rows(nrow, nth, [&](R_xlen_t lo, R_xlen_t hi) {
+        for (R_xlen_t i = lo; i < hi; ++i) {
+          double d = p[i];
+          if (ISNAN(d)) { cp[i] = na_last ? NA_HI : 0ULL; continue; }
+          uint64_t u;
+          std::memcpy(&u, &d, sizeof(u));
+          if ((u << 1) == 0) u = 0;  // -0.0 and +0.0 compare equal
+          u ^= (uint64_t)(-(int64_t)(u >> 63)) | 0x8000000000000000ULL;
+          cp[i] = decreasing ? ~u : u;
+        }
+      });
       return code;
     }
     default:
@@ -1569,7 +1594,7 @@ extern "C" SEXP bt_order_(SEXP df, SEXP s_by, SEXP s_decreasing, SEXP s_na_last,
   for (size_t k = 0; k < by.size() && radix_ok; ++k) {
     bool dec = LOGICAL(s_decreasing)[k] == TRUE;
     bool supported = false;
-    codes[k] = order_codes(VECTOR_ELT(df, by[k]), f.nrow, na_last, dec, supported);
+    codes[k] = order_codes(VECTOR_ELT(df, by[k]), f.nrow, na_last, dec, supported, nth);
     if (!supported) radix_ok = false;
   }
 
@@ -1579,8 +1604,12 @@ extern "C" SEXP bt_order_(SEXP df, SEXP s_by, SEXP s_decreasing, SEXP s_na_last,
     // sequential.
     std::vector<uint64_t> keyv((size_t)f.nrow);
     for (size_t kk = by.size(); kk-- > 0;) {
-      const std::vector<uint64_t>& c = codes[kk];
-      for (R_xlen_t i = 0; i < f.nrow; ++i) keyv[(size_t)i] = c[(size_t)ord[(size_t)i]];
+      const uint64_t* c = codes[kk].data();
+      uint64_t* kv = keyv.data();       // radix_pairs swaps keyv's buffer each call
+      const R_xlen_t* op = ord.data();
+      par_rows(f.nrow, nth, [&](R_xlen_t lo, R_xlen_t hi) {
+        for (R_xlen_t i = lo; i < hi; ++i) kv[i] = c[(size_t)op[i]];
+      });
       radix_pairs(keyv, ord, nth);
     }
   } else {
@@ -1597,7 +1626,7 @@ extern "C" SEXP bt_order_(SEXP df, SEXP s_by, SEXP s_decreasing, SEXP s_na_last,
   }
 
   std::vector<int> cols = col_index(R_NilValue, f.ncol);
-  return build_frame(df, ord, cols);
+  return build_frame(df, ord, cols, nth);
 }
 
 extern "C" SEXP bt_unique_(SEXP df, SEXP s_by, SEXP s_keep_all) {
