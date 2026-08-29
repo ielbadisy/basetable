@@ -1,5 +1,5 @@
 Package: basetable
-Title: Base R Tables Powered by a Native C++ Engine
+Title: Fast Base R Table Manipulation
 Version: 1.0.0
 Authors@R:
     person("Imad", "El Badisy", email = "elbadisyimad@gmail.com", role = c("aut", "cre"))
