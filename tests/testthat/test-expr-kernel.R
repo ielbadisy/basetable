@@ -53,3 +53,14 @@ test_that("subset() still errors when the predicate is not logical", {
   df <- data.frame(x = 1:5)
   expect_error(subset(df, subset = x + 1), "logical vector")
 })
+
+test_that("the single-comparison fast path matches the general kernel and eval()", {
+  df <- data.frame(a = c(1, NA, 3, 4, 5), b = c(5, 4, NA, 2, 1))
+  for (p in list(quote(a > b), quote(a >= 2), quote(3 < a), quote(a == b),
+                 quote(a != b), quote(a <= b), quote(b > a))) {
+    fast <- eval(bquote(basetable::subset(df, .(p))))
+    r <- eval(p, df); r[is.na(r)] <- FALSE
+    expect_equal(as.data.frame(fast), df[r, , drop = FALSE],
+                 ignore_attr = TRUE, info = deparse(p))
+  }
+})

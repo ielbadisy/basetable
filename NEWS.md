@@ -2,6 +2,18 @@
 
 ## New features
 
+* `orderrows()` now sorts with a stable multi-column LSD radix sort over
+  order-preserving integer codes (character columns ranked in `strcmp` order,
+  integers/factors shifted, doubles bit-mapped) instead of a comparison sort.
+  A 1e6-row string+numeric sort dropped from about 9x to about 3-4x of
+  `data.table` and is roughly 20x faster than base `order()`.
+* `subset()` gained a fast path for a single column-vs-column or column-vs-scalar
+  comparison: the mask is written in one pass with no intermediate numeric
+  vector, bringing filtering close to `data.table`.
+* Portability: `bt_index.cpp` now includes `<io.h>` on Windows, and
+  `copy_common_attrs()` uses `Rf_copyMostAttrib()` instead of walking the
+  attribute pairlist, so the package compiles on current R across Linux,
+  macOS and Windows.
 * The fused file readers lost their `bt_` prefix: `aggregate()`, `count()`,
   `distinct()` (new) and `freq()` now accept a single file path as their first
   argument and route to the one-pass scan, so there is one name per operation

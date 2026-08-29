@@ -2340,6 +2340,49 @@ extern "C" SEXP bt_expr_(SEXP df, SEXP s_code, SEXP s_args, SEXP s_consts, SEXP 
   const double* consts = REAL(s_consts);
   R_xlen_t nconst = Rf_xlength(s_consts);
 
+  bool na_false = Rf_asLogical(s_na_false) == TRUE;
+
+  // Fast path for the overwhelmingly common `subset()` predicate shape:
+  // one comparison of a column against a column or a scalar. Writes the
+  // logical result in a single pass with no double intermediates.
+  if (ncode == 3) {
+    int lop = code[2];
+    bool a_col = code[0] == EX_COL, a_const = code[0] == EX_CONST;
+    bool b_col = code[1] == EX_COL, b_const = code[1] == EX_CONST;
+    if (lop >= EX_LT && lop <= EX_NE && (a_col || a_const) && (b_col || b_const) && !(a_const && b_const)) {
+      auto num_ptr = [&](int which, const double*& p, double& scal, bool& is_col) {
+        if (code[which] == EX_CONST) { is_col = false; scal = consts[args[which]]; p = nullptr; }
+        else {
+          is_col = true;
+          SEXP col = VECTOR_ELT(df, args[which]);
+          if (TYPEOF(col) != REALSXP) { p = nullptr; return false; }
+          p = REAL(col);
+        }
+        return true;
+      };
+      const double* ap; const double* bp; double as = 0, bs = 0; bool ac, bc;
+      if (num_ptr(0, ap, as, ac) && num_ptr(1, bp, bs, bc)) {
+        SEXP out = PROTECT(Rf_allocVector(LGLSXP, n));
+        int* rp = LOGICAL(out);
+        #define BT_CMP1(EXPR) \
+          for (R_xlen_t i = 0; i < n; ++i) { \
+            double av = ac ? ap[i] : as; double bv = bc ? bp[i] : bs; \
+            rp[i] = (ISNAN(av) || ISNAN(bv)) ? (na_false ? FALSE : NA_LOGICAL) : ((EXPR) ? TRUE : FALSE); }
+        switch (lop) {
+          case EX_LT: BT_CMP1(av <  bv) break;
+          case EX_LE: BT_CMP1(av <= bv) break;
+          case EX_GT: BT_CMP1(av >  bv) break;
+          case EX_GE: BT_CMP1(av >= bv) break;
+          case EX_EQ: BT_CMP1(av == bv) break;
+          case EX_NE: BT_CMP1(av != bv) break;
+        }
+        #undef BT_CMP1
+        UNPROTECT(1);
+        return out;
+      }
+    }
+  }
+
   std::vector<ExprVal> stack;
   stack.reserve(8);
 
@@ -2456,7 +2499,7 @@ extern "C" SEXP bt_expr_(SEXP df, SEXP s_code, SEXP s_args, SEXP s_consts, SEXP 
   ExprVal& top = stack.back();
   SEXP out;
   if (top.logical) {
-    bool na_false = Rf_asLogical(s_na_false) == TRUE;
+    // na_false computed above
     out = PROTECT(Rf_allocVector(LGLSXP, n));
     int* p = LOGICAL(out);
     for (R_xlen_t i = 0; i < n; ++i) {

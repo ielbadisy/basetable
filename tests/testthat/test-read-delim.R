@@ -24,7 +24,10 @@ test_that("btread handles column types", {
 
 test_that("btread quoting: embedded delimiter, quote, newline", {
   p <- tempfile(fileext = ".csv")
-  writeLines(c('a,b', '"x,y",1', '"he said ""hi""",2', '"multi', 'line",3'), p)
+  # binary connection so the embedded newline stays a bare \n on Windows too
+  con <- file(p, "wb")
+  writeLines(c('a,b', '"x,y",1', '"he said ""hi""",2', '"multi', 'line",3'), con, sep = "\n")
+  close(con)
   r <- btread(p)
   expect_equal(nrow(r), 3L)
   expect_identical(r$a, c("x,y", 'he said "hi"', "multi\nline"))
