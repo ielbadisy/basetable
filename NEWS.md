@@ -72,6 +72,10 @@
   to roughly parity.
 * `towide()` now groups its id columns through the native grouping engine and
   buckets rows once, instead of an O(rows x levels x rows) triple loop.
+* `semimerge()` / `antimerge()` / `updatemerge()` probe the key hash on
+  threads (the build side's dictionary is read-only once frozen). A 1e6-row
+  semi-join went from ~2-3x `data.table` at low/mid cardinality to parity,
+  and ~0.25x at high cardinality.
 * The sort pipeline is now parallel around the radix: order codes are
   generated on threads, the inter-column gather is threaded, and the final
   materialise reuses the threaded `build_frame`. `pick()` / row-projection

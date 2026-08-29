@@ -19,10 +19,10 @@ SEXP bt_unique_(SEXP, SEXP, SEXP);
 SEXP bt_duplicated_(SEXP, SEXP, SEXP);
 SEXP bt_count_(SEXP, SEXP, SEXP);
 SEXP bt_group_agg_(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-SEXP bt_match_mask_(SEXP, SEXP, SEXP, SEXP);
+SEXP bt_match_mask_(SEXP, SEXP, SEXP, SEXP, SEXP);
 SEXP bt_group_id_(SEXP, SEXP);
 SEXP bt_join_(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-SEXP bt_first_match_(SEXP, SEXP, SEXP, SEXP);
+SEXP bt_first_match_(SEXP, SEXP, SEXP, SEXP, SEXP);
 SEXP bt_range_join_(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 SEXP bt_rolling_join_(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 SEXP bt_expr_(SEXP, SEXP, SEXP, SEXP, SEXP);
@@ -39,10 +39,10 @@ static const R_CallMethodDef CallEntries[] = {
   { "bt_duplicated_", (DL_FUNC) &bt_duplicated_, 3 },
   { "bt_count_",      (DL_FUNC) &bt_count_,      3 },
   { "bt_group_agg_",  (DL_FUNC) &bt_group_agg_,  6 },
-  { "bt_match_mask_", (DL_FUNC) &bt_match_mask_, 4 },
+  { "bt_match_mask_", (DL_FUNC) &bt_match_mask_, 5 },
   { "bt_group_id_",   (DL_FUNC) &bt_group_id_,   2 },
   { "bt_join_",         (DL_FUNC) &bt_join_,         7 },
-  { "bt_first_match_",  (DL_FUNC) &bt_first_match_,  4 },
+  { "bt_first_match_",  (DL_FUNC) &bt_first_match_,  5 },
   { "bt_range_join_",   (DL_FUNC) &bt_range_join_,   9 },
   { "bt_rolling_join_", (DL_FUNC) &bt_rolling_join_, 9 },
   { "bt_expr_",         (DL_FUNC) &bt_expr_,         5 },

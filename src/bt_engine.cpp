@@ -498,7 +498,7 @@ struct KeyCodec {
   std::vector<char> is_str;
   std::vector<std::unordered_map<const void*, int>> dict;
   bool frozen = false;
-  int miss_code = -2;
+  static constexpr int64_t MISS = INT64_MIN + 2;  // never produced during build
 
   static bool str_kind(SEXP col) {
     return Rf_isFactor(col) || TYPEOF(col) == STRSXP;
@@ -535,7 +535,7 @@ struct KeyCodec {
     auto& d = dict[c];
     auto it = d.find(p);
     if (it != d.end()) return it->second;
-    if (frozen) return (int64_t)(miss_code--);
+    if (frozen) return MISS;
     int code = (int)d.size();
     d.emplace(p, code);
     return code;
@@ -546,7 +546,7 @@ struct KeyCodec {
     for (size_t c = 0; c < cols.size(); ++c) {
       SEXP col = VECTOR_ELT(df, cols[c]);
       if (!is_str[c]) {
-        if (!num_kind(col)) { out[c] = (int64_t)(miss_code--); continue; }
+        if (!num_kind(col)) { out[c] = MISS; continue; }
         int kd = 0;
         double v = key_num(col, i, kd);
         out[c] = kd == 0 ? real_slot(v) : (kd == 2 ? real_slot(R_NaN) : INT64_MIN);
@@ -561,7 +561,7 @@ struct KeyCodec {
       } else if (TYPEOF(col) == STRSXP) {
         s = STRING_ELT(col, i);
       } else {
-        out[c] = (int64_t)(miss_code--);
+        out[c] = MISS;
         continue;
       }
       out[c] = str_slot(c, s);
@@ -1871,7 +1871,7 @@ extern "C" SEXP bt_group_agg_(SEXP df, SEXP s_by, SEXP s_value, SEXP s_fun, SEXP
   return result;
 }
 
-extern "C" SEXP bt_match_mask_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by) {
+extern "C" SEXP bt_match_mask_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by, SEXP s_n_threads) {
   Frame xf = frame_from(x);
   Frame yf = frame_from(y);
   std::vector<int> x_by = col_index(s_x_by, xf.ncol);
@@ -1894,12 +1894,17 @@ extern "C" SEXP bt_match_mask_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by) {
     codec.encode(y, y_by, j, buf);
     keys.insert(buf);
   }
-  codec.freeze();
+  codec.freeze();  // read-only from here: concurrent encode/find is safe
+
   int* p = LOGICAL(out);
-  for (R_xlen_t i = 0; i < xf.nrow; ++i) {
-    codec.encode(x, x_by, i, buf);
-    p[i] = keys.find(buf) == keys.end() ? FALSE : TRUE;
-  }
+  int nth = clamp_threads(s_n_threads, xf.nrow, 200000);
+  par_rows(xf.nrow, nth, [&](R_xlen_t lo, R_xlen_t hi) {
+    KeyBuf b;
+    for (R_xlen_t i = lo; i < hi; ++i) {
+      codec.encode(x, x_by, i, b);
+      p[i] = keys.find(b) == keys.end() ? FALSE : TRUE;
+    }
+  });
   UNPROTECT(1);
   return out;
 }
@@ -2067,7 +2072,7 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
 }
 
 // First matching y row (1-based) for each x row on an equi key, NA when none.
-extern "C" SEXP bt_first_match_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by) {
+extern "C" SEXP bt_first_match_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by, SEXP s_n_threads) {
   Frame xf = frame_from(x);
   Frame yf = frame_from(y);
   std::vector<int> x_by = col_index(s_x_by, xf.ncol);
@@ -2088,11 +2093,15 @@ extern "C" SEXP bt_first_match_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by) {
 
   SEXP out = PROTECT(Rf_allocVector(INTSXP, xf.nrow));
   int* p = INTEGER(out);
-  for (R_xlen_t i = 0; i < xf.nrow; ++i) {
-    codec.encode(x, x_by, i, buf);
-    auto it = first.find(buf);
-    p[i] = it == first.end() ? NA_INTEGER : it->second;
-  }
+  int nth = clamp_threads(s_n_threads, xf.nrow, 200000);
+  par_rows(xf.nrow, nth, [&](R_xlen_t lo, R_xlen_t hi) {
+    KeyBuf b;
+    for (R_xlen_t i = lo; i < hi; ++i) {
+      codec.encode(x, x_by, i, b);
+      auto it = first.find(b);
+      p[i] = it == first.end() ? NA_INTEGER : it->second;
+    }
+  });
   UNPROTECT(1);
   return out;
 }

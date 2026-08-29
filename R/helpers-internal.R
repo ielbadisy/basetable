@@ -67,7 +67,8 @@ bt_first_match <- function(x, y, by) {
   .Call(
     bt_first_match_, x, y,
     as.integer(match(by, names(x))),
-    as.integer(match(by, names(y)))
+    as.integer(match(by, names(y))),
+    as.integer(bt_default_threads())
   )
 }
 
@@ -497,7 +498,7 @@ bt_engine_match_mask <- function(x, y, by) {
   y_df <- bt_as_data_frame(y)
   x_by <- bt_col_positions(x_df, by)
   y_by <- bt_col_positions(y_df, by)
-  .Call(bt_match_mask_, x_df, y_df, x_by, y_by)
+  .Call(bt_match_mask_, x_df, y_df, x_by, y_by, as.integer(bt_default_threads()))
 }
 
 bt_set_row_names <- function(x, n) {

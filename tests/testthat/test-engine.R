@@ -328,3 +328,19 @@ test_that("fused single-key aggregation matches the general path across cardinal
     }
   }
 })
+
+test_that("parallel membership probe agrees with serial (semi/anti/update)", {
+  skip_on_cran()
+  set.seed(11)
+  n <- 1.2e6
+  x <- data.frame(k = sample(sprintf("k%05d", 1:2000), n, TRUE),
+                  v = seq_len(n), stringsAsFactors = FALSE)
+  y <- data.frame(k = sprintf("k%05d", sample(2000, 900)), stringsAsFactors = FALSE)
+
+  old <- getOption("basetable.threads"); on.exit(options(basetable.threads = old), add = TRUE)
+  options(basetable.threads = 8L); a <- as.data.frame(semimerge(x, y, by = "k"))
+  options(basetable.threads = 1L); b <- as.data.frame(semimerge(x, y, by = "k"))
+  expect_identical(a, b)
+  expect_equal(sort(unique(a$k)), sort(intersect(x$k, y$k)))
+  expect_equal(nrow(a) + nrow(antimerge(x, y, by = "k")), n)
+})
