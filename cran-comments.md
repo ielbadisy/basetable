@@ -1,5 +1,16 @@
 # CRAN submission comments: basetable 1.0.0
 
+## Note to CRAN
+
+A previous submission of this package (version 0.9.0) is still in the
+submission pipeline and has not yet been published. This 1.0.0 upload is
+intended to **replace** that pending submission, not to sit alongside it.
+0.9.0 was a verb-renaming release; 1.0.0 additionally removes the
+`data.table` dependency entirely in favour of a bundled C++ engine, so it
+supersedes 0.9.0 in full. Please discard the pending 0.9.0 tarball and
+review this one instead. Happy to re-submit under whatever procedure you
+prefer.
+
 ## Test environments
 
 * Local: Ubuntu 24.04, R 4.5.1
