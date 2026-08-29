@@ -305,3 +305,26 @@ test_that("rbindfill bulk-copies matching columns and preserves shared class", {
   expect_equal(rr$k, c("1", "2", "3", "4"))
   expect_equal(rr$extra, c(TRUE, FALSE, NA, NA))
 })
+
+test_that("fused single-key aggregation matches the general path across cardinalities", {
+  skip_on_cran()
+  set.seed(5)
+  for (k in c(3L, 200L, 5000L, 60000L)) {
+    n <- 4e5
+    d <- data.frame(
+      g = sprintf("g%06d", sample(k, n, TRUE)),
+      x = rnorm(n),
+      stringsAsFactors = FALSE
+    )
+    d$x[sample(n, 50)] <- NA
+    for (fn in c("sum", "mean", "sd", "n")) {
+      old <- getOption("basetable.threads"); options(basetable.threads = 8L)
+      got <- aggregate(d, by = "g", value = "x", fun = fn, sort = TRUE, na.rm = TRUE)
+      options(basetable.threads = 1L)
+      ref <- aggregate(d, by = "g", value = "x", fun = fn, sort = TRUE, na.rm = TRUE)
+      options(basetable.threads = old)
+      expect_equal(got$g, ref$g, info = paste(k, fn))
+      expect_equal(got$x, ref$x, tolerance = 1e-8, info = paste(k, fn))
+    }
+  }
+})

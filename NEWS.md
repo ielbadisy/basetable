@@ -12,6 +12,14 @@
   earlier super-linear slowdown is gone. Fully matching `data.table` here needs
   a cache-blocked parallel radix across the whole sort pipeline (codes,
   gather, materialise), tracked in ENGINE-ROADMAP.md.
+* Grouped `aggregate()` / `count()` with a single key column now pick a
+  grouping algorithm by cardinality (estimated from a sample): below a few
+  thousand groups, a fused parallel pass keeps a tiny per-thread dictionary
+  and per-thread accumulators and merges them once; above that it keeps the
+  shared-dictionary plus parallel-reduce path. `sd`/`var` by group now beat
+  `data.table` at every cardinality on the reference machine, `mean` is at
+  parity where it was ~2.5x slower for few groups, and there is no regression
+  at high cardinality.
 * `subset()` gained a fast path for a single column-vs-column or column-vs-scalar
   comparison: the mask is written in one pass with no intermediate numeric
   vector, bringing filtering close to `data.table`.

@@ -528,6 +528,119 @@ bool group_single(SEXP col, R_xlen_t nrow, std::vector<int>& codes, std::vector<
   return false;
 }
 
+// Fused parallel single-key group + reduce. Each thread makes one pass over
+// its row range, keeping a tiny local dictionary and local accumulators; the
+// locals are merged afterwards. Best when the group count is small enough that
+// per-thread state stays cache-resident, but correct for any cardinality.
+// Fills `first` (a representative row per group, lowest index) and `state`
+// (group * nv accumulators). Returns false for key column types it does not
+// handle (caller falls back).
+// Rough distinct-count of a key column from an evenly-spaced sample, used to
+// pick the grouping algorithm.
+int64_t sample_distinct(SEXP col, R_xlen_t nrow, R_xlen_t budget) {
+  int kkind;
+  if (Rf_isFactor(col) || TYPEOF(col) == INTSXP || TYPEOF(col) == LGLSXP) kkind = 0;
+  else if (TYPEOF(col) == STRSXP) kkind = 1;
+  else if (TYPEOF(col) == REALSXP) kkind = 2;
+  else return -1;
+  R_xlen_t step = nrow > budget ? nrow / budget : 1;
+  std::unordered_set<int64_t> seen;
+  for (R_xlen_t i = 0; i < nrow; i += step) {
+    int64_t k = kkind == 1 ? (int64_t)(intptr_t)STRING_ELT(col, i)
+              : kkind == 2 ? real_slot(REAL(col)[i])
+                           : (int64_t)INTEGER(col)[i];
+    seen.insert(k);
+  }
+  return (int64_t)seen.size();
+}
+
+bool fused_group_agg_1key(SEXP col, R_xlen_t nrow, const std::vector<SEXP>& vcols,
+                          AggFun fun, bool na_rm, int nth,
+                          std::vector<R_xlen_t>& first, std::vector<AggState>& state) {
+  int kkind;  // 0 factor/int-code, 1 string, 2 real bits
+  if (Rf_isFactor(col) || TYPEOF(col) == INTSXP || TYPEOF(col) == LGLSXP) kkind = 0;
+  else if (TYPEOF(col) == STRSXP) kkind = 1;
+  else if (TYPEOF(col) == REALSXP) kkind = 2;
+  else return false;
+
+  const int nv = (int)vcols.size();
+  auto slot = [&](R_xlen_t i) -> int64_t {
+    if (kkind == 1) return (int64_t)(intptr_t)STRING_ELT(col, i);
+    if (kkind == 2) return real_slot(REAL(col)[i]);
+    return (int64_t)INTEGER(col)[i];
+  };
+
+  struct Local {
+    std::unordered_map<int64_t, int> dict;
+    std::vector<int64_t> keys;
+    std::vector<R_xlen_t> first;
+    std::vector<AggState> acc;
+  };
+  std::vector<Local> locals((size_t)nth);
+
+  auto worker = [&](int t, R_xlen_t lo, R_xlen_t hi) {
+    Local& L = locals[(size_t)t];
+    for (R_xlen_t i = lo; i < hi; ++i) {
+      int64_t k = slot(i);
+      auto it = L.dict.find(k);
+      int g;
+      if (it == L.dict.end()) {
+        g = (int)L.keys.size();
+        L.dict.emplace(k, g);
+        L.keys.push_back(k);
+        L.first.push_back(i);
+        L.acc.resize(L.acc.size() + (size_t)nv);
+      } else {
+        g = it->second;
+      }
+      for (int j = 0; j < nv; ++j) {
+        AggState& s = L.acc[(size_t)g * (size_t)nv + (size_t)j];
+        if (fun == AGG_N) { ++s.n; continue; }
+        bool na = false;
+        double x = value_as_double(vcols[(size_t)j], i, na);
+        if (na) { if (!na_rm) s.bad = true; continue; }
+        agg_update(s, fun, x);
+      }
+    }
+  };
+
+  if (nth <= 1) {
+    worker(0, 0, nrow);
+  } else {
+    std::vector<std::thread> pool;
+    R_xlen_t chunk = (nrow + nth - 1) / nth;
+    for (int t = 0; t < nth; ++t) {
+      R_xlen_t lo = (R_xlen_t)t * chunk, hi = std::min<R_xlen_t>(nrow, lo + chunk);
+      if (lo >= hi) break;
+      pool.emplace_back(worker, t, lo, hi);
+    }
+    for (auto& th : pool) th.join();
+  }
+
+  // Merge locals in thread order so `first` keeps the lowest row per group.
+  std::unordered_map<int64_t, int> gdict;
+  for (int t = 0; t < nth; ++t) {
+    Local& L = locals[(size_t)t];
+    for (size_t lg = 0; lg < L.keys.size(); ++lg) {
+      auto it = gdict.find(L.keys[lg]);
+      int g;
+      if (it == gdict.end()) {
+        g = (int)first.size();
+        gdict.emplace(L.keys[lg], g);
+        first.push_back(L.first[lg]);
+        state.resize(state.size() + (size_t)nv);
+      } else {
+        g = it->second;
+        if (L.first[lg] < first[(size_t)g]) first[(size_t)g] = L.first[lg];
+      }
+      for (int j = 0; j < nv; ++j)
+        agg_merge(state[(size_t)g * (size_t)nv + (size_t)j],
+                  L.acc[lg * (size_t)nv + (size_t)j]);
+    }
+  }
+  return true;
+}
+
 bool unique_int_dense(const int* p, R_xlen_t nrow, std::vector<R_xlen_t>& rows) {
   if (nrow == 0) return true;
   int minv = INT_MAX, maxv = INT_MIN;
@@ -1520,9 +1633,6 @@ extern "C" SEXP bt_group_agg_(SEXP df, SEXP s_by, SEXP s_value, SEXP s_fun, SEXP
   std::vector<AggState> state;
   const int nv = (int)val.size();
 
-  std::vector<int> codes;
-  bool have_codes = by.size() == 1 && group_single(VECTOR_ELT(df, by[0]), f.nrow, codes, first);
-
   std::vector<SEXP> vcols((size_t)nv);
   for (int j = 0; j < nv; ++j) {
     vcols[(size_t)j] = VECTOR_ELT(df, val[(size_t)j]);
@@ -1531,6 +1641,20 @@ extern "C" SEXP bt_group_agg_(SEXP df, SEXP s_by, SEXP s_value, SEXP s_fun, SEXP
       Rf_error("basetable: aggregate value columns must be numeric, integer, or logical");
   }
 
+  // Cardinality-aware dispatch for a single key column: below a few thousand
+  // groups the fused per-thread direct reducer wins; above that, per-thread
+  // dictionaries of the full key set cost more than one shared dictionary plus
+  // a parallel reduce.
+  int nth1 = by.size() == 1 ? clamp_threads(s_n_threads, f.nrow, 300000) : 1;
+  bool small_k = by.size() == 1 &&
+    sample_distinct(VECTOR_ELT(df, by[0]), f.nrow, 20000) <= 8000;
+  if (by.size() == 1 && nth1 > 1 && small_k &&
+      fused_group_agg_1key(VECTOR_ELT(df, by[0]), f.nrow, vcols, fun, na_rm, nth1, first, state)) {
+    // `first` and `state` are filled; skip to result assembly.
+  } else {
+
+  std::vector<int> codes;
+  bool have_codes = by.size() == 1 && group_single(VECTOR_ELT(df, by[0]), f.nrow, codes, first);
   int nth = have_codes ? clamp_threads(s_n_threads, f.nrow, 750000) : 1;
 
   if (have_codes && nth > 1) {
@@ -1596,6 +1720,8 @@ extern "C" SEXP bt_group_agg_(SEXP df, SEXP s_by, SEXP s_value, SEXP s_fun, SEXP
       }
     }
   }
+
+  }  // end fused-vs-fallback
 
   SEXP out = PROTECT(build_frame(df, first, by));
   R_xlen_t nk = Rf_xlength(out);
