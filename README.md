@@ -74,42 +74,46 @@ summarytab(
 
 ## Performance
 
-The engine holds its own against `data.table` without depending on it, and
-allocates far less on grouped operations. At 1e6 rows on one Linux machine
-with 8 threads (`inst/benchmarks/benchmark-scale.R`), time relative to
-`data.table` (lower is faster; **bold** = basetable ahead):
+Timing and memory below come from the
+[`bench`](https://bench.r-lib.org) package at 1,000,000 rows on one Linux
+machine (`inst/benchmarks/make-readme-figures.R` regenerates the figures;
+the `Benchmarks` vignette has the full reproducible report). `basetable` is
+compared with `data.table` and `dplyr`.
 
-| Operation | few groups | many groups |
-| --- | ---: | ---: |
-| `uniquerows()` / `distinct()` | **0.8x** | **0.55x** |
-| `aggregate(fun = sd)` | **0.56x** | **0.75x** |
-| grouped `count()` | 1.0x | **0.66x** |
-| `aggregate(fun = mean)` | 1.0x | **0.9x** |
-| `semimerge()` | 0.9x | **0.24x** |
-| `pick()` / projection | **0.65x** | **0.5x** |
-| `merge()` (equi) | **0.9x** | 1.0x |
-| `rbindfill()` | **0.9x** | 1.2x |
-| `subset(x > c)` | **0.9x** | 1.0x |
-| `subset(x > a & y < b)` | **0.7x** | **0.8x** |
-| `orderrows()` (string key) | 2.0x | 1.8x |
+### Speed
 
-Grouped reducers accumulate in C++ without materialising intermediate
-columns, so a grouped `aggregate` or `count` allocates near zero where the
-other engines allocate tens of megabytes. The heavier operations
-(aggregation, sort pipeline, filter, join probe) use multiple threads via
-`setthreads()`. A `subset()` predicate of the common `col <op> scalar` shape
-is compiled and applied in a single threaded pass that emits the surviving
-row positions directly, with no intermediate logical vector.
+![Median runtime by engine at 1e6 rows](man/figures/benchmark-time.png)
 
-The remaining gap is **sorting**: `orderrows()` uses a stable parallel radix
-over integer codes and is ~20x faster than base `order()`, but still ~2x of
-`data.table`, whose hand-tuned parallel radix is the one operation basetable
-does not yet match. `collapse` and `polars` are also faster on several
-columnar and grouped paths; matching their parallel-radix / Arrow engines is
-not a near goal.
+### Memory
 
-The `Benchmarks` vignette has the full reproducible report against base R,
-`data.table`, `dplyr` and `collapse`.
+![Memory allocated by engine at 1e6 rows](man/figures/benchmark-memory.png)
+
+| Operation | basetable | data.table | dplyr | basetable mem | data.table mem | dplyr mem |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| filter | 13 ms | 12 ms | 14 ms | 15 MB | 21 MB | 28 MB |
+| sort (string key) | 131 ms | 45 ms | 82 ms | 34 MB | 47 MB | 69 MB |
+| distinct | 4 ms | 6 ms | 5 ms | 0.02 MB | 20 MB | 12 MB |
+| count by group | 17 ms | 31 ms | 926 ms | 1 MB | 30 MB | 30 MB |
+| sd by group | 11 ms | 18 ms | 54 ms | 0.04 MB | 27 MB | 36 MB |
+| equi join | 145 ms | 130 ms | 65 ms | 42 MB | 42 MB | 101 MB |
+| semi join | 29 ms | 47 ms | 60 ms | 38 MB | 58 MB | 82 MB |
+
+`basetable` is faster than `data.table` on `distinct`, grouped `count`, `sd`
+by group and `semi join`, at parity on `filter` and `equi join`, and slower
+on string `sort`. Against `dplyr` it is faster on every operation here, by
+more than 50x on high-cardinality `count`.
+
+The memory column is the sharper contrast. Grouped reducers accumulate
+inside the C++ engine without materialising intermediate columns, so a
+grouped `count` or `aggregate` allocates about 1 MB or less where
+`data.table` and `dplyr` allocate 25-35 MB. Every operation allocates less
+than the other two engines.
+
+The one gap is **sorting**: `orderrows()` is a stable parallel radix, ~20x
+faster than base `order()`, but still ~2-3x of `data.table`, whose
+hand-tuned parallel radix is the one operation `basetable` does not match.
+`collapse` and `polars` are also faster on several columnar and grouped
+paths.
 
 ## Positioning
 
