@@ -100,7 +100,7 @@ goal.
 The `Benchmarks` vignette has the full reproducible report against base R,
 `data.table`, `dplyr`, `collapse` and `polars`.
 
-## How basetable compares
+## Positioning
 
 `data.table`, `collapse` and `polars` are faster on many grouped and columnar
 workloads and have far larger ecosystems; `dplyr` is the tidyverse standard.
