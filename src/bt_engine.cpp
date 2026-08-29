@@ -1017,34 +1017,107 @@ bool match_mask_int_single(SEXP x, SEXP y, int x_by, int y_by, SEXP out) {
   return true;
 }
 
-// Per-row integer rank of a character column in strcmp order, so ordering can
-// compare ints instead of running strcmp at every comparison. Equal content
-// shares a rank; NA rows sort first (!na_last) or last (na_last).
-std::vector<int> str_rank(SEXP col, R_xlen_t nrow, bool na_last) {
-  std::unordered_map<const void*, int> code;
-  std::vector<SEXP> distinct;
-  code.reserve((size_t)nrow);
-  for (R_xlen_t i = 0; i < nrow; ++i) {
-    SEXP s = STRING_ELT(col, i);
-    if (s == NA_STRING) continue;
-    if (code.emplace((const void*)s, 0).second) distinct.push_back(s);
+
+// Order-preserving uint64 code for one key column: sorting the codes ascending
+// reproduces R's ordering for that column. NA sorts last (na_last) or first.
+// `decreasing` reverses via bitwise complement, which also flips NA -- matching
+// basetable's existing decreasing behaviour.
+std::vector<uint64_t> order_codes(SEXP col, R_xlen_t nrow, bool na_last, bool decreasing,
+                                  bool& supported) {
+  supported = true;
+  std::vector<uint64_t> code((size_t)nrow);
+  const uint64_t NA_HI = ~(uint64_t)0;
+
+  if (TYPEOF(col) == STRSXP && !Rf_isFactor(col)) {
+    std::unordered_map<const void*, int> seen;
+    std::vector<SEXP> distinct;
+    for (R_xlen_t i = 0; i < nrow; ++i) {
+      SEXP s = STRING_ELT(col, i);
+      if (s == NA_STRING) continue;
+      if (seen.emplace((const void*)s, 0).second) distinct.push_back(s);
+    }
+    std::sort(distinct.begin(), distinct.end(),
+              [](SEXP a, SEXP b) { return std::strcmp(CHAR(a), CHAR(b)) < 0; });
+    for (size_t r = 0; r < distinct.size(); ++r) {
+      int rr = (r > 0 && std::strcmp(CHAR(distinct[r - 1]), CHAR(distinct[r])) == 0)
+        ? seen[(const void*)distinct[r - 1]] : (int)r + 1;
+      seen[(const void*)distinct[r]] = rr;
+    }
+    for (R_xlen_t i = 0; i < nrow; ++i) {
+      SEXP s = STRING_ELT(col, i);
+      if (s == NA_STRING) { code[(size_t)i] = na_last ? NA_HI : 0ULL; continue; }
+      uint64_t c = (uint64_t)seen[(const void*)s];
+      code[(size_t)i] = decreasing ? ~c : c;
+    }
+    return code;
   }
-  std::sort(distinct.begin(), distinct.end(), [](SEXP a, SEXP b) {
-    return std::strcmp(CHAR(a), CHAR(b)) < 0;
-  });
-  for (size_t r = 0; r < distinct.size(); ++r) {
-    int rr = (r > 0 && std::strcmp(CHAR(distinct[r - 1]), CHAR(distinct[r])) == 0)
-      ? code[(const void*)distinct[r - 1]]
-      : (int)r + 1;
-    code[(const void*)distinct[r]] = rr;
+
+  if (Rf_isFactor(col)) {
+    for (R_xlen_t i = 0; i < nrow; ++i) {
+      int v = INTEGER(col)[i];
+      if (v == NA_INTEGER) { code[(size_t)i] = na_last ? NA_HI : 0ULL; continue; }
+      uint64_t c = (uint64_t)v;
+      code[(size_t)i] = decreasing ? ~c : c;
+    }
+    return code;
   }
-  std::vector<int> rank((size_t)nrow);
-  int na_rank = na_last ? INT_MAX : INT_MIN;
-  for (R_xlen_t i = 0; i < nrow; ++i) {
-    SEXP s = STRING_ELT(col, i);
-    rank[(size_t)i] = (s == NA_STRING) ? na_rank : code[(const void*)s];
+
+  switch (TYPEOF(col)) {
+    case LGLSXP:
+    case INTSXP: {
+      const int* p = TYPEOF(col) == LGLSXP ? LOGICAL(col) : INTEGER(col);
+      for (R_xlen_t i = 0; i < nrow; ++i) {
+        int v = p[i];
+        if (v == NA_INTEGER) { code[(size_t)i] = na_last ? NA_HI : 0ULL; continue; }
+        uint64_t c = (uint64_t)((int64_t)v - (int64_t)INT_MIN) + 1;
+        code[(size_t)i] = decreasing ? ~c : c;
+      }
+      return code;
+    }
+    case REALSXP: {
+      const double* p = REAL(col);
+      for (R_xlen_t i = 0; i < nrow; ++i) {
+        double d = p[i];
+        if (ISNAN(d)) { code[(size_t)i] = na_last ? NA_HI : 0ULL; continue; }
+        uint64_t u;
+        std::memcpy(&u, &d, sizeof(u));
+        if ((u << 1) == 0) u = 0;  // -0.0 and +0.0 compare equal
+        // order-preserving: flip sign bit for positives, all bits for negatives
+        u ^= (uint64_t)(-(int64_t)(u >> 63)) | 0x8000000000000000ULL;
+        code[(size_t)i] = decreasing ? ~u : u;
+      }
+      return code;
+    }
+    default:
+      supported = false;
+      return code;
   }
-  return rank;
+}
+
+// Stable LSD radix sort of a permutation by a uint64 key, 8 bits per pass,
+// skipping passes whose byte is constant.
+void radix_order_by(std::vector<R_xlen_t>& ord, const std::vector<uint64_t>& key) {
+  size_t n = ord.size();
+  if (n < 2) return;
+  std::vector<R_xlen_t> buf(n);
+  for (int shift = 0; shift < 64; shift += 8) {
+    size_t count[256] = {0};
+    uint8_t first = (uint8_t)((key[(size_t)ord[0]] >> shift) & 0xFF);
+    bool constant = true;
+    for (size_t i = 0; i < n; ++i) {
+      uint8_t b = (uint8_t)((key[(size_t)ord[i]] >> shift) & 0xFF);
+      if (b != first) constant = false;
+      ++count[b];
+    }
+    if (constant) continue;
+    size_t acc = 0;
+    for (int b = 0; b < 256; ++b) { size_t c = count[b]; count[b] = acc; acc += c; }
+    for (size_t i = 0; i < n; ++i) {
+      uint8_t b = (uint8_t)((key[(size_t)ord[i]] >> shift) & 0xFF);
+      buf[count[b]++] = ord[i];
+    }
+    ord.swap(buf);
+  }
 }
 
 int cmp_value(SEXP col, R_xlen_t a, R_xlen_t b, bool na_last) {
@@ -1235,33 +1308,35 @@ extern "C" SEXP bt_order_(SEXP df, SEXP s_by, SEXP s_decreasing, SEXP s_na_last)
     Rf_error("basetable: decreasing length mismatch");
   bool na_last = Rf_asLogical(s_na_last) == TRUE;
 
-  // Pre-rank character key columns so the comparator stays integer-only.
-  std::vector<std::vector<int>> ranks(by.size());
-  for (size_t k = 0; k < by.size(); ++k) {
-    SEXP col = VECTOR_ELT(df, by[k]);
-    if (TYPEOF(col) == STRSXP && !Rf_isFactor(col))
-      ranks[k] = str_rank(col, f.nrow, na_last);
+  std::vector<R_xlen_t> ord((size_t)f.nrow);
+  for (R_xlen_t i = 0; i < f.nrow; ++i) ord[(size_t)i] = i;
+
+  // Try a stable multi-column LSD radix sort: sort by the last key column
+  // first, then each earlier one, so earlier keys dominate.
+  bool radix_ok = !by.empty();
+  std::vector<std::vector<uint64_t>> codes(by.size());
+  for (size_t k = 0; k < by.size() && radix_ok; ++k) {
+    bool dec = LOGICAL(s_decreasing)[k] == TRUE;
+    bool supported = false;
+    codes[k] = order_codes(VECTOR_ELT(df, by[k]), f.nrow, na_last, dec, supported);
+    if (!supported) radix_ok = false;
   }
 
-  std::vector<R_xlen_t> ord;
-  ord.reserve((size_t)f.nrow);
-  for (R_xlen_t i = 0; i < f.nrow; ++i) ord.push_back(i);
-  std::stable_sort(ord.begin(), ord.end(), [&](R_xlen_t a, R_xlen_t b) {
-    for (size_t k = 0; k < by.size(); ++k) {
-      int c;
-      if (!ranks[k].empty()) {
-        int ra = ranks[k][(size_t)a], rb = ranks[k][(size_t)b];
-        c = (ra > rb) - (ra < rb);
-      } else {
-        c = cmp_value(VECTOR_ELT(df, by[k]), a, b, na_last);
+  if (radix_ok) {
+    for (size_t kk = by.size(); kk-- > 0;) radix_order_by(ord, codes[kk]);
+  } else {
+    std::stable_sort(ord.begin(), ord.end(), [&](R_xlen_t a, R_xlen_t b) {
+      for (size_t k = 0; k < by.size(); ++k) {
+        int c = cmp_value(VECTOR_ELT(df, by[k]), a, b, na_last);
+        if (c != 0) {
+          bool dec = LOGICAL(s_decreasing)[k] == TRUE;
+          return dec ? c > 0 : c < 0;
+        }
       }
-      if (c != 0) {
-        bool dec = LOGICAL(s_decreasing)[k] == TRUE;
-        return dec ? c > 0 : c < 0;
-      }
-    }
-    return a < b;
-  });
+      return a < b;
+    });
+  }
+
   std::vector<int> cols = col_index(R_NilValue, f.ncol);
   return build_frame(df, ord, cols);
 }

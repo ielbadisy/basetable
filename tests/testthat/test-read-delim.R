@@ -97,8 +97,12 @@ test_that("btread lazy mode returns ALTREP character columns that behave", {
   expect_equal(sum(nchar(lazy$s2)), sum(nchar(eager$s2)))
 
   # ALTSTRING stays API-compliant by exposing element access without a raw
-  # writable data pointer.
-  expect_error(lazy$s1[2] <- "ZZ", "cannot access data pointer")
+  # writable data pointer: older R refuses the assignment, newer R materialises
+  # the column first. Either is safe; a silent corruption is not.
+  res <- tryCatch({ lazy$s1[2] <- "ZZ"; "materialised" },
+                  error = function(e) conditionMessage(e))
+  expect_true(identical(res, "materialised") || grepl("data pointer", res))
+  if (identical(res, "materialised")) expect_identical(lazy$s1[2], "ZZ")
 
   # serialises without the mapping
   f <- tempfile()
