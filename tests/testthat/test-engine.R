@@ -344,3 +344,29 @@ test_that("parallel membership probe agrees with serial (semi/anti/update)", {
   expect_equal(sort(unique(a$k)), sort(intersect(x$k, y$k)))
   expect_equal(nrow(a) + nrow(antimerge(x, y, by = "k")), n)
 })
+
+test_that("parallel equi-join probe and materialisation agree with serial", {
+  skip_on_cran()
+  set.seed(12)
+  n <- 1.2e6
+  x <- data.frame(k = sample(sprintf("k%05d", 1:2000), n, TRUE),
+                  a = rnorm(n), lab = sample(letters, n, TRUE),
+                  stringsAsFactors = FALSE)
+  y <- data.frame(k = sprintf("k%05d", sample(2000, 1500)),
+                  w = rnorm(1500), stringsAsFactors = FALSE)
+
+  old <- getOption("basetable.threads"); on.exit(options(basetable.threads = old), add = TRUE)
+  options(basetable.threads = 8L)
+  i8 <- as.data.frame(merge(x, y, by = "k"))
+  l8 <- as.data.frame(merge(x, y, by = "k", all.x = TRUE))
+  options(basetable.threads = 1L)
+  i1 <- as.data.frame(merge(x, y, by = "k"))
+  l1 <- as.data.frame(merge(x, y, by = "k", all.x = TRUE))
+
+  ord <- function(d) { d <- d[do.call(order, d), ]; rownames(d) <- NULL; d }
+  expect_identical(ord(i8), ord(i1))
+  expect_identical(ord(l8), ord(l1))
+  expect_equal(nrow(l1), n)
+  ref <- base::merge(x, y, by = "k")
+  expect_equal(ord(i1)[names(ref)], ord(ref), ignore_attr = TRUE)
+})

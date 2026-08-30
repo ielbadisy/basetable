@@ -1,3 +1,12 @@
+# basetable 1.3.1
+
+## Performance
+
+* Equi joins (`merge()` and the inner/left cases behind it) now probe the
+  build side in parallel and gather the atomic output columns on worker
+  threads. On the 1e6-row reference join this moves `merge()` from roughly
+  1.7x of `data.table` to about parity.
+
 # basetable 1.3.0
 
 ## New features

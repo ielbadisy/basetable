@@ -67,14 +67,20 @@ high byte, then sorts partitions independently in cache, so each pass is
 local and the threads do not contend on one shared output buffer. This is a
 full rewrite of `radix_pairs`, not an incremental change.
 
-### 2. Equi-join throughput
+### 2. Equi-join -- consistent win
 
-`merge()` is only at parity with `data.table` and loses to `dplyr`'s hash
-join (roughly 145 ms vs 130 ms vs 65 ms at 1e6 rows). The `bt_join_` build
-and probe are single-threaded. Parallelise: partition the build side by key
-hash into per-thread bins, probe in parallel, then materialise with the
-existing threaded gather. The membership probe (`bt_match_mask_`) already
-shows this works for semi/anti.
+`merge()` now probes in parallel (per-thread match buffers, concatenated in
+thread order) and gathers the atomic output columns on worker threads, which
+took it from ~1.7x of `data.table` to about parity (~37 ms vs ~38 ms at 1e6
+rows, inner and left). Full/right outer still uses the serial path because it
+needs shared `y_matched` bookkeeping.
+
+For a *consistent* edge rather than parity: a single-key fast path that skips
+the `KeyBuf` machinery -- map the one key column to an int (int/factor
+directly, string by interned CHARSXP address, double by `real_slot`), build
+one `int -> y-row-list` table, probe in parallel. `match_mask_int_single` is
+the template; it needs extending to string/double keys and to emit match
+lists rather than a mask.
 
 ### 3. Parallelise the remaining grouping kernels
 

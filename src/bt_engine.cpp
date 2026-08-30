@@ -1479,6 +1479,34 @@ SEXP join_take(SEXP src, const std::vector<R_xlen_t>& rows) {
   return out;
 }
 
+// Thread-safe gather for an already-allocated atomic dst (LGL / INT / REAL),
+// with rows[i] < 0 meaning NA. No R API calls, safe to run on worker threads.
+bool join_atomic_kind(SEXP s) {
+  int t = TYPEOF(s);
+  return (t == LGLSXP || t == INTSXP || t == REALSXP) && !Rf_isFactor(s);
+}
+void join_gather_atomic(SEXP dst, SEXP src, const std::vector<R_xlen_t>& rows) {
+  R_xlen_t n = (R_xlen_t)rows.size();
+  switch (TYPEOF(src)) {
+    case LGLSXP: case INTSXP: {
+      const int* s = INTEGER(src); int* d = INTEGER(dst);
+      for (R_xlen_t i = 0; i < n; ++i) {
+        R_xlen_t r = rows[(size_t)i];
+        d[i] = r < 0 ? NA_INTEGER : s[r];
+      }
+      break;
+    }
+    case REALSXP: {
+      const double* s = REAL(src); double* d = REAL(dst);
+      for (R_xlen_t i = 0; i < n; ++i) {
+        R_xlen_t r = rows[(size_t)i];
+        d[i] = r < 0 ? NA_REAL : s[r];
+      }
+      break;
+    }
+  }
+}
+
 // Merged key column: take from the x row when present, else the matching y row.
 // When x and y key columns have different (numeric) types, the result is
 // promoted to double, the way base::merge() coerces mismatched keys.
@@ -2084,7 +2112,8 @@ extern "C" SEXP bt_group_id_(SEXP df, SEXP s_by) {
 // collide between the two non-key sets. An empty key set produces the
 // Cartesian product.
 extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
-                         SEXP s_all_x, SEXP s_all_y, SEXP s_suffixes) {
+                         SEXP s_all_x, SEXP s_all_y, SEXP s_suffixes,
+                         SEXP s_n_threads) {
   Frame xf = frame_from(x);
   Frame yf = frame_from(y);
   std::vector<int> x_by = col_index(s_x_by, xf.ncol);
@@ -2121,29 +2150,70 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
 
   std::vector<R_xlen_t> xrows, yrows;
   std::vector<char> y_matched(all_y ? (size_t)yf.nrow : 0, 0);
-  for (R_xlen_t i = 0; i < xf.nrow; ++i) {
-    const std::vector<R_xlen_t>* matches = nullptr;
-    if (cross) {
-      matches = &all_y_rows;
-    } else {
-      codec.encode(x, x_by, i, buf);
-      auto it = ymap.find(buf);
-      if (it != ymap.end()) matches = &it->second;
+
+  // Parallel probe for the common inner / left join (no `all_y`): each worker
+  // probes a row range into per-thread buffers, which are then concatenated in
+  // thread order so x-row order is preserved. `codec` is frozen and `ymap` is
+  // only read, so concurrent encode/find is safe. Right / full outer joins
+  // need the shared `y_matched` bookkeeping and stay on the serial path.
+  int jnth = clamp_threads(s_n_threads, xf.nrow, 200000);
+  int JT = (!cross && !all_y && jnth >= 2 && xf.nrow >= 100000) ? jnth : 1;
+  if (JT >= 2) {
+    std::vector<std::vector<R_xlen_t>> lx((size_t)JT), ly((size_t)JT);
+    R_xlen_t chunk = (xf.nrow + JT - 1) / JT;
+    std::vector<std::thread> pool;
+    for (int t = 0; t < JT; ++t) {
+      R_xlen_t lo = (R_xlen_t)t * chunk, hi = std::min<R_xlen_t>(xf.nrow, lo + chunk);
+      if (lo >= hi) break;
+      pool.emplace_back([&, t, lo, hi]() {
+        KeyBuf b;
+        auto& vx = lx[(size_t)t];
+        auto& vy = ly[(size_t)t];
+        for (R_xlen_t i = lo; i < hi; ++i) {
+          codec.encode(x, x_by, i, b);
+          auto it = ymap.find(b);
+          if (it != ymap.end() && !it->second.empty()) {
+            for (R_xlen_t yi : it->second) { vx.push_back(i); vy.push_back(yi); }
+          } else if (all_x) {
+            vx.push_back(i); vy.push_back(-1);
+          }
+        }
+      });
     }
-    if (matches && !matches->empty()) {
-      for (R_xlen_t yi : *matches) {
-        xrows.push_back(i);
-        yrows.push_back(yi);
-        if (all_y) y_matched[(size_t)yi] = 1;
+    for (auto& p : pool) p.join();
+    size_t tot = 0;
+    for (auto& v : lx) tot += v.size();
+    xrows.reserve(tot);
+    yrows.reserve(tot);
+    for (int t = 0; t < JT; ++t) {
+      xrows.insert(xrows.end(), lx[(size_t)t].begin(), lx[(size_t)t].end());
+      yrows.insert(yrows.end(), ly[(size_t)t].begin(), ly[(size_t)t].end());
+    }
+  } else {
+    for (R_xlen_t i = 0; i < xf.nrow; ++i) {
+      const std::vector<R_xlen_t>* matches = nullptr;
+      if (cross) {
+        matches = &all_y_rows;
+      } else {
+        codec.encode(x, x_by, i, buf);
+        auto it = ymap.find(buf);
+        if (it != ymap.end()) matches = &it->second;
       }
-    } else if (all_x) {
-      xrows.push_back(i);
-      yrows.push_back(-1);
+      if (matches && !matches->empty()) {
+        for (R_xlen_t yi : *matches) {
+          xrows.push_back(i);
+          yrows.push_back(yi);
+          if (all_y) y_matched[(size_t)yi] = 1;
+        }
+      } else if (all_x) {
+        xrows.push_back(i);
+        yrows.push_back(-1);
+      }
     }
-  }
-  if (all_y) {
-    for (R_xlen_t j = 0; j < yf.nrow; ++j)
-      if (!y_matched[(size_t)j]) { xrows.push_back(-1); yrows.push_back(j); }
+    if (all_y) {
+      for (R_xlen_t j = 0; j < yf.nrow; ++j)
+        if (!y_matched[(size_t)j]) { xrows.push_back(-1); yrows.push_back(j); }
+    }
   }
 
   R_xlen_t nout = (R_xlen_t)xrows.size();
@@ -2167,6 +2237,10 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
 
   SEXP out = PROTECT(Rf_allocVector(VECSXP, ncol_out));
   SEXP names = PROTECT(Rf_allocVector(STRSXP, ncol_out));
+  // Atomic output columns are allocated here and gathered on worker threads
+  // afterwards; key and string/list columns are materialised inline.
+  struct GJob { SEXP dst; SEXP src; const std::vector<R_xlen_t>* rows; };
+  std::vector<GJob> jobs;
   R_xlen_t p = 0;
   for (size_t k = 0; k < x_by.size(); ++k) {
     SET_VECTOR_ELT(out, p, join_take_key(VECTOR_ELT(x, x_by[k]), VECTOR_ELT(y, y_by[k]), xrows, yrows));
@@ -2174,19 +2248,54 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
     ++p;
   }
   for (int c : x_extra) {
-    SET_VECTOR_ELT(out, p, join_take(VECTOR_ELT(x, c), xrows));
+    SEXP src = VECTOR_ELT(x, c);
+    if (join_atomic_kind(src)) {
+      SEXP dst = Rf_allocVector(TYPEOF(src), nout);
+      SET_VECTOR_ELT(out, p, dst);
+      copy_common_attrs(dst, src);
+      jobs.push_back({dst, src, &xrows});
+    } else {
+      SET_VECTOR_ELT(out, p, join_take(src, xrows));
+    }
     std::string nm = CHAR(STRING_ELT(x_names, c));
     if (dup.count(nm)) { nm += sfx_x; SET_STRING_ELT(names, p, Rf_mkChar(nm.c_str())); }
     else SET_STRING_ELT(names, p, STRING_ELT(x_names, c));
     ++p;
   }
   for (int c : y_extra) {
-    SET_VECTOR_ELT(out, p, join_take(VECTOR_ELT(y, c), yrows));
+    SEXP src = VECTOR_ELT(y, c);
+    if (join_atomic_kind(src)) {
+      SEXP dst = Rf_allocVector(TYPEOF(src), nout);
+      SET_VECTOR_ELT(out, p, dst);
+      copy_common_attrs(dst, src);
+      jobs.push_back({dst, src, &yrows});
+    } else {
+      SET_VECTOR_ELT(out, p, join_take(src, yrows));
+    }
     std::string nm = CHAR(STRING_ELT(y_names, c));
     if (dup.count(nm)) { nm += sfx_y; SET_STRING_ELT(names, p, Rf_mkChar(nm.c_str())); }
     else SET_STRING_ELT(names, p, STRING_ELT(y_names, c));
     ++p;
   }
+
+  if (!jobs.empty()) {
+    int mnth = clamp_threads(s_n_threads, nout, 100000);
+    int MT = (mnth < 2 || nout < 100000 || (int)jobs.size() < 2)
+      ? 1 : std::min<int>(mnth, (int)jobs.size());
+    if (MT <= 1) {
+      for (auto& j : jobs) join_gather_atomic(j.dst, j.src, *j.rows);
+    } else {
+      std::vector<std::thread> pool;
+      for (int w = 0; w < MT; ++w) {
+        pool.emplace_back([&, w]() {
+          for (size_t a = (size_t)w; a < jobs.size(); a += (size_t)MT)
+            join_gather_atomic(jobs[a].dst, jobs[a].src, *jobs[a].rows);
+        });
+      }
+      for (auto& t : pool) t.join();
+    }
+  }
+
   Rf_setAttrib(out, R_NamesSymbol, names);
   Rf_setAttrib(out, R_RowNamesSymbol, make_row_names(nout));
   set_table_class(out);

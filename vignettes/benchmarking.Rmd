@@ -185,10 +185,10 @@ ggplot(res, aes(engine, mem_mb, fill = engine)) +
 ## Reading the results
 
 `basetable` beats `data.table` on `distinct`, grouped `count`, `sd` by
-group, and (on the common `col <op> scalar` shape) `filter`; it is close on
-`merge` and `semi join`, and trails on string `sort`. Against `dplyr` it is
-faster across the board, often by an order of magnitude on the grouped
-operations.
+group, `semi join`, and edges it on `equi join` and (on the common
+`col <op> scalar` shape) `filter`; the one operation it trails on is string
+`sort`. Against `dplyr` it is faster across the board, often by an order of
+magnitude on the grouped operations.
 
 The memory panel is the clearest separation. A grouped `aggregate` or
 `count` in `basetable` reduces inside the C++ engine without building

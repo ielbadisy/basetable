@@ -82,7 +82,8 @@ bt_join_rows <- function(x, y, by, all.x = FALSE, all.y = FALSE, suffixes = c(".
     as.integer(match(by, names(x))),
     as.integer(match(by, names(y))),
     isTRUE(all.x), isTRUE(all.y),
-    as.character(suffixes)
+    as.character(suffixes),
+    as.integer(bt_default_threads())
   ))
 }
 

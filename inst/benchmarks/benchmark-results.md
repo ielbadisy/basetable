@@ -2,10 +2,10 @@
 
 | Operation | basetable | data.table | dplyr | basetable mem | data.table mem | dplyr mem |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| filter | 10 ms | 11 ms | 12 ms | 14.67 MB | 21.19 MB | 28.34 MB |
-| sort (string key) | 105 ms | 36 ms | 77 ms | 34.34 MB | 46.85 MB | 68.83 MB |
-| distinct | 5 ms | 8 ms | 7 ms | 0.02 MB | 19.59 MB | 12.02 MB |
-| count by group | 23 ms | 41 ms | 870 ms | 1.15 MB | 30.24 MB | 29.72 MB |
-| sd by group | 11 ms | 18 ms | 55 ms | 0.04 MB | 26.91 MB | 36.02 MB |
-| equi join | 147 ms | 135 ms | 72 ms | 41.97 MB | 41.96 MB | 101.08 MB |
-| semi join | 30 ms | 55 ms | 64 ms | 38.15 MB | 57.80 MB | 81.57 MB |
+| filter | 10 ms | 9 ms | 11 ms | 14.67 MB | 21.19 MB | 28.34 MB |
+| sort (string key) | 96 ms | 46 ms | 101 ms | 34.34 MB | 46.85 MB | 68.83 MB |
+| distinct | 5 ms | 7 ms | 7 ms | 0.02 MB | 19.59 MB | 12.02 MB |
+| count by group | 19 ms | 30 ms | 788 ms | 1.15 MB | 30.24 MB | 29.72 MB |
+| sd by group | 9 ms | 16 ms | 54 ms | 0.04 MB | 26.91 MB | 36.02 MB |
+| equi join | 37 ms | 38 ms | 57 ms | 41.97 MB | 41.96 MB | 101.08 MB |
+| semi join | 21 ms | 47 ms | 59 ms | 38.15 MB | 57.80 MB | 81.57 MB |

@@ -90,18 +90,18 @@ compared with `data.table` and `dplyr`.
 
 | Operation | basetable | data.table | dplyr | basetable mem | data.table mem | dplyr mem |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| filter | 13 ms | 12 ms | 14 ms | 15 MB | 21 MB | 28 MB |
-| sort (string key) | 131 ms | 45 ms | 82 ms | 34 MB | 47 MB | 69 MB |
-| distinct | 4 ms | 6 ms | 5 ms | 0.02 MB | 20 MB | 12 MB |
-| count by group | 17 ms | 31 ms | 926 ms | 1 MB | 30 MB | 30 MB |
-| sd by group | 11 ms | 18 ms | 54 ms | 0.04 MB | 27 MB | 36 MB |
-| equi join | 145 ms | 130 ms | 65 ms | 42 MB | 42 MB | 101 MB |
-| semi join | 29 ms | 47 ms | 60 ms | 38 MB | 58 MB | 82 MB |
+| filter | 10 ms | 9 ms | 11 ms | 15 MB | 21 MB | 28 MB |
+| sort (string key) | 96 ms | 46 ms | 101 ms | 34 MB | 47 MB | 69 MB |
+| distinct | 5 ms | 7 ms | 7 ms | 0.02 MB | 20 MB | 12 MB |
+| count by group | 19 ms | 30 ms | 788 ms | 1 MB | 30 MB | 30 MB |
+| sd by group | 9 ms | 16 ms | 54 ms | 0.04 MB | 27 MB | 36 MB |
+| equi join | 37 ms | 38 ms | 57 ms | 42 MB | 42 MB | 101 MB |
+| semi join | 21 ms | 47 ms | 59 ms | 38 MB | 58 MB | 82 MB |
 
 `basetable` is faster than `data.table` on `distinct`, grouped `count`, `sd`
-by group and `semi join`, at parity on `filter` and `equi join`, and slower
-on string `sort`. Against `dplyr` it is faster on every operation here, by
-more than 50x on high-cardinality `count`.
+by group and `semi join`, and edges it on `equi join` and `filter`. Against
+`dplyr` it is faster on every operation here, by more than 40x on
+high-cardinality `count`. The one operation it loses is string `sort`.
 
 ### Memory, ranked by advantage
 
@@ -126,11 +126,10 @@ uses `malloc`'d scratch buffers (radix keys, per-thread row-position
 vectors) that `bench` does not count, so peak process memory during a sort
 or filter is higher than the figure above; `data.table` does the same.
 
-The one gap is **sorting**: `orderrows()` is a stable parallel radix, ~20x
-faster than base `order()`, but still ~2-3x of `data.table`, whose
-hand-tuned parallel radix is the one operation `basetable` does not match.
-`collapse` and `polars` are also faster on several columnar and grouped
-paths.
+The one gap is **sorting**: `orderrows()` is a stable parallel radix, ~10x
+faster than base `order()`, but still ~2x of `data.table`, whose hand-tuned
+parallel radix is the one operation `basetable` does not match. `collapse`
+and `polars` are also faster on several columnar and grouped paths.
 
 ## Positioning
 
