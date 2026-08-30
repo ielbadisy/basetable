@@ -6,7 +6,7 @@ Authors@R:
 Description: A tabular data manipulation, exploration and validation toolkit
     with a base R-style interface (subset, transform, aggregate, merge, split)
     and no external computation dependency. Grouping, joins, ordering,
-    filtering, reshaping and delimited-file reading run in a bundled C++
+    filtering, reshaping and delimited-file reading run in a bundled 'C++'
     engine that uses multiple threads for the heavier operations. Grouped
     reducers accumulate in compiled code without materialising intermediate
     columns, so grouped aggregation and counting allocate close to nothing.

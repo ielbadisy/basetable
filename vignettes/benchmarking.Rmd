@@ -25,6 +25,8 @@ HAVE_DP <- have("dplyr")
 # regenerates the figures shown in the README.
 N     <- as.integer(Sys.getenv("BT_VIGNETTE_N", "3e5"))
 REPS  <- as.integer(Sys.getenv("BT_VIGNETTE_REPS", "9"))
+
+.old_threads <- getOption("basetable.threads")
 basetable::setthreads(percent = 100)
 ```
 
@@ -202,3 +204,7 @@ but `data.table`'s hand-tuned radix stays ahead.
 
 Numbers are machine- and size-specific. Set `BT_VIGNETTE_N` /
 `BT_VIGNETTE_REPS` to reproduce at other sizes.
+
+```{r teardown, include=FALSE}
+options(basetable.threads = .old_threads)
+```

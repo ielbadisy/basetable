@@ -2,14 +2,20 @@
 
 ## Note to CRAN
 
-A previous submission of this package (version 0.9.0) is still in the
-submission pipeline and has not yet been published. This 1.0.0 upload is
-intended to **replace** that pending submission, not to sit alongside it.
-0.9.0 was a verb-renaming release; 1.0.0 additionally removes the
-`data.table` dependency entirely in favour of a bundled C++ engine, so it
-supersedes 0.9.0 in full. Please discard the pending 0.9.0 tarball and
-review this one instead. Happy to re-submit under whatever procedure you
-prefer.
+This 1.0.0 upload supersedes the earlier 0.9.0 submission, which was
+returned with a manual review (K. Lauseker, 2026-08-21). 0.9.0 was a
+verb-renaming release; 1.0.0 additionally removes the 'data.table'
+dependency entirely in favour of a bundled 'C++' engine. Please review this
+version in place of 0.9.0.
+
+Both points from the 0.9.0 review are addressed:
+
+* Software names in the Description are now single-quoted ('C++',
+  'basetable').
+* The vignettes no longer leave `options()` changed. `functions-reference`
+  and `benchmarking` capture the prior values in their setup chunk and
+  restore them in a teardown chunk (`options(.old_opts)` /
+  `options(basetable.threads = .old_threads)`).
 
 ## Test environments
 

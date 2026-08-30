@@ -18,7 +18,7 @@ vignette: >
 #| include: false
 knitr::opts_chunk$set(warning = FALSE)
 library(basetable)
-options(width = 90, digits = 4)
+.old_opts <- options(width = 90, digits = 4)
 ```
 
 # Introduction
@@ -866,3 +866,8 @@ This document covers all of `basetable`'s exported functions. For the
 performance story (how basetable compares to base R and dplyr, and where
 its overhead was tracked down and fixed), see the companion `benchmarking`
 vignette.
+
+```{r teardown}
+#| include: false
+options(.old_opts)
+```
