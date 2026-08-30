@@ -103,11 +103,28 @@ by group and `semi join`, at parity on `filter` and `equi join`, and slower
 on string `sort`. Against `dplyr` it is faster on every operation here, by
 more than 50x on high-cardinality `count`.
 
-The memory column is the sharper contrast. Grouped reducers accumulate
-inside the C++ engine without materialising intermediate columns, so a
-grouped `count` or `aggregate` allocates about 1 MB or less where
-`data.table` and `dplyr` allocate 25-35 MB. Every operation allocates less
-than the other two engines.
+### Memory, ranked by advantage
+
+`basetable` allocates the least (or tied least) on every operation measured.
+The size of the edge splits in two: overwhelming on grouped reductions,
+where the result is tiny and nothing intermediate is materialised in R;
+modest on operations that return a full table, where the output frame itself
+sets a floor.
+
+| Operation | basetable | data.table | dplyr | basetable vs data.table |
+| --- | ---: | ---: | ---: | ---: |
+| distinct | 0.02 MB | 20 MB | 12 MB | ~1000x less |
+| sd by group | 0.04 MB | 27 MB | 36 MB | ~600x less |
+| count by group | 1 MB | 30 MB | 30 MB | ~30x less |
+| semi join | 38 MB | 58 MB | 82 MB | ~1.5x less |
+| filter | 15 MB | 21 MB | 28 MB | ~1.4x less |
+| sort (string key) | 34 MB | 47 MB | 69 MB | ~1.4x less |
+| equi join | 42 MB | 42 MB | 101 MB | ~parity |
+
+These are R-level allocations as reported by `bench`. The C++ engine also
+uses `malloc`'d scratch buffers (radix keys, per-thread row-position
+vectors) that `bench` does not count, so peak process memory during a sort
+or filter is higher than the figure above; `data.table` does the same.
 
 The one gap is **sorting**: `orderrows()` is a stable parallel radix, ~20x
 faster than base `order()`, but still ~2-3x of `data.table`, whose
