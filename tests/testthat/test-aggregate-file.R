@@ -64,12 +64,12 @@ test_that("count counts grouped rows", {
                    merge(c2, d2, by = c("g", "k"))$n.y)
 })
 
-test_that("distinct and freq", {
+test_that("uniquerows (file) and freq", {
   set.seed(4); n <- 1e5L
   df <- data.frame(g = sample(letters[1:4], n, TRUE), k = sample.int(15L, n, TRUE))
   p <- tempfile(fileext = ".csv"); btwrite(df, p)
 
-  d <- distinct(p, cols = c("g", "k"))
+  d <- uniquerows(p, cols = c("g", "k"))
   u <- uniquerows(df, cols = c("g", "k"))
   expect_equal(nrow(d), nrow(u))
   expect_equal(nrow(merge(d, u, by = c("g", "k"))), nrow(u))

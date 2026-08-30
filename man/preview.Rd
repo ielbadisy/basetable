@@ -1,8 +1,8 @@
-\name{glimpse}
-\alias{glimpse}
+\name{preview}
+\alias{preview}
 \title{Compact table preview}
 \usage{
-glimpse(data, width = getOption("width"))
+preview(data, width = getOption("width"))
 }
 \arguments{
 \item{data}{A data frame or data table.}

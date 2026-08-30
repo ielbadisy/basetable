@@ -148,12 +148,14 @@ workloads and have far larger ecosystems; `dplyr` is the tidyverse standard.
 
 ## Using basetable alongside dplyr and data.table
 
-`basetable` reuses base-R verb names (`subset()`, `merge()`, `count()`,
-`transform()`, `split()`) on purpose, and deliberately does **not** ship
-dplyr-named verbs, so it can be attached next to `dplyr` without shadowing its
-grammar. It still shares the true base-R names with other packages, so if you
-`library(data.table)` in the same session, whichever attaches **last** wins
-for a shared name. Two fixes:
+`basetable` reuses base-R verb names (`subset()`, `merge()`, `transform()`,
+`split()`, `aggregate()`) on purpose. It does **not** ship the dplyr-coined
+verbs (`filter()`, `select()`, `mutate()`, `arrange()`, `summarise()`,
+`distinct()`, `glimpse()`, ...), so it can be attached next to `dplyr`
+without shadowing its grammar. The two names it shares with `dplyr` are
+`count()` and `pick()`, kept because they read as base-style verbs; with
+both packages attached, whichever was attached **last** wins for those (and
+for the base-R names `data.table` also defines). Two fixes:
 
 - call it explicitly: `basetable::transform(...)`;
 - or `conflicted::conflict_prefer("transform", "basetable")` once per session.
@@ -173,12 +175,12 @@ for a shared name. Two fixes:
 | Split / apply | `split()`, `applyby()` | `split()` |
 | Reshaping | `tolong()`, `towide()`, `reshape()`, `stack()`, `unstack()` | base equivalents |
 | Completion | `completegrid()` | `expand.grid()` + join |
-| File I/O | `btread()`, `btwrite()`; `aggregate()` / `count()` / `distinct()` / `freq()` also take a file path | `read.delim()`, fused file to result |
-| Inspection | `glimpse()`, `dims()`, `types()`, `headtail()` | `str()`, `dim()`, `head()` |
+| File I/O | `btread()`, `btwrite()`; `aggregate()` / `count()` / `uniquerows()` / `freq()` also take a file path | `read.delim()`, fused file to result |
+| Inspection | `preview()`, `dims()`, `types()`, `headtail()` | `str()`, `dim()`, `head()` |
 | EDA | `describe()`, `missingness()`, `profile()`, `freq()`, `summarytab()`, `compare()` | base summaries |
 
 `btread()` memory-maps the file and, with `lazy = TRUE`, returns columns as
-ALTREP vectors parsed on first access. `aggregate()`, `count()`, `distinct()`
+ALTREP vectors parsed on first access. `aggregate()`, `count()`, `uniquerows()`
 and `freq()` accept a single file path as their first argument and fuse the
 parse with the grouping, so unused columns are never materialised.
 

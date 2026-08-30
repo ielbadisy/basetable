@@ -28,10 +28,10 @@ test_that("percentchange/percentrank", {
   expect_equal(out[4], 1)
 })
 
-test_that("cumcount/cumedist/cummean", {
+test_that("cumcount/cumedist/cumavg", {
   expect_equal(cumcount(c("a", "b", "c")), 1:3)
   expect_equal(cumedist(c("a", "a", "b")), cumsum(!duplicated(c("a", "a", "b"))) / 1:3)
-  expect_equal(cummean(c(1, 2, 3)), c(1, 1.5, 2))
+  expect_equal(cumavg(c(1, 2, 3)), c(1, 1.5, 2))
 })
 
 test_that("denserank ranks by sorted value with no gaps, ties sharing a rank", {

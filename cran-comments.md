@@ -1,17 +1,16 @@
-# CRAN submission comments: basetable 1.0.0
+# CRAN submission comments: basetable 1.1.0
 
 ## Note to CRAN
 
-This 1.0.0 upload supersedes the earlier 0.9.0 submission, which was
-returned with a manual review (K. Lauseker, 2026-08-21). 0.9.0 was a
-verb-renaming release; 1.0.0 additionally removes the 'data.table'
-dependency entirely in favour of a bundled 'C++' engine. Please review this
-version in place of 0.9.0.
+This upload supersedes the earlier 0.9.0 submission, which was returned with
+a manual review (K. Lauseker, 2026-08-21). Since then the package removed its
+'data.table' dependency in favour of a bundled 'C++' engine and renamed a few
+exports that clashed with other packages, so it is now at 1.1.0. Please
+review this version in place of 0.9.0.
 
 Both points from the 0.9.0 review are addressed:
 
-* Software names in the Description are now single-quoted ('C++',
-  'basetable').
+* Software names in the Description are single-quoted ('C++', 'basetable').
 * The vignettes no longer leave `options()` changed. `functions-reference`
   and `benchmarking` capture the prior values in their setup chunk and
   restore them in a teardown chunk (`options(.old_opts)` /
@@ -43,8 +42,8 @@ CRAN's incoming checks will also raise the usual "New submission" NOTE.
 
 ## Release summary
 
-This is a major release. `basetable` no longer depends on `data.table`. Every
-operation now runs on a native C++ engine bundled with the package:
+First CRAN release. `basetable` depends on no external computation package.
+Every operation runs on a native C++ engine bundled with the package:
 projection, filtering, ordering, distinct and duplicate detection, grouping,
 grouped reducers, all join kinds, row-binding and `subset()` predicate
 evaluation are compiled `.Call` kernels, several of them multi-threaded via

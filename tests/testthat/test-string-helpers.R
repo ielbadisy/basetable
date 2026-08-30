@@ -19,7 +19,7 @@ test_that("substring helpers", {
 })
 
 test_that("pattern-matching helpers", {
-  expect_equal(contains(c("abc", "xyz"), "b"), c(TRUE, FALSE))
+  expect_equal(containstext(c("abc", "xyz"), "b"), c(TRUE, FALSE))
   expect_equal(countmatch("aXaXa", "X"), 2L)
   expect_equal(locate("xxabcxx", "abc")[[1]], 3L)
   expect_equal(unlist(locateall("aXaXa", "X")), c(2L, 4L))

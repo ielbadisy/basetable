@@ -2,7 +2,7 @@
 
 | Family | Intent | Exported function | Base relationship | Backend relationship | Why not dplyr-style naming |
 | --- | --- | --- | --- | --- | --- |
-| Inspection | Compact structure preview | `glimpse()` | Extends `str()` with tabular focus | Formats metadata after standardization | `glimpse()` is descriptive; `summarise()`-style names are unrelated |
+| Inspection | Compact structure preview | `preview()` | Extends `str()` with tabular focus | Formats metadata after standardization | `preview()` is descriptive; the tidyverse `glimpse()` name is avoided; `summarise()`-style names are unrelated |
 | Inspection | Dimensions | `dims()` | Thin wrapper around `dim()` | No special backend logic needed | Avoids turning shape inspection into a verb grammar |
 | Inspection | Column type summary | `types()` | Extends `class()` / `typeof()` | Reads normalized table metadata | Distinct from `across()`-style type tooling |
 | Inspection | First and last rows | `headtail()` | Combines `head()` and `tail()` | Uses ordinary row slicing | More compact than ad hoc preview verbs |
@@ -11,7 +11,7 @@
 | Columns | Keep columns | `pick()` | Mirrors positive column indexing | Validated column selection | `select()` is too strongly tied to dplyr |
 | Columns | Drop columns | `drop()` | Mirrors negative column indexing | Set difference over names | `select(-x)` is a dplyr idiom; `drop()` is explicit |
 | Columns | Rename columns | `renamecols()` | Extends `names<-()` with `new = old` pairs | `data.table::setnames()` | `rename()` is a dplyr verb name; `renamecols()` names the action explicitly |
-| Rows | Unique rows | `uniquerows()` | Direct extension of `unique()` | `data.table`'s `unique()` | `distinct()` is a dplyr verb name; pairs with `duplicaterows()` |
+| Rows | Unique rows | `uniquerows()` | Direct extension of `unique()` | `data.table`'s `unique()` | dplyr's `distinct()` name is avoided; pairs with `duplicaterows()` |
 | Transform | Add/modify columns | `transform()` | Direct base analogue | Mutable `data.table` assignment | Avoids `mutate()` grammar |
 | Transform | Block mutation/removal | `within()` | Direct base analogue | Evaluate then rebuild | Base name is already correct |
 | Order | Sort rows | `reorder()` | Extends `order()` to data frames | `setorderv()` handles multi-column ordering | Avoids SQL-flavored `arrange()` |

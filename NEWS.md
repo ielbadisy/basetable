@@ -1,8 +1,8 @@
-# basetable 1.0.0
+# basetable 1.1.0
 
 basetable is now a self-contained data-manipulation package with a base-R
 interface and a bundled C++ execution engine. It has no external computation
-dependency.
+dependency. This is the first CRAN release.
 
 ## Breaking changes
 
@@ -15,10 +15,16 @@ dependency.
   plain frame. The `as =` argument of `btread()` and the file readers now
   takes `"basetable"` in place of `"data.table"`.
 * **The fused file readers lost their `bt_` prefix.** `aggregate()`,
-  `count()`, `distinct()` (new) and `freq()` now accept a single file path as
+  `count()`, `uniquerows()` and `freq()` now accept a single file path as
   their first argument and route to the one-pass scan, so there is one name
   per operation whether the input is a data frame or a delimited file.
   `bt_aggregate()`, `bt_count()`, `bt_distinct()` and `bt_freq()` are removed.
+* **Names coined by other packages are avoided.** The string predicates
+  `contains()` / `matches()` (tidyselect selection helpers) are now
+  `containstext()` / `matchestext()`; `glimpse()` (tibble) is `preview()`;
+  `cummean()` (dplyr) is `cumavg()`. `distinct()` is dropped -- `uniquerows()`
+  is the data-frame form and also takes a file path. The only names shared
+  with `dplyr` are now `count()` and `pick()`, both read as base-style verbs.
 
 ## Native C++ engine
 
@@ -43,7 +49,7 @@ dependency.
   column gather, and the join membership probe.
 * Delimited-file reading is native (`btread()` / `btwrite()`, memory-mapped,
   RFC 4180, threaded parsing, optional ALTREP lazy columns), and
-  `aggregate()` / `count()` / `distinct()` / `freq()` on a file path fuse the
+  `aggregate()` / `count()` / `uniquerows()` / `freq()` on a file path fuse the
   parse with the grouping so unused columns are never materialised.
 
 ## Performance
@@ -51,7 +57,7 @@ dependency.
 Measured against `data.table` at 1e6 rows on the reference machine (Linux, 8
 threads); see the `Benchmarks` vignette for the full report.
 
-* Faster than `data.table`: `uniquerows()` / `distinct()`, `sd` / `var` by
+* Faster than `data.table`: `uniquerows()`, `sd` / `var` by
   group at every cardinality, `count` and `mean` by group at high
   cardinality, `semimerge()` (parity at low cardinality down to ~0.25x at
   high), `pick()` / column projection, and `subset()` on the common
@@ -69,8 +75,8 @@ threads); see the `Benchmarks` vignette for the full report.
 
 ## New features
 
-* New `distinct()`: `uniquerows()` for a data frame, a fused one-pass scan
-  for a file path.
+* `uniquerows()` also takes a single file path: a fused one-pass scan that
+  returns the distinct combinations of `cols` without materialising the file.
 * `rbindfill()` bulk-copies columns that already share a type across every
   input and now keeps a shared column class such as `Date`.
 * `stack()` is exported and consistently returns a `basetable`, masking

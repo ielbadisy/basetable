@@ -21,7 +21,7 @@ Most workflows need only a small set of regular verbs:
 
 | Task | Canonical functions |
 |:--|:--|
-| Inspect | `glimpse()`, `describe()`, `missingness()` |
+| Inspect | `preview()`, `describe()`, `missingness()` |
 | Keep rows | `subset()` |
 | Keep or remove columns | `pick()`, `drop()` |
 | Create columns | `transform()` |

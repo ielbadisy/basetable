@@ -104,18 +104,29 @@ duplicaterows <- function(data) {
   bt_engine_subset(df, rows = mask)
 }
 
-#' Unique rows
+#' Unique rows, in memory or straight off a delimited file
 #'
-#' Return unique rows, optionally considering only selected columns.
+#' Return unique rows, optionally considering only selected columns. With a
+#' single file path as `data`, it is a fused one-pass scan that returns the
+#' distinct combinations of `cols` without ever materialising the file as R
+#' vectors (see [aggregate()]'s file mode).
 #'
-#' @param data A data.frame.
+#' @param data A data.frame, or a single path to a delimited text file.
 #' @param cols Optional character vector of columns used to determine
-#'   uniqueness.
+#'   uniqueness. Required when `data` is a file path.
 #' @param .keep_all Keep all columns when `cols` is supplied.
+#' @param ... For the file form, passed to the file reader (`where`, `delim`,
+#'   `n_threads`, ...).
 #'
 #' @return A basetable of the unique rows.
 #' @export
-uniquerows <- function(data, cols = NULL, .keep_all = FALSE) {
+uniquerows <- function(data, cols = NULL, .keep_all = FALSE, ...) {
+  if (is.character(data) && length(data) == 1L) {
+    if (is.null(cols)) {
+      stop("`uniquerows()` on a file needs `cols`.", call. = FALSE)
+    }
+    return(distinct_from_file(data, cols = cols, ...))
+  }
   bt_engine_unique(data, by = cols, keep_all = .keep_all || is.null(cols))
 }
 
@@ -629,7 +640,7 @@ cumedist <- function(x) cumsum(!duplicated(x)) / seq_along(x)
 #'
 #' @return A numeric vector.
 #' @export
-cummean <- function(x) cumsum(x) / seq_along(x)
+cumavg <- function(x) cumsum(x) / seq_along(x)
 
 #' Cumulative row counter
 #'
@@ -1384,7 +1395,7 @@ padcenter <- function(x, width, pad = " ") {
 #'
 #' @return A logical vector.
 #' @export
-contains <- function(x, pattern, fixed = FALSE) grepl(pattern, x, fixed = fixed)
+containstext <- function(x, pattern, fixed = FALSE) grepl(pattern, x, fixed = fixed)
 #' Test for a full-string pattern match
 #'
 #' @param x An atomic vector.
@@ -1393,7 +1404,7 @@ contains <- function(x, pattern, fixed = FALSE) grepl(pattern, x, fixed = fixed)
 #'
 #' @return A logical vector.
 #' @export
-matches <- function(x, pattern, fixed = FALSE) {
+matchestext <- function(x, pattern, fixed = FALSE) {
   if (fixed) {
     return(!is.na(x) & x == pattern)
   }

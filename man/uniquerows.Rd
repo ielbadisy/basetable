@@ -2,21 +2,27 @@
 % Please edit documentation in R/primitives.R
 \name{uniquerows}
 \alias{uniquerows}
-\title{Unique rows}
+\title{Unique rows, in memory or straight off a delimited file}
 \usage{
-uniquerows(data, cols = NULL, .keep_all = FALSE)
+uniquerows(data, cols = NULL, .keep_all = FALSE, ...)
 }
 \arguments{
-\item{data}{A data.frame.}
+\item{data}{A data.frame, or a single path to a delimited text file.}
 
 \item{cols}{Optional character vector of columns used to determine
-uniqueness.}
+uniqueness. Required when \code{data} is a file path.}
 
 \item{.keep_all}{Keep all columns when \code{cols} is supplied.}
+
+\item{...}{For the file form, passed to the file reader (\code{where},
+\code{delim}, \code{n_threads}, ...).}
 }
 \value{
 A basetable of the unique rows.
 }
 \description{
-Return unique rows, optionally considering only selected columns.
+Return unique rows, optionally considering only selected columns. With a
+single file path as \code{data}, it is a fused one-pass scan that returns the
+distinct combinations of \code{cols} without ever materialising the file as R
+vectors (see \code{\link{aggregate}}'s file mode).
 }

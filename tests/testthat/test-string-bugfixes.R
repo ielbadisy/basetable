@@ -19,8 +19,8 @@ test_that("startswith/endswith honor fixed and stay vectorized against x", {
   expect_equal(out, c(TRUE, FALSE, FALSE))
 })
 
-test_that("matches() with fixed = TRUE does a literal comparison, not a broken anchored regex", {
-  expect_true(matches("a.b", "a.b", fixed = TRUE))
-  expect_false(matches("axb", "a.b", fixed = TRUE))
-  expect_true(matches("axb", "a.b", fixed = FALSE))
+test_that("matchestext() with fixed = TRUE does a literal comparison, not a broken anchored regex", {
+  expect_true(matchestext("a.b", "a.b", fixed = TRUE))
+  expect_false(matchestext("axb", "a.b", fixed = TRUE))
+  expect_true(matchestext("axb", "a.b", fixed = FALSE))
 })

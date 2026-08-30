@@ -22,7 +22,7 @@ headtail <- function(data, n = 3) {
   bt_as_data_table(df[idx, , drop = FALSE])
 }
 
-glimpse <- function(data, width = getOption("width")) {
+preview <- function(data, width = getOption("width")) {
   df <- bt_as_data_frame(data)
   cat(sprintf("Rows: %s  Columns: %s\n", nrow(df), ncol(df)))
   for (nm in names(df)) {
