@@ -94,11 +94,3 @@ and a grouped variant so `transform(by =)` stops looping groups in R.
 `overlapmerge()` and two-y-column non-equi conditions still linear-scan the
 bucket after the equi-key match. Add an interval-tree or sweepline path for
 the case where two conditions bound a `[start, end]` range.
-
-### Not on the near path
-
-- Matching `collapse` / `polars` on raw columnar and grouped throughput.
-  They use parallel radix grouping and Arrow-backed columnar execution;
-  basetable's goal is competitive speed with best-in-class memory and zero
-  dependencies, not beating those engines.
-- SIMD kernels for the arithmetic and comparison inner loops.
