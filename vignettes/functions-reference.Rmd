@@ -84,6 +84,14 @@ an optional `select` for columns.
 subset(mtcars, cyl == 6, select = c("mpg", "hp", "wt"))
 ```
 
+Pass `by` to evaluate the condition **within each group**, so an aggregate
+inside it is per group. This is basetable's grouped filter; there is no
+stateful `group_by()`, the grouping is named at the call.
+
+```{r}
+subset(mtcars, mpg > mean(mpg), by = "cyl")
+```
+
 ## Picking and dropping columns: `pick()`, `drop()`
 
 `pick()` keeps only the named columns; `drop()` removes them.
@@ -607,6 +615,14 @@ firstrows(mtcars, 3)
 lastrows(mtcars, 2)
 set.seed(1)
 samplerows(mtcars, 2)
+```
+
+`samplerows()` and `samplefrac()` take `by` to sample within each group
+(`n` is capped at the group size); sampled rows keep their original order.
+
+```{r}
+set.seed(1)
+samplerows(mtcars, 2, by = "cyl")
 ```
 
 For an arbitrary set of row positions, index the table directly, the same

@@ -1,3 +1,16 @@
+# basetable 1.2.0
+
+## New features
+
+* `subset()` gains a `by` argument: the predicate is then evaluated within
+  each group, so aggregate references in it (`mean(x)`, `max(x)`, ...) are
+  per group. Kept rows are returned in their original order. This is
+  basetable's explicit answer to a grouped filter -- there is still no
+  stateful `group_by()`.
+* `samplerows()` and `samplefrac()` gain a `by` argument: sample `n` rows
+  (capped at the group size) or a fraction of each group. Sampled rows are
+  returned in their original order.
+
 # basetable 1.1.0
 
 basetable is now a self-contained data-manipulation package with a base-R

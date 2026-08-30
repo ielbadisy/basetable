@@ -146,6 +146,11 @@ workloads and have far larger ecosystems; `dplyr` is the tidyverse standard.
 - competitive speed and best-in-class memory on the everyday operations
   (filter, group, join, distinct) without changing how you write code.
 
+Grouping is a `by` argument on the verb that needs it (`aggregate()`,
+`count()`, `summaries()`, `transform()`, `subset()`, `samplerows()`,
+`firstby()`, ...), not a stateful `group_by()`. The group is named at the
+call and never persists, so there is no `ungroup()` to forget.
+
 ## Using basetable alongside dplyr and data.table
 
 `basetable` reuses base-R verb names (`subset()`, `merge()`, `transform()`,

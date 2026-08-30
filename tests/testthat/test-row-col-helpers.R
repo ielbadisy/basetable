@@ -58,6 +58,47 @@ test_that("firstrows/lastrows/samplerows/samplefrac/reverse/orderrows", {
   expect_equal(orderrows(df, "x", decreasing = TRUE)$x, rev(df$x))
 })
 
+test_that("samplerows/samplefrac with by sample within each group", {
+  set.seed(1)
+  d <- data.frame(g = rep(letters[1:3], c(4, 8, 12)), x = 1:24)
+
+  s <- samplerows(d, 2, by = "g")
+  expect_equal(as.integer(table(s$g)), c(2L, 2L, 2L))
+  expect_false(is.unsorted(s$x))                 # original order preserved
+
+  capped <- samplerows(d, 100, by = "g")        # n above a group size caps
+  expect_equal(nrow(capped), nrow(d))
+
+  f <- samplefrac(d, 0.5, by = "g")
+  expect_equal(as.integer(table(f$g)), c(2L, 4L, 6L))
+
+  expect_equal(nrow(samplerows(d, 5)), 5L)       # ungrouped unchanged
+})
+
+test_that("subset with by evaluates the predicate per group", {
+  set.seed(1)
+  d <- data.frame(g = rep(c("a", "b"), each = 20), x = rnorm(40), id = 1:40,
+                  stringsAsFactors = FALSE)
+
+  got <- as.data.frame(subset(d, x > mean(x), by = "g"))
+  ref <- do.call(rbind, lapply(base::split(d, d$g),
+                               function(s) s[s$x > mean(s$x), ]))
+  ref <- ref[order(ref$id), ]
+  rownames(got) <- rownames(ref) <- NULL
+  expect_equal(got, ref, ignore_attr = TRUE)
+
+  # select still applies alongside by
+  got2 <- as.data.frame(subset(d, x > mean(x), select = c("g", "id"), by = "g"))
+  expect_named(got2, c("g", "id"))
+
+  # a non-grouped predicate gives the same rows as the ungrouped call
+  expect_equal(
+    as.data.frame(subset(d, x > 0, by = "g")),
+    as.data.frame(subset(d, x > 0)),
+    ignore_attr = TRUE
+  )
+})
+
 test_that("orderrows supports a direction for each sort column", {
   df <- data.frame(
     group = c("b", "a", "b", "a"),

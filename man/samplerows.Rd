@@ -4,12 +4,16 @@
 \alias{samplerows}
 \title{Sample \code{n} rows without replacement}
 \usage{
-samplerows(data, n)
+samplerows(data, n, by = NULL)
 }
 \arguments{
 \item{data}{A data.frame.}
 
 \item{n}{Integer count.}
+
+\item{by}{Optional character vector of grouping columns; sample \code{n} rows
+within each group (capped at the group size). Sampled rows are returned in
+their original order.}
 }
 \value{
 A random sample of \code{n} rows.

@@ -322,12 +322,23 @@ lastrows <- function(data, n = 1L) {
 #'
 #' @param data A data.frame.
 #' @param n Integer count.
+#' @param by Optional character vector of grouping columns; sample `n` rows
+#'   within each group (capped at the group size). Sampled rows are returned
+#'   in their original order.
 #'
 #' @return A random sample of `n` rows.
 #' @export
-samplerows <- function(data, n) {
+samplerows <- function(data, n, by = NULL) {
   df <- bt_as_data_frame(data)
-  idx <- sample.int(nrow(df), n)
+  if (is.null(by)) {
+    idx <- sample.int(nrow(df), n)
+    return(bt_as_data_table(df[idx, , drop = FALSE]))
+  }
+  by <- bt_resolve_cols(df, by)
+  grows <- bt_group_rows(bt_engine_groups(df, by)$id)
+  idx <- sort(unlist(lapply(grows, function(g) {
+    g[sample.int(length(g), min(as.integer(n), length(g)))]
+  }), use.names = FALSE))
   bt_as_data_table(df[idx, , drop = FALSE])
 }
 
@@ -335,12 +346,23 @@ samplerows <- function(data, n) {
 #'
 #' @param data A data.frame.
 #' @param frac Fraction of rows to sample.
+#' @param by Optional character vector of grouping columns; sample `frac` of
+#'   each group (rounded up). Sampled rows are returned in their original
+#'   order.
 #'
 #' @return A random sample of rows.
 #' @export
-samplefrac <- function(data, frac) {
+samplefrac <- function(data, frac, by = NULL) {
   df <- bt_as_data_frame(data)
-  bt_as_data_table(df[sample.int(nrow(df), ceiling(nrow(df) * frac)), , drop = FALSE])
+  if (is.null(by)) {
+    return(bt_as_data_table(df[sample.int(nrow(df), ceiling(nrow(df) * frac)), , drop = FALSE]))
+  }
+  by <- bt_resolve_cols(df, by)
+  grows <- bt_group_rows(bt_engine_groups(df, by)$id)
+  idx <- sort(unlist(lapply(grows, function(g) {
+    g[sample.int(length(g), min(length(g), ceiling(length(g) * frac)))]
+  }), use.names = FALSE))
+  bt_as_data_table(df[idx, , drop = FALSE])
 }
 
 #' Order rows by one or more columns
