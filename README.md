@@ -35,9 +35,8 @@ This is a deliberately focused tool. It is aimed at
 - **Explicit, standard-evaluation interfaces.** Column names are strings, not
   captured symbols (with the marked exceptions `subset()` and `transform()`
   inherit from base R).
-- **Zero hard dependencies.** `data.table`, `dplyr`, `collapse` and `polars`
-  appear only in `Suggests`, and only as competitors in the benchmark
-  vignette.
+- **Zero hard dependencies.** `data.table`, `dplyr` and `collapse` appear
+  only in `Suggests`, and only as competitors in the benchmark vignette.
 
 ## Installation
 
@@ -126,7 +125,7 @@ uses `malloc`'d scratch buffers (radix keys, per-thread row-position
 vectors) that `bench` does not count, so peak process memory during a sort
 or filter is higher than the figure above; `data.table` does the same.
 
-The one gap is **sorting**: `orderrows()` is a stable parallel radix, ~10x
+The one gap is **sorting**: `orderrows()` is a stable parallel radix, ~20x
 faster than base `order()`, but still ~2x of `data.table`, whose hand-tuned
 parallel radix is the one operation `basetable` does not match. `collapse`
 and `polars` are also faster on several columnar and grouped paths.
