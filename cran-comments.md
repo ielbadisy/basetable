@@ -1,11 +1,11 @@
-# CRAN submission comments: basetable 1.2.0
+# CRAN submission comments: basetable 1.3.0
 
 ## Note to CRAN
 
 This upload supersedes the earlier 0.9.0 submission, which was returned with
 a manual review (K. Lauseker, 2026-08-21). Since then the package removed its
 'data.table' dependency in favour of a bundled 'C++' engine and renamed a few
-exports that clashed with other packages, so it is now at 1.2.0. Please
+exports that clashed with other packages, so it is now at 1.3.0. Please
 review this version in place of 0.9.0.
 
 Both points from the 0.9.0 review are addressed:

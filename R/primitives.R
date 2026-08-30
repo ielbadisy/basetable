@@ -1731,6 +1731,56 @@ collapsevalues <- function(x, groups) {
   for (nm in names(groups)) out[x %in% groups[[nm]]] <- nm
   out
 }
+
+#' Multi-branch selection by condition
+#'
+#' For each position, take the label of the first condition that is `TRUE`
+#' there. Conditions are a named list of equal-length logical vectors, in the
+#' same shape as [collapsevalues()]'s `groups`: the name of an element is the
+#' value used where that element is the first `TRUE`. Positions matching no
+#' condition get `default`. `NA` in a condition counts as not matching.
+#'
+#' @param conditions A named list of equal-length logical vectors. Each name
+#'   is the value returned where its vector is the first `TRUE`.
+#' @param default Value for positions where no condition holds. Default `NA`.
+#'
+#' @return A vector as long as the conditions, holding matched labels and
+#'   `default` elsewhere.
+#' @export
+#' @examples
+#' x <- c(-3, 0, 4, 25)
+#' casewhen(list(neg = x < 0, low = x < 10), default = "high")
+casewhen <- function(conditions, default = NA) {
+  if (!is.list(conditions) || length(conditions) == 0L) {
+    stop("`conditions` must be a non-empty named list of logical vectors.", call. = FALSE)
+  }
+  nms <- names(conditions)
+  if (is.null(nms) || any(!nzchar(nms))) {
+    stop("Every element of `conditions` must be named; the name is its output value.",
+         call. = FALSE)
+  }
+  lens <- lengths(conditions)
+  n <- lens[[1L]]
+  if (any(lens != n)) {
+    stop("All conditions must have the same length.", call. = FALSE)
+  }
+  for (i in seq_along(conditions)) {
+    if (!is.logical(conditions[[i]])) {
+      stop(sprintf("Condition '%s' is not a logical vector.", nms[[i]]), call. = FALSE)
+    }
+  }
+  out <- rep_len(default, n)
+  assigned <- logical(n)
+  for (i in seq_along(conditions)) {
+    hit <- conditions[[i]] & !assigned
+    hit[is.na(hit)] <- FALSE
+    if (any(hit)) {
+      out[hit] <- nms[[i]]
+      assigned[hit] <- TRUE
+    }
+  }
+  out
+}
 #' Rows where parsing failed
 #'
 #' @param x An atomic vector.

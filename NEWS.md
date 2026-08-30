@@ -1,3 +1,13 @@
+# basetable 1.3.0
+
+## New features
+
+* `casewhen(conditions, default = NA)`: vectorised multi-branch selection.
+  `conditions` is a named list of equal-length logical vectors, the same
+  shape as `collapsevalues()` -- the name of the first element that is `TRUE`
+  at a position is the value taken there; positions matching nothing get
+  `default`. Composes inside `transform()`.
+
 # basetable 1.2.0
 
 ## New features

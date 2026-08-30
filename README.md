@@ -175,6 +175,7 @@ for the base-R names `data.table` also defines). Two fixes:
 | Ordering | `orderrows()` | `order()` |
 | Distinct / duplicates | `uniquerows()`, `duplicaterows()`, `removeduplicates()` | `unique()`, `duplicated()` |
 | Aggregation | `aggregate()`, `count()`, `summaries()` | `aggregate()`, `table()` |
+| Recoding | `recode()`, `collapsevalues()`, `casewhen()`, `replacewhere()` | `ifelse()`, `switch()` |
 | Joins | `merge()`, `semimerge()`, `antimerge()`, `updatemerge()`, `crossmerge()`, `nonequimerge()`, `overlapmerge()`, `rangemerge()`, `rollingmerge()` | `merge()` |
 | Row / column bind | `rbindfill()` | `rbind()` |
 | Split / apply | `split()`, `applyby()` | `split()` |

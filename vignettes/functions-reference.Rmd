@@ -742,7 +742,7 @@ isemail(c("a@b.com", "not-an-email"))
 isurl(c("https://example.com", "example.com"))
 ```
 
-## Recoding and grouping values: `recode()`, `collapsevalues()`, `collapselevels()`, `lump()`, `reorderlevels()`, `expandlevels()`
+## Recoding and grouping values: `recode()`, `collapsevalues()`, `casewhen()`, `collapselevels()`, `lump()`, `reorderlevels()`, `expandlevels()`
 
 ```{r}
 recode(c("a", "b", "c"), old = "a", new = "A")
@@ -754,6 +754,18 @@ lump(x, n = 2, other = "Other") |> table()
 f <- factor(c("low", "high", "mid"), levels = c("low", "mid", "high"))
 reorderlevels(f, by = c("high", "mid", "low"))
 expandlevels(f, "extra")
+```
+
+`casewhen()` maps conditions to a label, taking the same named-list shape as
+`collapsevalues()` but with logical vectors: the first element that is
+`TRUE` at a position gives its value there, and `default` covers the rest.
+It composes inside `transform()`.
+
+```{r}
+transform(mtcars, size = casewhen(
+  list(light = wt < 2.5, mid = wt < 3.5),
+  default = "heavy"
+)) |> pick(c("wt", "size")) |> headtail(2)
 ```
 
 # Parsing text into typed values {#sec-parsing}
