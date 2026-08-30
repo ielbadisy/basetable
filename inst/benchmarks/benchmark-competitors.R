@@ -51,27 +51,6 @@ run_size <- function(n) {
     record(n, "semijoin_int", "data.table", dt[unique(dt[1:1000, .(g_int)]), on = "g_int", nomatch = NULL])
   )
 
-  if (requireNamespace("collapse", quietly = TRUE)) {
-    out <- c(out, list(
-      record(n, "count_int", "collapse", collapse::qF(dt$g_int)),
-      record(n, "mean_by_int", "collapse", collapse::fmean(dt$x, dt$g_int))
-    ))
-  }
-
-  if (requireNamespace("polars", quietly = TRUE) &&
-      is.function(polars::pl$col) &&
-      is.function(polars::pl$len)) {
-    pl <- tryCatch(polars::as_polars_df(df), error = function(e) NULL)
-    if (!is.null(pl)) {
-      out <- c(out, list(
-        record(n, "project", "polars", pl$select("g_int", "x")),
-        record(n, "filter_project", "polars", pl$filter(polars::pl$col("g_int") <= 10L)$select("g_int", "x")),
-        record(n, "count_int", "polars", pl$group_by("g_int")$agg(polars::pl$len())),
-        record(n, "mean_by_int", "polars", pl$group_by("g_int")$agg(polars::pl$col("x")$mean()))
-      ))
-    }
-  }
-
   data.table::rbindlist(out, fill = TRUE)
 }
 

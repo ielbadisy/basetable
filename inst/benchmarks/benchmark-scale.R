@@ -1,7 +1,7 @@
 # basetable scale benchmark
 # ---------------------------------------------------------------------------
 # Runtime + allocated memory for the core verbs across data size and key
-# cardinality, versus base R / data.table / dplyr / collapse / polars. Every
+# cardinality, versus base R / data.table / dplyr. Every
 # competitor is optional: an engine whose package is not installed is skipped.
 #
 # Config via environment variables (all comma-separated):
@@ -29,7 +29,7 @@ REPS  <- as.integer(env_nums("BT_REPS", "5"))[1L]
 OUT   <- Sys.getenv("BT_OUT", "bt-bench-results.csv")
 
 has <- function(p) requireNamespace(p, quietly = TRUE)
-ENGINES <- c("basetable", "base", "data.table", "dplyr", "collapse", "polars")
+ENGINES <- c("basetable", "base", "data.table", "dplyr")
 ENGINES <- ENGINES[ENGINES %in% c("basetable", "base") | vapply(ENGINES, has, logical(1))]
 want <- Sys.getenv("BT_ENGINES", "")
 if (nzchar(want)) ENGINES <- intersect(ENGINES, strsplit(want, ",", fixed = TRUE)[[1L]])
@@ -93,65 +93,49 @@ for (n in SIZES) {
     engines_data <- list(base = df, basetable = df)
     if ("data.table" %in% ENGINES) engines_data$data.table <- data.table::as.data.table(df)
     if ("dplyr" %in% ENGINES)      engines_data$dplyr <- df
-    if ("collapse" %in% ENGINES)   engines_data$collapse <- df
-    if ("polars" %in% ENGINES)     engines_data$polars <- tryCatch(polars::as_polars_df(df), error = function(e) NULL)
 
     ops <- list(
       filter = list(
         basetable  = function() basetable::subset(df, x > 0.5),
         base       = function() df[df$x > 0.5, , drop = FALSE],
         data.table = function() engines_data$data.table[x > 0.5],
-        dplyr      = function() dplyr::filter(df, x > 0.5),
-        collapse   = function() collapse::fsubset(df, x > 0.5),
-        polars     = function() engines_data$polars$filter(polars::pl$col("x") > 0.5)
+        dplyr      = function() dplyr::filter(df, x > 0.5)
       ),
       sort_str = list(
         basetable  = function() basetable::orderrows(df, by = c("g", "x")),
         base       = function() df[order(df$g, df$x), , drop = FALSE],
         data.table = function() data.table::setorder(data.table::copy(engines_data$data.table), g, x),
-        dplyr      = function() dplyr::arrange(df, g, x),
-        collapse   = function() collapse::roworder(df, g, x),
-        polars     = function() engines_data$polars$sort(c("g", "x"))
+        dplyr      = function() dplyr::arrange(df, g, x)
       ),
       distinct = list(
         basetable  = function() basetable::uniquerows(df, cols = "g"),
         base       = function() unique(df[, "g", drop = FALSE]),
         data.table = function() unique(engines_data$data.table[, list(g)]),
-        dplyr      = function() dplyr::distinct(df, g),
-        collapse   = function() collapse::funique(df["g"]),
-        polars     = function() engines_data$polars$select("g")$unique()
+        dplyr      = function() dplyr::distinct(df, g)
       ),
       count_by = list(
         basetable  = function() basetable::count(df, by = "g", sort = FALSE),
         base       = function() as.data.frame(table(df$g)),
         data.table = function() engines_data$data.table[, .N, by = g],
-        dplyr      = function() dplyr::count(df, g),
-        collapse   = function() collapse::fcount(df, g),
-        polars     = function() engines_data$polars$group_by("g")$agg(polars::pl$len())
+        dplyr      = function() dplyr::count(df, g)
       ),
       sum_by = list(
         basetable  = function() basetable::aggregate(df, by = "g", value = "x", fun = sum, sort = FALSE),
         base       = function() rowsum(df$x, df$g),
         data.table = function() engines_data$data.table[, list(x = sum(x)), by = g],
-        dplyr      = function() dplyr::summarise(dplyr::group_by(df, g), x = sum(x), .groups = "drop"),
-        collapse   = function() collapse::fsum(df$x, df$g),
-        polars     = function() engines_data$polars$group_by("g")$agg(polars::pl$col("x")$sum())
+        dplyr      = function() dplyr::summarise(dplyr::group_by(df, g), x = sum(x), .groups = "drop")
       ),
       sd_by = list(
         basetable  = function() basetable::aggregate(df, by = "g", value = "x", fun = sd, sort = FALSE),
         base       = function() tapply(df$x, df$g, sd),
         data.table = function() engines_data$data.table[, list(x = sd(x)), by = g],
-        dplyr      = function() dplyr::summarise(dplyr::group_by(df, g), x = sd(x), .groups = "drop"),
-        collapse   = function() collapse::fsd(df$x, df$g),
-        polars     = function() engines_data$polars$group_by("g")$agg(polars::pl$col("x")$std())
+        dplyr      = function() dplyr::summarise(dplyr::group_by(df, g), x = sd(x), .groups = "drop")
       ),
       join_id = list(
         basetable  = function() basetable::merge(df, dim_tbl, by = "gi"),
         base       = function() merge(df, dim_tbl, by = "gi"),
         data.table = function() merge(engines_data$data.table, data.table::as.data.table(dim_tbl), by = "gi"),
-        dplyr      = function() dplyr::inner_join(df, dim_tbl, by = "gi"),
-        collapse   = function() collapse::join(df, dim_tbl, on = "gi", how = "inner", verbose = 0),
-        polars     = function() engines_data$polars$join(polars::as_polars_df(dim_tbl), on = "gi", how = "inner")
+        dplyr      = function() dplyr::inner_join(df, dim_tbl, by = "gi")
       ),
       roll_join = list(
         basetable  = function() basetable::rollingmerge(df_sorted, y_roll, by = c("g", "t"), direction = "backward"),

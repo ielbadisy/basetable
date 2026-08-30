@@ -50,7 +50,7 @@ evaluation are compiled `.Call` kernels, several of them multi-threaded via
 `setthreads()`. Results carry a light `basetable` S3 class over an ordinary
 data frame, with `print`, `[`, `as.data.frame` and `as.list` methods.
 
-`data.table`, `dplyr` and `collapse` remain in `Suggests` only, as
+`data.table` and `dplyr` remain in `Suggests` only, as
 competitors in the benchmark vignette.
 
 ## Downstream dependencies

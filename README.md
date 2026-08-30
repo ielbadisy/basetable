@@ -35,8 +35,8 @@ This is a deliberately focused tool. It is aimed at
 - **Explicit, standard-evaluation interfaces.** Column names are strings, not
   captured symbols (with the marked exceptions `subset()` and `transform()`
   inherit from base R).
-- **Zero hard dependencies.** `data.table`, `dplyr` and `collapse` appear
-  only in `Suggests`, and only as competitors in the benchmark vignette.
+- **Zero hard dependencies.** `data.table` and `dplyr` appear only in
+  `Suggests`, and only as competitors in the benchmark vignette.
 
 ## Installation
 
@@ -127,14 +127,13 @@ or filter is higher than the figure above; `data.table` does the same.
 
 The one gap is **sorting**: `orderrows()` is a stable parallel radix, ~20x
 faster than base `order()`, but still ~2x of `data.table`, whose hand-tuned
-parallel radix is the one operation `basetable` does not match. `collapse`
-and `polars` are also faster on several columnar and grouped paths.
+parallel radix is the one operation `basetable` does not match.
 
 ## Positioning
 
-`data.table`, `collapse` and `polars` are faster on many grouped and columnar
-workloads and have far larger ecosystems; `dplyr` is the tidyverse standard.
-`basetable` is a good fit when you want:
+`data.table` is faster on some workloads (notably sorting) and has a far
+larger ecosystem; `dplyr` is the tidyverse standard. `basetable` is a good
+fit when you want:
 
 - **base-R syntax** and semantics, not `[i, j, by]`, tidy evaluation, or a
   method-chained frame object;

@@ -39,7 +39,7 @@ dependency. This is the first CRAN release.
 ## Breaking changes
 
 * **`data.table` is no longer a dependency.** Every verb runs on basetable's
-  own compiled engine. `data.table` (with `collapse` and `dplyr`) remains in
+  own compiled engine. `data.table` and `dplyr` remain in
   `Suggests` only, as a comparison target in the benchmark vignette.
 * **Verbs return a `basetable`** rather than a `data.table`. A `basetable` is
   an ordinary data frame with one extra class so it prints compactly and `[`
@@ -114,7 +114,7 @@ threads); see the `Benchmarks` vignette for the full report.
 * `stack()` is exported and consistently returns a `basetable`, masking
   `utils::stack()` like the rest of the base-flavored API.
 * `inst/benchmarks/benchmark-scale.R`: a size x cardinality harness against
-  base R, `data.table`, `dplyr` and `collapse`.
+  base R, `data.table` and `dplyr`.
 
 # basetable 0.8.1
 
