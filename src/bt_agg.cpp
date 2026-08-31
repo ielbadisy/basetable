@@ -322,6 +322,7 @@ extern "C" SEXP bt_agg_(SEXP s_path, SEXP s_delim, SEXP s_quote, SEXP s_comment,
   opt.na_strings.clear();
   for (R_xlen_t i = 0; i < Rf_xlength(s_na); ++i)
     opt.na_strings.push_back(CHAR(STRING_ELT(s_na, i)));
+  opt.refresh_na_fast_path();
 
   RowIndex index = build_row_index_mt(file->data, file->size, opt, opt.n_threads);
   int64_t nrow = (int64_t) index.starts.size() - 1;

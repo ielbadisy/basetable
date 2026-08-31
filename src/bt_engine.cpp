@@ -55,6 +55,15 @@ Frame frame_from(SEXP x) {
   return { nrow, ncol };
 }
 
+R_xlen_t frame_nrow(SEXP x) {
+  R_xlen_t ncol = Rf_xlength(x);
+  if (ncol > 0) return Rf_xlength(VECTOR_ELT(x, 0));
+  SEXP rn = Rf_getAttrib(x, R_RowNamesSymbol);
+  if (TYPEOF(rn) == INTSXP && Rf_xlength(rn) == 2 && INTEGER(rn)[0] == NA_INTEGER)
+    return -INTEGER(rn)[1];
+  return 0;
+}
+
 std::vector<int> col_index(SEXP s_cols, R_xlen_t ncol) {
   std::vector<int> cols;
   if (Rf_isNull(s_cols)) {
@@ -221,6 +230,22 @@ SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<i
   SEXP out = PROTECT(Rf_allocVector(VECSXP, nc));
   SEXP names = PROTECT(Rf_allocVector(STRSXP, nc));
   SEXP old_names = Rf_getAttrib(df, R_NamesSymbol);
+
+  bool identity_rows = nr == frame_nrow(df);
+  for (R_xlen_t i = 0; identity_rows && i < nr; ++i)
+    if (rows[(size_t)i] != i) identity_rows = false;
+
+  if (identity_rows) {
+    for (R_xlen_t j = 0; j < nc; ++j) {
+      SET_VECTOR_ELT(out, j, VECTOR_ELT(df, cols[(size_t)j]));
+      SET_STRING_ELT(names, j, STRING_ELT(old_names, cols[(size_t)j]));
+    }
+    Rf_setAttrib(out, R_NamesSymbol, names);
+    Rf_setAttrib(out, R_RowNamesSymbol, make_row_names(nr));
+    set_table_class(out);
+    UNPROTECT(2);
+    return out;
+  }
 
   // Allocate every output column and copy attributes on the R thread; fill
   // atomic columns on worker threads and string/list columns here.
@@ -2257,8 +2282,18 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
     TYPEOF(VECTOR_ELT(y, y_by[0])) == STRSXP &&
     !Rf_isFactor(VECTOR_ELT(x, x_by[0])) &&
     !Rf_isFactor(VECTOR_ELT(y, y_by[0]));
+  bool fast_int_join = !cross && !all_y && x_by.size() == 1 &&
+    (TYPEOF(VECTOR_ELT(x, x_by[0])) == INTSXP || TYPEOF(VECTOR_ELT(x, x_by[0])) == LGLSXP) &&
+    (TYPEOF(VECTOR_ELT(y, y_by[0])) == INTSXP || TYPEOF(VECTOR_ELT(y, y_by[0])) == LGLSXP) &&
+    !Rf_isFactor(VECTOR_ELT(x, x_by[0])) &&
+    !Rf_isFactor(VECTOR_ELT(y, y_by[0]));
+  bool fast_real_join = !cross && !all_y && x_by.size() == 1 &&
+    TYPEOF(VECTOR_ELT(x, x_by[0])) == REALSXP &&
+    TYPEOF(VECTOR_ELT(y, y_by[0])) == REALSXP &&
+    !Rf_isFactor(VECTOR_ELT(x, x_by[0])) &&
+    !Rf_isFactor(VECTOR_ELT(y, y_by[0]));
 
-  if (fast_string_join) {
+  if (fast_string_join || fast_int_join || fast_real_join) {
     // Built below without the generic KeyBuf codec.
   } else if (cross) {
     all_y_rows.reserve((size_t)yf.nrow);
@@ -2334,6 +2369,110 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
         }
       }
     }
+  } else if (fast_int_join) {
+    SEXP xc = VECTOR_ELT(x, x_by[0]);
+    SEXP yc = VECTOR_ELT(y, y_by[0]);
+    const int* xp = TYPEOF(xc) == LGLSXP ? LOGICAL(xc) : INTEGER(xc);
+    const int* yp = TYPEOF(yc) == LGLSXP ? LOGICAL(yc) : INTEGER(yc);
+    std::unordered_map<int, std::vector<R_xlen_t>> imap;
+    imap.reserve((size_t)yf.nrow);
+    for (R_xlen_t j = 0; j < yf.nrow; ++j) imap[yp[j]].push_back(j);
+
+    if (JT >= 2) {
+      std::vector<std::vector<R_xlen_t>> lx((size_t)JT), ly((size_t)JT);
+      R_xlen_t chunk = (xf.nrow + JT - 1) / JT;
+      std::vector<std::thread> pool;
+      for (int t = 0; t < JT; ++t) {
+        R_xlen_t lo = (R_xlen_t)t * chunk, hi = std::min<R_xlen_t>(xf.nrow, lo + chunk);
+        if (lo >= hi) break;
+        pool.emplace_back([&, t, lo, hi]() {
+          auto& vx = lx[(size_t)t];
+          auto& vy = ly[(size_t)t];
+          for (R_xlen_t i = lo; i < hi; ++i) {
+            auto it = imap.find(xp[i]);
+            if (it != imap.end() && !it->second.empty()) {
+              for (R_xlen_t yi : it->second) { vx.push_back(i); vy.push_back(yi); }
+            } else if (all_x) {
+              vx.push_back(i); vy.push_back(-1);
+            }
+          }
+        });
+      }
+      for (auto& p : pool) p.join();
+      size_t tot = 0;
+      for (auto& v : lx) tot += v.size();
+      xrows.reserve(tot);
+      yrows.reserve(tot);
+      for (int t = 0; t < JT; ++t) {
+        xrows.insert(xrows.end(), lx[(size_t)t].begin(), lx[(size_t)t].end());
+        yrows.insert(yrows.end(), ly[(size_t)t].begin(), ly[(size_t)t].end());
+      }
+    } else {
+      for (R_xlen_t i = 0; i < xf.nrow; ++i) {
+        auto it = imap.find(xp[i]);
+        if (it != imap.end() && !it->second.empty()) {
+          for (R_xlen_t yi : it->second) {
+            xrows.push_back(i);
+            yrows.push_back(yi);
+          }
+        } else if (all_x) {
+          xrows.push_back(i);
+          yrows.push_back(-1);
+        }
+      }
+    }
+  } else if (fast_real_join) {
+    SEXP xc = VECTOR_ELT(x, x_by[0]);
+    SEXP yc = VECTOR_ELT(y, y_by[0]);
+    const double* xp = REAL(xc);
+    const double* yp = REAL(yc);
+    std::unordered_map<int64_t, std::vector<R_xlen_t>> rmap;
+    rmap.reserve((size_t)yf.nrow);
+    for (R_xlen_t j = 0; j < yf.nrow; ++j) rmap[real_slot(yp[j])].push_back(j);
+
+    if (JT >= 2) {
+      std::vector<std::vector<R_xlen_t>> lx((size_t)JT), ly((size_t)JT);
+      R_xlen_t chunk = (xf.nrow + JT - 1) / JT;
+      std::vector<std::thread> pool;
+      for (int t = 0; t < JT; ++t) {
+        R_xlen_t lo = (R_xlen_t)t * chunk, hi = std::min<R_xlen_t>(xf.nrow, lo + chunk);
+        if (lo >= hi) break;
+        pool.emplace_back([&, t, lo, hi]() {
+          auto& vx = lx[(size_t)t];
+          auto& vy = ly[(size_t)t];
+          for (R_xlen_t i = lo; i < hi; ++i) {
+            auto it = rmap.find(real_slot(xp[i]));
+            if (it != rmap.end() && !it->second.empty()) {
+              for (R_xlen_t yi : it->second) { vx.push_back(i); vy.push_back(yi); }
+            } else if (all_x) {
+              vx.push_back(i); vy.push_back(-1);
+            }
+          }
+        });
+      }
+      for (auto& p : pool) p.join();
+      size_t tot = 0;
+      for (auto& v : lx) tot += v.size();
+      xrows.reserve(tot);
+      yrows.reserve(tot);
+      for (int t = 0; t < JT; ++t) {
+        xrows.insert(xrows.end(), lx[(size_t)t].begin(), lx[(size_t)t].end());
+        yrows.insert(yrows.end(), ly[(size_t)t].begin(), ly[(size_t)t].end());
+      }
+    } else {
+      for (R_xlen_t i = 0; i < xf.nrow; ++i) {
+        auto it = rmap.find(real_slot(xp[i]));
+        if (it != rmap.end() && !it->second.empty()) {
+          for (R_xlen_t yi : it->second) {
+            xrows.push_back(i);
+            yrows.push_back(yi);
+          }
+        } else if (all_x) {
+          xrows.push_back(i);
+          yrows.push_back(-1);
+        }
+      }
+    }
   } else if (JT >= 2) {
     std::vector<std::vector<R_xlen_t>> lx((size_t)JT), ly((size_t)JT);
     R_xlen_t chunk = (xf.nrow + JT - 1) / JT;
@@ -2393,6 +2532,10 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
   }
 
   R_xlen_t nout = (R_xlen_t)xrows.size();
+  bool x_identity = nout == xf.nrow;
+  for (R_xlen_t i = 0; x_identity && i < nout; ++i)
+    if (xrows[(size_t)i] != i) x_identity = false;
+
   R_xlen_t ncol_out = (R_xlen_t)(x_by.size() + x_extra.size() + y_extra.size());
   SEXP x_names = Rf_getAttrib(x, R_NamesSymbol);
   SEXP y_names = Rf_getAttrib(y, R_NamesSymbol);
@@ -2419,13 +2562,24 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
   std::vector<GJob> jobs;
   R_xlen_t p = 0;
   for (size_t k = 0; k < x_by.size(); ++k) {
-    SET_VECTOR_ELT(out, p, join_take_key(VECTOR_ELT(x, x_by[k]), VECTOR_ELT(y, y_by[k]), xrows, yrows));
+    SEXP xc = VECTOR_ELT(x, x_by[k]);
+    SEXP yc = VECTOR_ELT(y, y_by[k]);
+    bool same_factor = Rf_isFactor(xc) && Rf_isFactor(yc) &&
+      R_compute_identical(Rf_getAttrib(xc, R_LevelsSymbol),
+                          Rf_getAttrib(yc, R_LevelsSymbol), 0);
+    if (x_identity && (TYPEOF(xc) == TYPEOF(yc) || same_factor)) {
+      SET_VECTOR_ELT(out, p, xc);
+    } else {
+      SET_VECTOR_ELT(out, p, join_take_key(xc, yc, xrows, yrows));
+    }
     SET_STRING_ELT(names, p, STRING_ELT(x_names, x_by[k]));
     ++p;
   }
   for (int c : x_extra) {
     SEXP src = VECTOR_ELT(x, c);
-    if (join_atomic_kind(src)) {
+    if (x_identity) {
+      SET_VECTOR_ELT(out, p, src);
+    } else if (join_atomic_kind(src)) {
       SEXP dst = Rf_allocVector(TYPEOF(src), nout);
       SET_VECTOR_ELT(out, p, dst);
       copy_common_attrs(dst, src);

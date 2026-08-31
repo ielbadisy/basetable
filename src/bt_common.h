@@ -68,11 +68,20 @@ struct Options {
   int64_t n_max = -1;         // -1 == all rows
   int n_threads = 1;
   std::vector<std::string> na_strings{ "NA", "" };
+  bool default_na = true;
 
   bool is_na(const char* p, size_t n) const {
+    if (default_na) return n == 0 || (n == 2 && p[0] == 'N' && p[1] == 'A');
     for (const auto& s : na_strings)
       if (s.size() == n && std::memcmp(s.data(), p, n) == 0) return true;
     return false;
+  }
+
+  void refresh_na_fast_path() {
+    default_na =
+      na_strings.size() == 2 &&
+      na_strings[0].size() == 2 && na_strings[0][0] == 'N' && na_strings[0][1] == 'A' &&
+      na_strings[1].empty();
   }
 };
 
