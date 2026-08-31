@@ -10,8 +10,19 @@ removeaccents(x)
 \item{x}{An atomic vector.}
 }
 \value{
-A character vector.
+A character vector the same length as \code{x}.
 }
 \description{
-Strip accents from text
+Fold accented Latin letters to their unaccented ASCII form
+(\code{"café"} -> \code{"cafe"}), following ICU's \code{Latin-ASCII} mapping: covers the
+Latin-1 Supplement and Latin Extended-A blocks, plus a few common extras
+(\code{ß} -> \code{"ss"}, \code{Æ} -> \code{"AE"}, Romanian \code{ș}/\code{ț}). Characters with no
+mapping, including non-Latin scripts, pass through unchanged. No Unicode
+library dependency.
+}
+\examples{
+removeaccents(c("café", "naïve", "Zürich", "Kraków"))
+}
+\seealso{
+\code{\link[=transliterate]{transliterate()}} for Greek and Cyrillic as well.
 }

@@ -1618,11 +1618,21 @@ collapsetext <- function(x, sep = "") paste(x, collapse = sep)
 isblank <- function(x) bt_is_blank(x)
 #' Strip accents from text
 #'
+#' Fold accented Latin letters to their unaccented ASCII form
+#' (`"café"` -> `"cafe"`), following ICU's `Latin-ASCII` mapping: covers the
+#' Latin-1 Supplement and Latin Extended-A blocks, plus a few common extras
+#' (`ß` -> `"ss"`, `Æ` -> `"AE"`, Romanian `ș`/`ț`). Characters with no
+#' mapping, including non-Latin scripts, pass through unchanged. No Unicode
+#' library dependency.
+#'
 #' @param x An atomic vector.
 #'
-#' @return A character vector.
+#' @return A character vector the same length as `x`.
+#' @seealso [transliterate()] for Greek and Cyrillic as well.
+#' @examples
+#' removeaccents(c("café", "naïve", "Zürich", "Kraków"))
 #' @export
-removeaccents <- function(x) stringi::stri_trans_general(enc2utf8(x), "Latin-ASCII")
+removeaccents <- function(x) bt_remove_accents(x)
 #' Normalize Unicode text
 #'
 #' @param x An atomic vector.
@@ -1639,11 +1649,20 @@ normalizeunicode <- function(x) x
 normalizeencoding <- function(x) enc2utf8(x)
 #' Transliterate text to ASCII
 #'
+#' Like [removeaccents()], but also romanises the Greek and Cyrillic blocks
+#' (`"Αθήνα"` -> `"Athena"`, `"Москва"` -> `"Moskva"`), following ICU's
+#' `Any-Latin; Latin-ASCII` mapping. Other non-Latin scripts (Han, Kana,
+#' Arabic, Hebrew, Devanagari, Thai, ...) are left unchanged rather than
+#' guessed at. No Unicode library dependency.
+#'
 #' @param x An atomic vector.
 #'
-#' @return A character vector.
+#' @return A character vector the same length as `x`.
+#' @seealso [removeaccents()] for Latin only.
+#' @examples
+#' transliterate(c("Zürich", "Αθήνα", "Москва"))
 #' @export
-transliterate <- function(x) stringi::stri_trans_general(enc2utf8(x), "Any-Latin; Latin-ASCII")
+transliterate <- function(x) bt_transliterate(x)
 #' Pairwise string distances
 #'
 #' @param x An atomic vector.

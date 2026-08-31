@@ -1,5 +1,15 @@
 # basetable 1.3.1
 
+## Dependencies
+
+* `stringi` is no longer imported. `removeaccents()` and `transliterate()`
+  were its only users; they now fold text with tables extracted verbatim
+  from ICU's `Latin-ASCII` and `Any-Latin; Latin-ASCII` transliterators
+  (`bench/make-translit-maps.R`), so Latin output is unchanged and Greek and
+  Cyrillic match ICU except that an upper-case letter expanding to a digraph
+  stays upper case. `basetable` now imports only base and recommended
+  packages.
+
 ## Performance
 
 * Equi joins (`merge()` and the inner/left cases behind it) now probe the

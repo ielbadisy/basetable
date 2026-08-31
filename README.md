@@ -12,7 +12,8 @@
 **base-R interface** and **no dependencies**. You write `subset()`,
 `transform()`, `aggregate()`, `merge()`, `split()`, and the work runs on the
 package's own C++ engine. There is no `data.table`, no `dplyr`, no Arrow
-underneath, just `parallel`, `stats`, `stringi`, `utils`.
+underneath, and nothing in `Imports` beyond the base and recommended
+packages (`parallel`, `stats`, `utils`).
 
 Every verb returns a `basetable`: an ordinary `data.frame` with one extra
 class so it prints compactly and `[` keeps the class. `as.data.frame()`

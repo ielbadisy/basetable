@@ -10,8 +10,18 @@ transliterate(x)
 \item{x}{An atomic vector.}
 }
 \value{
-A character vector.
+A character vector the same length as \code{x}.
 }
 \description{
-Transliterate text to ASCII
+Like \code{\link[=removeaccents]{removeaccents()}}, but also romanises the Greek and Cyrillic blocks
+(\code{"Αθήνα"} -> \code{"Athena"}, \code{"Москва"} -> \code{"Moskva"}), following ICU's
+\verb{Any-Latin; Latin-ASCII} mapping. Other non-Latin scripts (Han, Kana,
+Arabic, Hebrew, Devanagari, Thai, ...) are left unchanged rather than
+guessed at. No Unicode library dependency.
+}
+\examples{
+transliterate(c("Zürich", "Αθήνα", "Москва"))
+}
+\seealso{
+\code{\link[=removeaccents]{removeaccents()}} for Latin only.
 }

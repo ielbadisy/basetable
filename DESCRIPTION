@@ -23,7 +23,6 @@ Depends:
 Imports:
     parallel,
     stats,
-    stringi,
     utils
 Suggests:
     bench,
