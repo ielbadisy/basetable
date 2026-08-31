@@ -2,8 +2,6 @@
 
 <!-- badges: start -->
 [![R-CMD-check](https://github.com/ielbadisy/basetable/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/ielbadisy/basetable/actions/workflows/R-CMD-check.yaml)
-[![CRAN status](https://www.r-pkg.org/badges/version/basetable)](https://CRAN.R-project.org/package=basetable)
-[![CRAN downloads](https://cranlogs.r-pkg.org/badges/grand-total/basetable)](https://CRAN.R-project.org/package=basetable)
 [![Lifecycle: stable](https://img.shields.io/badge/lifecycle-stable-brightgreen.svg)](https://lifecycle.r-lib.org/articles/stages.html#stable)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 <!-- badges: end -->

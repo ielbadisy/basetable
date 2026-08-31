@@ -25,9 +25,9 @@ Both points from the 0.9.0 review are addressed:
 
 ## R CMD check results
 
-0 errors | 0 warnings | 1 note
+0 errors | 0 warnings | 1 note (New submission)
 
-The one NOTE is local only:
+`R CMD check --as-cran` locally reports a second NOTE that is machine-local:
 
 ```
 checking compilation flags used ... NOTE
@@ -39,7 +39,9 @@ This flag comes from the maintainer's personal `~/.R/Makevars`, not from the
 package. The package's own `src/Makevars` sets no non-portable flags, so this
 NOTE does not appear on the CI builders or on a clean toolchain.
 
-CRAN's incoming checks will also raise the usual "New submission" NOTE.
+There is also an INFO about installed size (about 7.8 MB, `libs` about
+5.7 MB): the package is a single bundled C++ engine with no linked external
+library, and this is its compiled object code.
 
 ## Release summary
 
