@@ -78,6 +78,17 @@ test_that("native engine materialises equi joins with all.x / all.y / suffixes",
   expect_equal(left$id, c(1L, 2L, 2L, 4L))
   expect_equal(left$w, c(NA, 10L, 10L, NA))
 
+  dense_x <- data.frame(id = c(1L, 3L, 9L, NA_integer_), v = 1:4)
+  dense_y <- data.frame(id = 1:5, w = 11:15)
+  dense <- merge(dense_x, dense_y, by = "id", all.x = TRUE)
+  expect_equal(dense$id, dense_x$id)
+  expect_equal(dense$w, c(11L, 13L, NA, NA))
+
+  dup_y <- data.frame(id = c(1L, 3L, 3L), w = 21:23)
+  dup <- merge(dense_x[1:2, ], dup_y, by = "id", all.x = TRUE)
+  expect_equal(dup$id, c(1L, 3L, 3L))
+  expect_equal(dup$w, c(21L, 22L, 23L))
+
   full <- merge(x, y, by = "id", all = TRUE, sort = TRUE)
   expect_equal(full$id, c(1L, 2L, 2L, 3L, 4L))
   expect_equal(full$v.y, c(NA, "Y2", "Y2", "Y3", NA))
