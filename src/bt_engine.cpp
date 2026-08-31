@@ -169,45 +169,6 @@ void copy_common_attrs(SEXP out, SEXP in) {
   Rf_copyMostAttrib(in, out);
 }
 
-SEXP subset_vector(SEXP col, const std::vector<R_xlen_t>& rows) {
-  R_xlen_t n = (R_xlen_t)rows.size();
-  SEXP out = PROTECT(Rf_allocVector(TYPEOF(col), n));
-  switch (TYPEOF(col)) {
-    case LGLSXP: {
-      const int* src = LOGICAL(col);
-      int* dst = LOGICAL(out);
-      for (R_xlen_t i = 0; i < n; ++i) dst[i] = src[rows[(size_t)i]];
-      break;
-    }
-    case INTSXP: {
-      const int* src = INTEGER(col);
-      int* dst = INTEGER(out);
-      for (R_xlen_t i = 0; i < n; ++i) dst[i] = src[rows[(size_t)i]];
-      break;
-    }
-    case REALSXP: {
-      const double* src = REAL(col);
-      double* dst = REAL(out);
-      for (R_xlen_t i = 0; i < n; ++i) dst[i] = src[rows[(size_t)i]];
-      break;
-    }
-    case STRSXP:
-      for (R_xlen_t i = 0; i < n; ++i)
-        SET_STRING_ELT(out, i, STRING_ELT(col, rows[(size_t)i]));
-      break;
-    case VECSXP:
-      for (R_xlen_t i = 0; i < n; ++i)
-        SET_VECTOR_ELT(out, i, VECTOR_ELT(col, rows[(size_t)i]));
-      break;
-    default:
-      UNPROTECT(1);
-      Rf_error("basetable: unsupported column type '%s'", Rf_type2char(TYPEOF(col)));
-  }
-  copy_common_attrs(out, col);
-  UNPROTECT(1);
-  return out;
-}
-
 // Gather one atomic column's rows[] into an already-allocated dst. Thread-safe
 // (no R API): only for LGL / INT / REAL.
 void gather_atomic(SEXP dst, SEXP src, const std::vector<R_xlen_t>& rows) {
@@ -247,47 +208,87 @@ SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<i
     return out;
   }
 
-  // Allocate every output column and copy attributes on the R thread; fill
-  // atomic columns on worker threads and string/list columns here.
+  // Allocate every output column and copy attributes on the R thread. Atomic
+  // columns are then gathered on worker threads while this (the R) thread
+  // gathers the string / list columns in parallel with them -- SET_STRING_ELT
+  // has to stay on the R thread, but it no longer serialises ahead of the
+  // numeric gather.
   std::vector<SEXP> srcs((size_t)nc), dsts((size_t)nc);
-  std::vector<int> atomic_cols;
+  std::vector<int> atomic_cols, ref_cols;
   for (R_xlen_t j = 0; j < nc; ++j) {
     SEXP src = VECTOR_ELT(df, cols[(size_t)j]);
     srcs[(size_t)j] = src;
     int t = TYPEOF(src);
     SEXP dst;
     if (t == LGLSXP || t == INTSXP || t == REALSXP) {
-      dst = Rf_allocVector((SEXPTYPE)t, nr);
-      SET_VECTOR_ELT(out, j, dst);      // protect via `out` before any further alloc
-      copy_common_attrs(dst, src);
       atomic_cols.push_back((int)j);
     } else if (t == STRSXP || t == VECSXP) {
-      dst = subset_vector(src, rows);   // serial, touches R
-      SET_VECTOR_ELT(out, j, dst);
+      ref_cols.push_back((int)j);
     } else {
       UNPROTECT(2);
       Rf_error("basetable: unsupported column type '%s'", Rf_type2char(t));
     }
+    dst = Rf_allocVector((SEXPTYPE)t, nr);
+    SET_VECTOR_ELT(out, j, dst);        // protect via `out` before any further alloc
+    copy_common_attrs(dst, src);
     dsts[(size_t)j] = dst;
     SET_STRING_ELT(names, j, STRING_ELT(old_names, cols[(size_t)j]));
   }
 
-  if (!atomic_cols.empty()) {
-    int use = nth < 2 || nr < 100000 || (int)atomic_cols.size() < 2
-      ? 1 : std::min<int>(nth, (int)atomic_cols.size());
-    if (use <= 1) {
-      for (int j : atomic_cols) gather_atomic(dsts[(size_t)j], srcs[(size_t)j], rows);
-    } else {
-      std::vector<std::thread> pool;
-      for (int w = 0; w < use; ++w) {
-        pool.emplace_back([&, w]() {
-          for (size_t a = (size_t)w; a < atomic_cols.size(); a += (size_t)use) {
-            int j = atomic_cols[a];
-            gather_atomic(dsts[(size_t)j], srcs[(size_t)j], rows);
-          }
-        });
+  {
+    bool par = nth >= 2 && nr >= 100000;
+    // Worker threads do everything that needs no R API: the atomic-column
+    // gather, plus a plain-pointer gather of each STRSXP column's rows (the
+    // cache-miss-bound part). The R thread then only walks those buffers with
+    // SET_STRING_ELT (sequential, barrier only). VECSXP stays fully serial.
+    std::vector<std::vector<SEXP>> str_buf(ref_cols.size());
+    std::vector<int> str_cols;
+    for (size_t r = 0; r < ref_cols.size(); ++r)
+      if (TYPEOF(srcs[(size_t)ref_cols[r]]) == STRSXP) {
+        str_buf[r].resize((size_t)nr);
+        str_cols.push_back((int)r);
       }
+
+    struct GTask { int kind; SEXP dst; SEXP src; const SEXP* ssp; SEXP* buf; };
+    std::vector<GTask> tasks;
+    for (int j : atomic_cols)
+      tasks.push_back({0, dsts[(size_t)j], srcs[(size_t)j], nullptr, nullptr});
+    for (int r : str_cols) {
+      SEXP s = srcs[(size_t)ref_cols[(size_t)r]];
+      // STRING_PTR_RO may materialise an ALTREP source: force it here, on the
+      // R thread, before any worker touches it.
+      tasks.push_back({1, nullptr, s, STRING_PTR_RO(s), str_buf[(size_t)r].data()});
+    }
+
+    auto run_task = [&](const GTask& t) {
+      if (t.kind == 0) { gather_atomic(t.dst, t.src, rows); return; }
+      const SEXP* sp = t.ssp;
+      for (R_xlen_t i = 0; i < nr; ++i) t.buf[i] = sp[rows[(size_t)i]];
+    };
+
+    int use = par && (int)tasks.size() >= 2
+      ? std::min<int>(nth, (int)tasks.size()) : 1;
+    if (use > 1) {
+      std::vector<std::thread> pool;
+      for (int w = 0; w < use; ++w)
+        pool.emplace_back([&, w]() {
+          for (size_t a = (size_t)w; a < tasks.size(); a += (size_t)use) run_task(tasks[a]);
+        });
       for (auto& x : pool) x.join();
+    } else {
+      for (auto& t : tasks) run_task(t);
+    }
+
+    // R-thread finish: STRSXP from the gathered buffers, VECSXP directly.
+    for (size_t r = 0; r < ref_cols.size(); ++r) {
+      SEXP d = dsts[(size_t)ref_cols[r]], s = srcs[(size_t)ref_cols[r]];
+      if (TYPEOF(s) == STRSXP) {
+        const SEXP* b = str_buf[r].data();
+        for (R_xlen_t i = 0; i < nr; ++i) SET_STRING_ELT(d, i, b[i]);
+      } else {
+        for (R_xlen_t i = 0; i < nr; ++i)
+          SET_VECTOR_ELT(d, i, VECTOR_ELT(s, rows[(size_t)i]));
+      }
     }
   }
 
