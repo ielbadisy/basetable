@@ -22,6 +22,15 @@
 * `pick()` and `drop()` select columns by shallow reference rather than
   routing through the row materialiser, so narrowing a wide table no longer
   copies the retained column data.
+* Row materialisation (`build_frame`, behind every sort, filter and the join
+  fallback) now gathers each character column's source pointers on worker
+  threads alongside the numeric columns, leaving only the `SET_STRING_ELT`
+  walk on the R thread. On the 1e6-row `orderrows(by = c(<chr>, <num>))` this
+  roughly halves the materialisation step.
+* The fused `subset()` filter compacts its match list branch-free (write the
+  index, advance the cursor by the 0/1 predicate) instead of a mispredicting
+  `if`/`push_back`, bringing single-threaded `subset(d, x > c)` level with
+  `data.table`.
 
 # basetable 1.3.0
 
