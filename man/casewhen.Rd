@@ -19,10 +19,9 @@ A vector as long as the conditions, holding matched labels and
 \description{
 For each position, take the label of the first condition that is \code{TRUE}
 there. Conditions are a named list of equal-length logical vectors, in the
-same shape as \code{\link{collapsevalues}}'s \code{groups}: the name of an
-element is the value used where that element is the first \code{TRUE}.
-Positions matching no condition get \code{default}. \code{NA} in a condition
-counts as not matching.
+same shape as \code{\link[=collapsevalues]{collapsevalues()}}'s \code{groups}: the name of an element is the
+value used where that element is the first \code{TRUE}. Positions matching no
+condition get \code{default}. \code{NA} in a condition counts as not matching.
 }
 \examples{
 x <- c(-3, 0, 4, 25)

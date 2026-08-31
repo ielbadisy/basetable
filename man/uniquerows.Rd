@@ -14,8 +14,8 @@ uniqueness. Required when \code{data} is a file path.}
 
 \item{.keep_all}{Keep all columns when \code{cols} is supplied.}
 
-\item{...}{For the file form, passed to the file reader (\code{where},
-\code{delim}, \code{n_threads}, ...).}
+\item{...}{For the file form, passed to the file reader (\code{where}, \code{delim},
+\code{n_threads}, ...).}
 }
 \value{
 A basetable of the unique rows.
@@ -24,5 +24,5 @@ A basetable of the unique rows.
 Return unique rows, optionally considering only selected columns. With a
 single file path as \code{data}, it is a fused one-pass scan that returns the
 distinct combinations of \code{cols} without ever materialising the file as R
-vectors (see \code{\link{aggregate}}'s file mode).
+vectors (see \code{\link[=aggregate]{aggregate()}}'s file mode).
 }

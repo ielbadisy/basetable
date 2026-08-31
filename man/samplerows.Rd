@@ -12,8 +12,8 @@ samplerows(data, n, by = NULL)
 \item{n}{Integer count.}
 
 \item{by}{Optional character vector of grouping columns; sample \code{n} rows
-within each group (capped at the group size). Sampled rows are returned in
-their original order.}
+within each group (capped at the group size). Sampled rows are returned
+in their original order.}
 }
 \value{
 A random sample of \code{n} rows.

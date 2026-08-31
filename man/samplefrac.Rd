@@ -12,7 +12,8 @@ samplefrac(data, frac, by = NULL)
 \item{frac}{Fraction of rows to sample.}
 
 \item{by}{Optional character vector of grouping columns; sample \code{frac} of
-each group (rounded up). Sampled rows are returned in their original order.}
+each group (rounded up). Sampled rows are returned in their original
+order.}
 }
 \value{
 A random sample of rows.
