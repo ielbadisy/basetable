@@ -2374,6 +2374,84 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
     SEXP yc = VECTOR_ELT(y, y_by[0]);
     const int* xp = TYPEOF(xc) == LGLSXP ? LOGICAL(xc) : INTEGER(xc);
     const int* yp = TYPEOF(yc) == LGLSXP ? LOGICAL(yc) : INTEGER(yc);
+    bool dense_unique = yf.nrow > 0;
+    int minv = INT_MAX, maxv = INT_MIN;
+    int na_seen = 0;
+    for (R_xlen_t j = 0; j < yf.nrow; ++j) {
+      int v = yp[j];
+      if (v == NA_INTEGER) {
+        if (++na_seen > 1) { dense_unique = false; break; }
+      } else {
+        if (v < minv) minv = v;
+        if (v > maxv) maxv = v;
+      }
+    }
+    uint64_t span = 0;
+    if (dense_unique && minv != INT_MAX) {
+      span = (uint64_t)((int64_t)maxv - (int64_t)minv + 1);
+      if (span > (uint64_t)yf.nrow * 4 || span > 10000000ULL) dense_unique = false;
+    }
+    if (dense_unique) {
+      std::vector<R_xlen_t> direct((size_t)span, -1);
+      R_xlen_t na_row = -1;
+      for (R_xlen_t j = 0; j < yf.nrow; ++j) {
+        int v = yp[j];
+        if (v == NA_INTEGER) {
+          na_row = j;
+        } else {
+          size_t slot = (size_t)((int64_t)v - (int64_t)minv);
+          if (direct[slot] >= 0) { dense_unique = false; break; }
+          direct[slot] = j;
+        }
+      }
+      if (dense_unique) {
+        auto match_row = [&](int v) -> R_xlen_t {
+          if (v == NA_INTEGER) return na_row;
+          if (minv == INT_MAX || v < minv || v > maxv) return -1;
+          return direct[(size_t)((int64_t)v - (int64_t)minv)];
+        };
+        if (JT >= 2) {
+          std::vector<std::vector<R_xlen_t>> lx((size_t)JT), ly((size_t)JT);
+          R_xlen_t chunk = (xf.nrow + JT - 1) / JT;
+          std::vector<std::thread> pool;
+          for (int t = 0; t < JT; ++t) {
+            R_xlen_t lo = (R_xlen_t)t * chunk, hi = std::min<R_xlen_t>(xf.nrow, lo + chunk);
+            if (lo >= hi) break;
+            pool.emplace_back([&, t, lo, hi]() {
+              auto& vx = lx[(size_t)t];
+              auto& vy = ly[(size_t)t];
+              vx.reserve((size_t)(hi - lo));
+              vy.reserve((size_t)(hi - lo));
+              for (R_xlen_t i = lo; i < hi; ++i) {
+                R_xlen_t yi = match_row(xp[i]);
+                if (yi >= 0) { vx.push_back(i); vy.push_back(yi); }
+                else if (all_x) { vx.push_back(i); vy.push_back(-1); }
+              }
+            });
+          }
+          for (auto& p : pool) p.join();
+          size_t tot = 0;
+          for (auto& v : lx) tot += v.size();
+          xrows.reserve(tot);
+          yrows.reserve(tot);
+          for (int t = 0; t < JT; ++t) {
+            xrows.insert(xrows.end(), lx[(size_t)t].begin(), lx[(size_t)t].end());
+            yrows.insert(yrows.end(), ly[(size_t)t].begin(), ly[(size_t)t].end());
+          }
+        } else {
+          xrows.reserve((size_t)xf.nrow);
+          yrows.reserve((size_t)xf.nrow);
+          for (R_xlen_t i = 0; i < xf.nrow; ++i) {
+            R_xlen_t yi = match_row(xp[i]);
+            if (yi >= 0) { xrows.push_back(i); yrows.push_back(yi); }
+            else if (all_x) { xrows.push_back(i); yrows.push_back(-1); }
+          }
+        }
+      }
+    }
+    if (dense_unique) {
+      // `xrows` and `yrows` were filled by the direct-index path.
+    } else {
     std::unordered_map<int, std::vector<R_xlen_t>> imap;
     imap.reserve((size_t)yf.nrow);
     for (R_xlen_t j = 0; j < yf.nrow; ++j) imap[yp[j]].push_back(j);
@@ -2420,6 +2498,7 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
           yrows.push_back(-1);
         }
       }
+    }
     }
   } else if (fast_real_join) {
     SEXP xc = VECTOR_ELT(x, x_by[0]);
