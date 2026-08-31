@@ -1793,68 +1793,78 @@ extern "C" SEXP bt_filter_(SEXP df, SEXP s_cols, SEXP s_code, SEXP s_args,
   }
   if (ncmp == 0) return R_NilValue;
 
-  auto keep = [&](R_xlen_t i) -> bool {
+  // One predicate as branch-free 0/1: the per-column op is loop-invariant so
+  // its switch predicts perfectly; the NA test folds into the mask (`av == av`
+  // for doubles) so there is no early-return branch inside the row loop.
+  auto keep = [&](R_xlen_t i) -> unsigned {
+    unsigned pass = 1u;
     for (int k = 0; k < ncmp; ++k) {
       double av;
+      unsigned valid;
       if (cmp[k].type == REALSXP) {
         av = cmp[k].rp[i];
-        if (ISNAN(av)) return false;
+        valid = (av == av);            // false for NaN / NA
       } else {
         int iv = cmp[k].ip[i];
-        if (iv == NA_INTEGER) return false;
+        valid = (iv != NA_INTEGER);
         av = (double)iv;
       }
       double bv = cmp[k].s;
-      bool ok;
+      unsigned ok;
       switch (cmp[k].op) {
-        case 20: ok = av <  bv; break;
-        case 21: ok = av <= bv; break;
-        case 22: ok = av >  bv; break;
-        case 23: ok = av >= bv; break;
-        case 24: ok = av == bv; break;
-        default: ok = av != bv; break;  // 25 NE
+        case 20: ok = (av <  bv); break;
+        case 21: ok = (av <= bv); break;
+        case 22: ok = (av >  bv); break;
+        case 23: ok = (av >= bv); break;
+        case 24: ok = (av == bv); break;
+        default: ok = (av != bv); break;  // 25 NE
       }
-      if (!ok) return false;
+      pass &= valid & ok;
     }
-    return true;
+    return pass;
+  };
+  // Branch-free stream compaction: write the row index unconditionally and
+  // advance the cursor by the predicate, so a ~50%-selective filter has no
+  // data-dependent branch to mispredict.
+  auto compact = [&](R_xlen_t lo, R_xlen_t hi, R_xlen_t* out) -> R_xlen_t {
+    R_xlen_t k = 0;
+    for (R_xlen_t i = lo; i < hi; ++i) { out[k] = i; k += keep(i); }
+    return k;
   };
 
   int nth = clamp_threads(s_n_threads, f.nrow, 200000);
   int T = (nth < 2 || f.nrow < 100000) ? 1 : nth;
-  R_xlen_t chunk = (f.nrow + T - 1) / T;
-  std::vector<std::vector<R_xlen_t>> part((size_t)T);
+  std::vector<R_xlen_t> rows;
   if (T == 1) {
-    auto& v = part[0];
-    v.reserve((size_t)f.nrow / 2 + 16);
-    for (R_xlen_t i = 0; i < f.nrow; ++i) if (keep(i)) v.push_back(i);
+    rows.resize((size_t)f.nrow);
+    rows.resize((size_t)compact(0, f.nrow, rows.data()));
   } else {
+    R_xlen_t chunk = (f.nrow + T - 1) / T;
+    std::vector<std::vector<R_xlen_t>> part((size_t)T);
+    std::vector<R_xlen_t> cnt((size_t)T, 0);
     std::vector<std::thread> pool;
     for (int t = 0; t < T; ++t) {
       R_xlen_t lo = (R_xlen_t)t * chunk, hi = std::min<R_xlen_t>(f.nrow, lo + chunk);
       if (lo >= hi) break;
       pool.emplace_back([&, t, lo, hi]() {
-        auto& v = part[(size_t)t];
-        v.reserve((size_t)(hi - lo) / 4 + 16);
-        for (R_xlen_t i = lo; i < hi; ++i) if (keep(i)) v.push_back(i);
+        part[(size_t)t].resize((size_t)(hi - lo));
+        cnt[(size_t)t] = compact(lo, hi, part[(size_t)t].data());
       });
     }
     for (auto& x : pool) x.join();
-  }
 
-  std::vector<size_t> off(part.size() + 1, 0);
-  for (size_t t = 0; t < part.size(); ++t) off[t + 1] = off[t] + part[t].size();
-  std::vector<R_xlen_t> rows(off.back());
-  if (T == 1) {
-    std::copy(part[0].begin(), part[0].end(), rows.begin());
-  } else {
-    std::vector<std::thread> pool;
-    for (size_t t = 0; t < part.size(); ++t) {
-      if (part[t].empty()) continue;
-      pool.emplace_back([&, t]() {
-        std::copy(part[t].begin(), part[t].end(), rows.begin() + off[t]);
+    std::vector<size_t> off((size_t)T + 1, 0);
+    for (int t = 0; t < T; ++t) off[(size_t)t + 1] = off[(size_t)t] + (size_t)cnt[(size_t)t];
+    rows.resize(off.back());
+    std::vector<std::thread> cp;
+    for (int t = 0; t < T; ++t) {
+      if (cnt[(size_t)t] == 0) continue;
+      cp.emplace_back([&, t]() {
+        std::copy(part[(size_t)t].begin(), part[(size_t)t].begin() + cnt[(size_t)t],
+                  rows.begin() + off[(size_t)t]);
       });
     }
-    for (auto& x : pool) x.join();
+    for (auto& x : cp) x.join();
   }
 
   std::vector<int> cols = col_index(s_cols, f.ncol);
