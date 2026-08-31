@@ -1249,24 +1249,38 @@ std::vector<uint64_t> order_codes(SEXP col, R_xlen_t nrow, bool na_last, bool de
   if (TYPEOF(col) == STRSXP && !Rf_isFactor(col)) {
     std::unordered_map<const void*, int> seen;
     std::vector<SEXP> distinct;
+    std::vector<int> row_code((size_t)nrow, 0);
+    seen.reserve((size_t)std::min<R_xlen_t>(nrow, 65536));
     for (R_xlen_t i = 0; i < nrow; ++i) {
       SEXP s = STRING_ELT(col, i);
       if (s == NA_STRING) continue;
-      if (seen.emplace((const void*)s, 0).second) distinct.push_back(s);
+      const void* key = (const void*)s;
+      auto it = seen.find(key);
+      if (it == seen.end()) {
+        int id = (int)distinct.size() + 1;
+        seen.emplace(key, id);
+        distinct.push_back(s);
+        row_code[(size_t)i] = id;
+      } else {
+        row_code[(size_t)i] = it->second;
+      }
     }
     std::sort(distinct.begin(), distinct.end(),
               [](SEXP a, SEXP b) { return std::strcmp(CHAR(a), CHAR(b)) < 0; });
+    std::vector<int> rank((size_t)distinct.size() + 1, 0);
     for (size_t r = 0; r < distinct.size(); ++r) {
       int rr = (r > 0 && std::strcmp(CHAR(distinct[r - 1]), CHAR(distinct[r])) == 0)
-        ? seen[(const void*)distinct[r - 1]] : (int)r + 1;
-      seen[(const void*)distinct[r]] = rr;
+        ? rank[(size_t)seen[(const void*)distinct[r - 1]]] : (int)r + 1;
+      rank[(size_t)seen[(const void*)distinct[r]]] = rr;
     }
     uint64_t* cp = code.data();
+    const int* rcp = row_code.data();
+    const int* rp = rank.data();
     par_rows(nrow, nth, [&](R_xlen_t lo, R_xlen_t hi) {
       for (R_xlen_t i = lo; i < hi; ++i) {
-        SEXP s = STRING_ELT(col, i);
-        if (s == NA_STRING) { cp[i] = na_last ? NA_HI : 0ULL; continue; }
-        uint64_t c = (uint64_t)seen.find((const void*)s)->second;
+        int rid = rcp[i];
+        if (rid == 0) { cp[i] = na_last ? NA_HI : 0ULL; continue; }
+        uint64_t c = (uint64_t)rp[rid];
         cp[i] = decreasing ? ~c : c;
       }
     });
@@ -1391,6 +1405,74 @@ void radix_pairs(std::vector<uint64_t>& key, std::vector<R_xlen_t>& idx, int nth
     key.swap(kbuf);
     idx.swap(ibuf);
   }
+}
+
+bool order_string_real2(SEXP df, int s_col, int x_col, R_xlen_t nrow, bool na_last,
+                        std::vector<R_xlen_t>& ord, int nth) {
+  if (!na_last) return false;
+  SEXP sc = VECTOR_ELT(df, s_col);
+  SEXP xc = VECTOR_ELT(df, x_col);
+  if (TYPEOF(sc) != STRSXP || Rf_isFactor(sc) || TYPEOF(xc) != REALSXP)
+    return false;
+
+  bool supported = false;
+  std::vector<uint64_t> skey = order_codes(sc, nrow, true, false, supported, nth);
+  if (!supported) return false;
+
+  uint64_t max_key = 0;
+  bool have_na = false;
+  const uint64_t NA_HI = ~(uint64_t)0;
+  for (R_xlen_t i = 0; i < nrow; ++i) {
+    uint64_t k = skey[(size_t)i];
+    if (k == NA_HI) { have_na = true; continue; }
+    if (k > max_key) max_key = k;
+  }
+  if (max_key > (uint64_t)nrow) return false;
+
+  size_t nb = (size_t)max_key + (have_na ? 2U : 1U);
+  size_t na_bucket = nb - 1U;
+  std::vector<size_t> counts(nb, 0), starts(nb + 1, 0), cursor(nb, 0);
+  for (R_xlen_t i = 0; i < nrow; ++i) {
+    uint64_t k = skey[(size_t)i];
+    ++counts[k == NA_HI ? na_bucket : (size_t)k];
+  }
+  for (size_t b = 0; b < nb; ++b) starts[b + 1] = starts[b] + counts[b];
+  cursor = starts;
+  ord.resize((size_t)nrow);
+  for (R_xlen_t i = 0; i < nrow; ++i) {
+    uint64_t k = skey[(size_t)i];
+    size_t b = k == NA_HI ? na_bucket : (size_t)k;
+    ord[cursor[b]++] = i;
+  }
+
+  const double* xp = REAL(xc);
+  auto sort_bucket = [&](size_t b) {
+    R_xlen_t lo = (R_xlen_t)starts[b], hi = (R_xlen_t)starts[b + 1];
+    if (hi - lo < 2) return;
+    std::stable_sort(ord.begin() + lo, ord.begin() + hi, [&](R_xlen_t a, R_xlen_t b) {
+      double xa = xp[a], xb = xp[b];
+      bool ana = ISNAN(xa), bna = ISNAN(xb);
+      if (ana || bna) {
+        if (ana && bna) return a < b;
+        return !ana;
+      }
+      if (xa == xb) return a < b;
+      return xa < xb;
+    });
+  };
+
+  if (nth < 2 || nrow < 200000 || nb < 16) {
+    for (size_t b = 0; b < nb; ++b) sort_bucket(b);
+  } else {
+    std::vector<std::thread> pool;
+    for (int t = 0; t < nth; ++t) {
+      pool.emplace_back([&, t]() {
+        for (size_t b = (size_t)t; b < nb; b += (size_t)nth) sort_bucket(b);
+      });
+    }
+    for (auto& th : pool) th.join();
+  }
+  return true;
 }
 
 int cmp_value(SEXP col, R_xlen_t a, R_xlen_t b, bool na_last) {
@@ -1764,6 +1846,14 @@ extern "C" SEXP bt_order_(SEXP df, SEXP s_by, SEXP s_decreasing, SEXP s_na_last,
 
   std::vector<R_xlen_t> ord((size_t)f.nrow);
   for (R_xlen_t i = 0; i < f.nrow; ++i) ord[(size_t)i] = i;
+
+  if (by.size() == 2 &&
+      LOGICAL(s_decreasing)[0] != TRUE &&
+      LOGICAL(s_decreasing)[1] != TRUE &&
+      order_string_real2(df, by[0], by[1], f.nrow, na_last, ord, nth)) {
+    std::vector<int> cols = col_index(R_NilValue, f.ncol);
+    return build_frame(df, ord, cols, nth);
+  }
 
   // Try a stable multi-column LSD radix sort: sort by the last key column
   // first, then each earlier one, so earlier keys dominate.

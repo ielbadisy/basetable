@@ -224,6 +224,22 @@ test_that("orderrows on character keys matches C-locale ordering", {
   expect_equal(out, ref)
 })
 
+test_that("orderrows fast path handles character then double keys", {
+  set.seed(8)
+  d <- data.frame(
+    s = sample(c(sprintf("k%03d", 1:40), NA), 10000, TRUE),
+    x = sample(c(round(rnorm(9900), 2), rep(NA_real_, 100))),
+    id = seq_len(10000),
+    stringsAsFactors = FALSE
+  )
+
+  out <- as.data.frame(orderrows(d, by = c("s", "x")))
+  ref <- d[order(d$s, d$x, method = "radix", na.last = TRUE), ]
+  rownames(out) <- NULL
+  rownames(ref) <- NULL
+  expect_equal(out, ref)
+})
+
 test_that("windowed rangemerge matches a brute-force scan", {
   set.seed(11)
   ng <- 8
