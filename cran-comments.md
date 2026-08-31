@@ -3,10 +3,11 @@
 ## Note to CRAN
 
 This upload supersedes the earlier 0.9.0 submission, which was returned with
-a manual review (K. Lauseker, 2026-08-21). Since then the package removed its
-'data.table' dependency in favour of a bundled 'C++' engine and renamed a few
-exports that clashed with other packages, so it is now at 1.3.1. Please
-review this version in place of 0.9.0.
+a manual review (K. Lauseker, 2026-08-21). Since then the package replaced
+its 'data.table' and 'stringi' dependencies with a bundled 'C++' engine and
+plain-R tables, and renamed a few exports that clashed with other packages,
+so it is now at 1.3.1. Its 'Imports' are now only base and recommended
+packages. Please review this version in place of 0.9.0.
 
 Both points from the 0.9.0 review are addressed:
 
