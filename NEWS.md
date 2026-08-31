@@ -6,6 +6,22 @@
   build side in parallel and gather the atomic output columns on worker
   threads. On the 1e6-row reference join this moves `merge()` from roughly
   1.7x of `data.table` to about parity.
+* Joins keyed on a dense integer or logical column now index the build side
+  directly instead of building a dictionary or hash table, removing the probe
+  pass for `merge()`, `semimerge()`, `antimerge()` and `updatemerge()` on
+  such keys.
+* String-keyed joins and the fused scalar-comparison filter share a tighter
+  materialisation path, cutting the per-row overhead of `merge()` and
+  `subset()` on character data.
+* Character ordering short-circuits the general radix when the key has few
+  distinct values: `orderrows()` then counts and buckets the levels directly
+  rather than ranking every string.
+* Core join build/probe and row-materialisation kernels reworked to reuse
+  scratch buffers and drop a redundant copy, trimming time and peak
+  allocation on the 1e6-row joins.
+* `pick()` and `drop()` select columns by shallow reference rather than
+  routing through the row materialiser, so narrowing a wide table no longer
+  copies the retained column data.
 
 # basetable 1.3.0
 
