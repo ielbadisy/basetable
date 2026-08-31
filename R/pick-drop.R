@@ -1,10 +1,12 @@
 pick <- function(data, cols) {
-  bt_engine_subset(data, cols = cols)
+  df <- bt_as_data_frame(data)
+  cols <- bt_resolve_cols(df, cols)
+  bt_as_data_table(df[cols])
 }
 
 drop <- function(data, cols) {
   df <- bt_as_data_frame(data)
   cols <- bt_resolve_cols(df, cols)
   keep <- setdiff(names(df), cols)
-  bt_engine_subset(df, cols = keep)
+  bt_as_data_table(df[keep])
 }
