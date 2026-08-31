@@ -77,8 +77,10 @@ measure_all <- function() {
       data.table = quote(dt[, list(x = sd(x)), by = g]),
       dplyr      = quote(dplyr::summarise(dplyr::group_by(d, g), x = sd(x), .groups = "drop")))),
     bench_one("equi join", list(
+      # basetable::merge() returns rows in input order; pin data.table to
+      # sort = FALSE so both materialise the join without also sorting it.
       basetable  = quote(basetable::merge(d, dim_tbl, by = "g")),
-      data.table = quote(merge(dt, dmt, by = "g")),
+      data.table = quote(merge(dt, dmt, by = "g", sort = FALSE)),
       dplyr      = quote(dplyr::inner_join(d, dim_tbl, by = "g")))),
     bench_one("semi join", list(
       basetable  = quote(basetable::semimerge(d, dim_tbl, by = "g")),

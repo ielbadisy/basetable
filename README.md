@@ -89,17 +89,20 @@ compared with `data.table` and `dplyr`.
 
 | Operation | basetable | data.table | dplyr | basetable mem | data.table mem | dplyr mem |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| filter | 10 ms | 9 ms | 11 ms | 15 MB | 21 MB | 28 MB |
-| sort (string key) | 96 ms | 46 ms | 101 ms | 34 MB | 47 MB | 69 MB |
-| distinct | 5 ms | 7 ms | 7 ms | 0.02 MB | 20 MB | 12 MB |
-| count by group | 19 ms | 30 ms | 788 ms | 1 MB | 30 MB | 30 MB |
-| sd by group | 9 ms | 16 ms | 54 ms | 0.04 MB | 27 MB | 36 MB |
-| equi join | 37 ms | 38 ms | 57 ms | 42 MB | 42 MB | 101 MB |
-| semi join | 21 ms | 47 ms | 59 ms | 38 MB | 58 MB | 82 MB |
+| filter | 7 ms | 10 ms | 10 ms | 15 MB | 21 MB | 28 MB |
+| sort (string key) | 58 ms | 44 ms | 102 ms | 34 MB | 47 MB | 69 MB |
+| distinct | 5 ms | 8 ms | 13 ms | 0.03 MB | 20 MB | 12 MB |
+| count by group | 23 ms | 40 ms | 738 ms | 1 MB | 30 MB | 30 MB |
+| sd by group | 10 ms | 16 ms | 42 ms | 0.05 MB | 27 MB | 36 MB |
+| equi join | 16 ms | 15 ms | 66 ms | 8 MB | 8 MB | 101 MB |
+| semi join | 13 ms | 67 ms | 52 ms | 4 MB | 58 MB | 82 MB |
 
-`basetable` is faster than `data.table` on `distinct`, grouped `count`, `sd`
-by group and `semi join`, and edges it on `equi join` and `filter`. Against
-`dplyr` it is faster on every operation here, by more than 40x on
+(`equi join` pins `data.table` to `sort = FALSE`, matching `basetable::merge()`,
+which returns rows in input order.)
+
+`basetable` is faster than `data.table` on `filter`, `distinct`, grouped
+`count`, `sd` by group and `semi join`, and is level with it on `equi join`.
+Against `dplyr` it is faster on every operation here, by more than 30x on
 high-cardinality `count`. The one operation it loses is string `sort`.
 
 ### Memory, ranked by advantage
@@ -112,13 +115,13 @@ sets a floor.
 
 | Operation | basetable | data.table | dplyr | basetable vs data.table |
 | --- | ---: | ---: | ---: | ---: |
-| distinct | 0.02 MB | 20 MB | 12 MB | ~1000x less |
-| sd by group | 0.04 MB | 27 MB | 36 MB | ~600x less |
+| distinct | 0.03 MB | 20 MB | 12 MB | ~700x less |
+| sd by group | 0.05 MB | 27 MB | 36 MB | ~500x less |
 | count by group | 1 MB | 30 MB | 30 MB | ~30x less |
-| semi join | 38 MB | 58 MB | 82 MB | ~1.5x less |
+| semi join | 4 MB | 58 MB | 82 MB | ~15x less |
 | filter | 15 MB | 21 MB | 28 MB | ~1.4x less |
 | sort (string key) | 34 MB | 47 MB | 69 MB | ~1.4x less |
-| equi join | 42 MB | 42 MB | 101 MB | ~parity |
+| equi join | 8 MB | 8 MB | 101 MB | ~parity |
 
 These are R-level allocations as reported by `bench`. The C++ engine also
 uses `malloc`'d scratch buffers (radix keys, per-thread row-position
@@ -126,7 +129,7 @@ vectors) that `bench` does not count, so peak process memory during a sort
 or filter is higher than the figure above; `data.table` does the same.
 
 The one gap is **sorting**: `orderrows()` is a stable parallel radix, ~20x
-faster than base `order()`, but still ~2x of `data.table`, whose hand-tuned
+faster than base `order()`, but still ~1.3x of `data.table`, whose hand-tuned
 parallel radix is the one operation `basetable` does not match.
 
 ## Positioning

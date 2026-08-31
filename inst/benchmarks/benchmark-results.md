@@ -4,22 +4,22 @@
 
 | Operation | basetable | data.table | dplyr | basetable mem | data.table mem | dplyr mem |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| filter | 10 ms | 9 ms | 11 ms | 14.67 MB | 21.19 MB | 28.34 MB |
-| sort (string key) | 89 ms | 33 ms | 79 ms | 34.34 MB | 46.85 MB | 68.83 MB |
-| distinct | 4 ms | 6 ms | 5 ms | 0.02 MB | 19.59 MB | 12.02 MB |
-| count by group | 26 ms | 58 ms | 738 ms | 1.15 MB | 30.27 MB | 29.72 MB |
-| sd by group | 7 ms | 14 ms | 39 ms | 0.04 MB | 26.91 MB | 36.02 MB |
-| equi join | 39 ms | 38 ms | 52 ms | 41.97 MB | 41.96 MB | 101.08 MB |
-| semi join | 23 ms | 42 ms | 57 ms | 38.15 MB | 57.80 MB | 81.57 MB |
+| filter | 7 ms | 10 ms | 10 ms | 14.51 MB | 21.19 MB | 28.34 MB |
+| sort (string key) | 58 ms | 44 ms | 102 ms | 34.37 MB | 46.85 MB | 68.83 MB |
+| distinct | 5 ms | 8 ms | 13 ms | 0.03 MB | 19.59 MB | 12.02 MB |
+| count by group | 23 ms | 40 ms | 738 ms | 1.16 MB | 30.27 MB | 29.72 MB |
+| sd by group | 10 ms | 16 ms | 42 ms | 0.05 MB | 26.91 MB | 36.02 MB |
+| equi join | 16 ms | 15 ms | 66 ms | 7.64 MB | 7.63 MB | 101.08 MB |
+| semi join | 13 ms | 67 ms | 52 ms | 3.84 MB | 57.80 MB | 81.57 MB |
 
 ### Single thread (basetable and data.table pinned to 1)
 
 | Operation | basetable | data.table | dplyr | basetable mem | data.table mem | dplyr mem |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| filter | 16 ms | 12 ms | 13 ms | 10.58 MB | 19.40 MB | 27.01 MB |
-| sort (string key) | 101 ms | 117 ms | 88 ms | 34.33 MB | 46.75 MB | 68.11 MB |
+| filter | 9 ms | 9 ms | 10 ms | 10.58 MB | 19.40 MB | 27.01 MB |
+| sort (string key) | 156 ms | 116 ms | 105 ms | 34.33 MB | 46.75 MB | 68.11 MB |
 | distinct | 5 ms | 18 ms | 7 ms | 0.02 MB | 19.18 MB | 11.85 MB |
-| count by group | 21 ms | 48 ms | 714 ms | 1.14 MB | 29.41 MB | 28.80 MB |
-| sd by group | 17 ms | 32 ms | 55 ms | 0.03 MB | 26.84 MB | 35.99 MB |
-| equi join | 83 ms | 59 ms | 50 ms | 41.96 MB | 41.96 MB | 100.60 MB |
-| semi join | 55 ms | 61 ms | 59 ms | 38.15 MB | 57.37 MB | 81.52 MB |
+| count by group | 21 ms | 36 ms | 752 ms | 1.14 MB | 29.41 MB | 28.80 MB |
+| sd by group | 17 ms | 26 ms | 43 ms | 0.03 MB | 26.84 MB | 35.99 MB |
+| equi join | 17 ms | 17 ms | 78 ms | 7.63 MB | 7.63 MB | 100.60 MB |
+| semi join | 55 ms | 49 ms | 43 ms | 3.81 MB | 57.37 MB | 81.52 MB |
