@@ -1622,7 +1622,13 @@ extern "C" SEXP bt_filter_(SEXP df, SEXP s_cols, SEXP s_code, SEXP s_args,
   const double* consts = REAL(s_consts);
   R_xlen_t nconst = Rf_xlength(s_consts);
 
-  struct Cmp { const double* p; double s; int op; };
+  struct Cmp {
+    const double* rp;
+    const int* ip;
+    double s;
+    int op;
+    int type;
+  };
   Cmp cmp[2];
   int ncmp = 0;
 
@@ -1636,26 +1642,39 @@ extern "C" SEXP bt_filter_(SEXP df, SEXP s_cols, SEXP s_code, SEXP s_args,
     }
   };
   // resolve a leaf operand to (column pointer | scalar)
-  auto leaf = [&](int idx, const double*& p, double& sc, bool& is_col) -> bool {
+  auto leaf = [&](int idx, const double*& rp, const int*& ip,
+                  double& sc, bool& is_col, int& type) -> bool {
     if (code[idx] == 2 /*EX_CONST*/) {
       int ci = args[idx];
       if (ci < 0 || ci >= nconst) return false;
-      is_col = false; sc = consts[ci]; p = nullptr; return true;
+      is_col = false; sc = consts[ci]; rp = nullptr; ip = nullptr; type = 0;
+      return true;
     }
     if (code[idx] != 1 /*EX_COL*/) return false;
     int cj = args[idx];
     if (cj < 0 || cj >= f.ncol) return false;
     SEXP col = VECTOR_ELT(df, cj);
-    if (TYPEOF(col) != REALSXP) return false;
-    is_col = true; p = REAL(col); sc = 0.0; return true;
+    if (TYPEOF(col) == REALSXP) {
+      is_col = true; rp = REAL(col); ip = nullptr; sc = 0.0; type = REALSXP;
+      return true;
+    }
+    if (TYPEOF(col) == INTSXP || TYPEOF(col) == LGLSXP) {
+      is_col = true; rp = nullptr; ip = INTEGER(col); sc = 0.0; type = TYPEOF(col);
+      return true;
+    }
+    return false;
   };
   auto take = [&](int ia, int ib, int iop, Cmp& c) -> bool {
     if (code[iop] < 20 || code[iop] > 25) return false;  // not a comparison
-    const double* ap; const double* bp; double as_ = 0, bs_ = 0; bool ac, bc;
-    if (!leaf(ia, ap, as_, ac) || !leaf(ib, bp, bs_, bc)) return false;
+    const double* ar; const double* br;
+    const int* ai; const int* bi;
+    double as_ = 0, bs_ = 0;
+    bool ac, bc;
+    int at, bt;
+    if (!leaf(ia, ar, ai, as_, ac, at) || !leaf(ib, br, bi, bs_, bc, bt)) return false;
     if (ac == bc) return false;                          // col-col or const-const
-    if (ac) { c.p = ap; c.s = bs_; c.op = code[iop]; }
-    else    { c.p = bp; c.s = as_; c.op = flip_op(code[iop]); }
+    if (ac) { c.rp = ar; c.ip = ai; c.s = bs_; c.op = code[iop]; c.type = at; }
+    else    { c.rp = br; c.ip = bi; c.s = as_; c.op = flip_op(code[iop]); c.type = bt; }
     return true;
   };
 
@@ -1668,8 +1687,16 @@ extern "C" SEXP bt_filter_(SEXP df, SEXP s_cols, SEXP s_code, SEXP s_args,
 
   auto keep = [&](R_xlen_t i) -> bool {
     for (int k = 0; k < ncmp; ++k) {
-      double av = cmp[k].p[i], bv = cmp[k].s;
-      if (ISNAN(av)) return false;
+      double av;
+      if (cmp[k].type == REALSXP) {
+        av = cmp[k].rp[i];
+        if (ISNAN(av)) return false;
+      } else {
+        int iv = cmp[k].ip[i];
+        if (iv == NA_INTEGER) return false;
+        av = (double)iv;
+      }
+      double bv = cmp[k].s;
       bool ok;
       switch (cmp[k].op) {
         case 20: ok = av <  bv; break;
@@ -2135,7 +2162,15 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
   std::vector<R_xlen_t> all_y_rows;
   KeyCodec codec(y, y_by);
   KeyBuf buf;
-  if (cross) {
+  bool fast_string_join = !cross && !all_y && x_by.size() == 1 &&
+    TYPEOF(VECTOR_ELT(x, x_by[0])) == STRSXP &&
+    TYPEOF(VECTOR_ELT(y, y_by[0])) == STRSXP &&
+    !Rf_isFactor(VECTOR_ELT(x, x_by[0])) &&
+    !Rf_isFactor(VECTOR_ELT(y, y_by[0]));
+
+  if (fast_string_join) {
+    // Built below without the generic KeyBuf codec.
+  } else if (cross) {
     all_y_rows.reserve((size_t)yf.nrow);
     for (R_xlen_t j = 0; j < yf.nrow; ++j) all_y_rows.push_back(j);
   } else {
@@ -2158,7 +2193,58 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
   // need the shared `y_matched` bookkeeping and stay on the serial path.
   int jnth = clamp_threads(s_n_threads, xf.nrow, 200000);
   int JT = (!cross && !all_y && jnth >= 2 && xf.nrow >= 100000) ? jnth : 1;
-  if (JT >= 2) {
+  if (fast_string_join) {
+    SEXP xc = VECTOR_ELT(x, x_by[0]);
+    SEXP yc = VECTOR_ELT(y, y_by[0]);
+    std::unordered_map<const void*, std::vector<R_xlen_t>> smap;
+    smap.reserve((size_t)yf.nrow);
+    for (R_xlen_t j = 0; j < yf.nrow; ++j)
+      smap[(const void*)STRING_ELT(yc, j)].push_back(j);
+
+    if (JT >= 2) {
+      std::vector<std::vector<R_xlen_t>> lx((size_t)JT), ly((size_t)JT);
+      R_xlen_t chunk = (xf.nrow + JT - 1) / JT;
+      std::vector<std::thread> pool;
+      for (int t = 0; t < JT; ++t) {
+        R_xlen_t lo = (R_xlen_t)t * chunk, hi = std::min<R_xlen_t>(xf.nrow, lo + chunk);
+        if (lo >= hi) break;
+        pool.emplace_back([&, t, lo, hi]() {
+          auto& vx = lx[(size_t)t];
+          auto& vy = ly[(size_t)t];
+          for (R_xlen_t i = lo; i < hi; ++i) {
+            auto it = smap.find((const void*)STRING_ELT(xc, i));
+            if (it != smap.end() && !it->second.empty()) {
+              for (R_xlen_t yi : it->second) { vx.push_back(i); vy.push_back(yi); }
+            } else if (all_x) {
+              vx.push_back(i); vy.push_back(-1);
+            }
+          }
+        });
+      }
+      for (auto& p : pool) p.join();
+      size_t tot = 0;
+      for (auto& v : lx) tot += v.size();
+      xrows.reserve(tot);
+      yrows.reserve(tot);
+      for (int t = 0; t < JT; ++t) {
+        xrows.insert(xrows.end(), lx[(size_t)t].begin(), lx[(size_t)t].end());
+        yrows.insert(yrows.end(), ly[(size_t)t].begin(), ly[(size_t)t].end());
+      }
+    } else {
+      for (R_xlen_t i = 0; i < xf.nrow; ++i) {
+        auto it = smap.find((const void*)STRING_ELT(xc, i));
+        if (it != smap.end() && !it->second.empty()) {
+          for (R_xlen_t yi : it->second) {
+            xrows.push_back(i);
+            yrows.push_back(yi);
+          }
+        } else if (all_x) {
+          xrows.push_back(i);
+          yrows.push_back(-1);
+        }
+      }
+    }
+  } else if (JT >= 2) {
     std::vector<std::vector<R_xlen_t>> lx((size_t)JT), ly((size_t)JT);
     R_xlen_t chunk = (xf.nrow + JT - 1) / JT;
     std::vector<std::thread> pool;

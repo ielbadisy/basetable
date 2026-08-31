@@ -129,10 +129,30 @@ test_that("fused filter honours select and drops NA rows like base subset()", {
   expect_equal(out, ref, ignore_attr = TRUE)
 })
 
+test_that("fused filter handles integer and logical columns", {
+  d <- data.frame(
+    i = c(1L, 2L, NA_integer_, 4L, 5L),
+    flag = c(TRUE, FALSE, NA, TRUE, FALSE),
+    x = seq_len(5)
+  )
+  cases <- list(
+    quote(i > 2L),
+    quote(2L < i & i <= 5L),
+    quote(flag == TRUE),
+    quote(flag != FALSE & i >= 1L)
+  )
+  for (p in cases) {
+    out <- as.data.frame(eval(bquote(basetable::subset(d, .(p)))))
+    r <- eval(p, d); r[is.na(r)] <- FALSE
+    ref <- d[r, , drop = FALSE]; rownames(ref) <- NULL
+    expect_equal(out, ref, ignore_attr = TRUE, info = deparse(p))
+  }
+})
+
 test_that("shapes outside the fused kernel still work via the mask path", {
   set.seed(13)
   d <- data.frame(x = rnorm(2000), y = rnorm(2000), i = sample(1:100, 2000, TRUE))
-  cases <- list(quote(x > y), quote(i > 50L), quote(x > 0 | y > 0), quote(abs(x) > 1))
+  cases <- list(quote(x > y), quote(x > 0 | y > 0), quote(abs(x) > 1))
   for (p in cases) {
     out <- as.data.frame(eval(bquote(basetable::subset(d, .(p)))))
     r <- eval(p, d); r[is.na(r)] <- FALSE
