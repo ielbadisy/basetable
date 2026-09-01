@@ -1650,7 +1650,8 @@ normalizeencoding <- function(x) enc2utf8(x)
 #' Transliterate text to ASCII
 #'
 #' Like [removeaccents()], but also romanises the Greek and Cyrillic blocks
-#' (`"Αθήνα"` -> `"Athena"`, `"Москва"` -> `"Moskva"`), following ICU's
+#' (the Greek and Cyrillic spellings of `"Athena"` and `"Moskva"` fold to those
+#' ASCII forms), following ICU's
 #' `Any-Latin; Latin-ASCII` mapping. Other non-Latin scripts (Han, Kana,
 #' Arabic, Hebrew, Devanagari, Thai, ...) are left unchanged rather than
 #' guessed at. No Unicode library dependency.
@@ -1660,7 +1661,11 @@ normalizeencoding <- function(x) enc2utf8(x)
 #' @return A character vector the same length as `x`.
 #' @seealso [removeaccents()] for Latin only.
 #' @examples
-#' transliterate(c("Zürich", "Αθήνα", "Москва"))
+#' # "Zurich", Greek "Athena", Cyrillic "Moskva" (spelt via code points so
+#' # this help page stays ASCII)
+#' greek <- intToUtf8(c(0x391, 0x3b8, 0x3ae, 0x3bd, 0x3b1))
+#' cyrillic <- intToUtf8(c(0x41c, 0x43e, 0x441, 0x43a, 0x432, 0x430))
+#' transliterate(c("Zurich", greek, cyrillic))
 #' @export
 transliterate <- function(x) bt_transliterate(x)
 #' Pairwise string distances

@@ -1,4 +1,4 @@
-# CRAN submission comments: basetable 1.3.1
+# CRAN submission comments: basetable 1.3.2
 
 ## Note to CRAN
 
@@ -6,8 +6,14 @@ This upload supersedes the earlier 0.9.0 submission, which was returned with
 a manual review (K. Lauseker, 2026-08-21). Since then the package replaced
 its 'data.table' and 'stringi' dependencies with a bundled 'C++' engine and
 plain-R tables, and renamed a few exports that clashed with other packages,
-so it is now at 1.3.1. Its 'Imports' are now only base and recommended
+so it is now at 1.3.2. Its 'Imports' are now only base and recommended
 packages. Please review this version in place of 0.9.0.
+
+The 1.3.1 auto-check (2026-08-31) failed the PDF-manual build: the
+`transliterate()` help page carried literal Greek and Cyrillic characters
+that the reference-manual LaTeX setup cannot typeset. That page is now
+pure ASCII (the example builds the sample strings with `intToUtf8()`), and
+`R CMD check --as-cran` builds the PDF manual cleanly.
 
 Both points from the 0.9.0 review are addressed:
 

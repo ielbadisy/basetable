@@ -1,3 +1,11 @@
+# basetable 1.3.2
+
+## Documentation
+
+* The `transliterate()` help page no longer embeds literal Greek and Cyrillic
+  characters, which broke the PDF reference manual on CRAN's check machines.
+  The example now builds its sample strings with `intToUtf8()`.
+
 # basetable 1.3.1
 
 ## Dependencies
