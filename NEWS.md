@@ -1,3 +1,12 @@
+# basetable 1.4.0
+
+## New features
+
+* `as_basetable()` coerces a data frame, a list of equal-length columns, or a
+  matrix to the `basetable` class, and `is_basetable()` tests for it. Both are
+  now exported, so other packages can build directly on the `basetable` class
+  instead of relying on a verb to stamp it or reaching into internals.
+
 # basetable 1.3.2
 
 ## Documentation

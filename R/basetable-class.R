@@ -20,6 +20,57 @@ new_basetable <- function(x) {
   x
 }
 
+#' Coerce an object to a basetable
+#'
+#' `as_basetable()` turns a data frame, a list of equal-length columns, a
+#' matrix, or anything else [as.data.frame()] accepts into a `basetable`: an
+#' ordinary data frame carrying basetable's lightweight class, the same object
+#' every basetable verb returns. Use it when a package or script wants to hand
+#' its own data to basetable explicitly, rather than relying on a verb to stamp
+#' the class.
+#'
+#' The data are left unchanged; only the class and the `row.names` attribute
+#' are normalised. An object that is already a `basetable` is returned as-is,
+#' and [as.data.frame()] strips the class again.
+#'
+#' @param x An object to coerce.
+#' @param ... Passed to [as.data.frame()] by the default method; ignored
+#'   otherwise.
+#'
+#' @return A `basetable`: a data frame with the `basetable` class.
+#' @seealso [is_basetable()]
+#' @export
+#' @examples
+#' bt <- as_basetable(data.frame(g = c("a", "b"), x = 1:2))
+#' class(bt)
+#' identical(as_basetable(bt), bt)
+#' as_basetable(list(g = c("a", "b"), x = 1:2))
+as_basetable <- function(x, ...) {
+  UseMethod("as_basetable")
+}
+
+#' @rdname as_basetable
+#' @export
+as_basetable.basetable <- function(x, ...) x
+
+#' @rdname as_basetable
+#' @export
+as_basetable.data.frame <- function(x, ...) new_basetable(x)
+
+#' @rdname as_basetable
+#' @export
+as_basetable.default <- function(x, ...) new_basetable(as.data.frame(x, ...))
+
+#' Test whether an object is a basetable
+#'
+#' @param x An object.
+#'
+#' @return A single logical.
+#' @seealso [as_basetable()]
+#' @export
+#' @examples
+#' is_basetable(as_basetable(mtcars))
+#' is_basetable(mtcars)
 is_basetable <- function(x) inherits(x, "basetable")
 
 #' @export
