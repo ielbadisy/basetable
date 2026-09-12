@@ -39,6 +39,14 @@ This is a deliberately focused tool. It is aimed at
 
 ## Installation
 
+Install the released version from CRAN:
+
+```r
+install.packages("basetable")
+```
+
+Install the development version from GitHub:
+
 ```r
 # install.packages("pak")
 pak::pak("ielbadisy/basetable")
