@@ -52,6 +52,28 @@ traverse <- function(.l, .f, ...) {
   })
 }
 
+#' Drop NULL elements from a list
+#'
+#' Remove every `NULL` element of `.x`, keeping the rest (including other
+#' falsy-but-not-`NULL` values like `NA`, `0`, or `""`). The common companion
+#' to [map()] when some calls legitimately return nothing -- e.g. an empty
+#' API response -- and the `NULL`s must be dropped before [foldr()],
+#' `rbindfill()`, or similar.
+#'
+#' @param .x A list.
+#'
+#' @return `.x` with its `NULL` elements removed.
+#' @examples
+#' compact(list(1, NULL, 2, NULL, 3))
+#' compact(list(a = 1, b = NULL, c = NA))
+#' @export
+compact <- function(.x) {
+  if (!is.list(.x)) {
+    stop("`.x` must be a list.", call. = FALSE)
+  }
+  Filter(Negate(is.null), .x)
+}
+
 bt_fold <- function(.x, .f, .init, .right, .accumulate, .simplify) {
   out <- if (is.null(.init)) {
     base::Reduce(

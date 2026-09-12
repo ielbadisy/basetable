@@ -52,13 +52,36 @@ aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TR
   out
 }
 
+#' Count rows by group
+#'
+#' Count rows in a table by one or more grouping columns.
+#'
+#' @param data A data frame, or a single path to a delimited text file for the
+#'   fused one-pass file mode.
+#' @param by Character vector of grouping columns.
+#' @param sort Whether to sort by descending counts. Ties (groups with the
+#'   same count) are broken by ascending group key, so the row order is fully
+#'   determined by `by` and `data` -- never by the grouping engine's internal
+#'   enumeration order, which is otherwise unspecified.
+#' @param name Name of the count column.
+#' @param ... In file mode, reader options such as `where`, `delim`.
+#' @return A basetable with one row per group.
+#' @export
 count <- function(data, by, sort = TRUE, name = "n", ...) {
   if (is.character(data) && length(data) == 1L) {
     return(count_from_file(data, by = by, ...))
   }
   out <- bt_engine_count(data, by = by, name = name)
   if (sort) {
-    out <- bt_engine_order(out, by = name, decreasing = TRUE)
+    # Ties on `name` are broken by ascending group key, so the row order is
+    # fully determined by the data (not by the grouping engine's internal
+    # enumeration order, which is otherwise unspecified and can differ across
+    # basetable versions).
+    key_cols <- setdiff(names(out), name)
+    out <- bt_engine_order(
+      out, by = c(name, key_cols),
+      decreasing = c(TRUE, rep(FALSE, length(key_cols)))
+    )
   }
   out
 }
