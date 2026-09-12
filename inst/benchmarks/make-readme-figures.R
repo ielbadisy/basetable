@@ -10,8 +10,8 @@
 # Two passes are measured: one on all logical cores and one pinned to a single
 # thread. basetable and data.table are always given the same thread budget so
 # the two engines are compared on equal footing; dplyr has no parallel path and
-# is single-threaded in both passes. The figures use the all-cores pass; the
-# single-thread table isolates the algorithmic difference from parallelism.
+# is single-threaded in both passes. The figures use the single-thread pass so
+# they compare the engines' algorithmic performance without parallelism.
 
 suppressPackageStartupMessages({
   library(basetable)
@@ -120,7 +120,7 @@ base_theme <- theme_minimal(base_size = 12) +
 
 dir.create("man/figures", showWarnings = FALSE, recursive = TRUE)
 
-p_time <- ggplot(res_mt, aes(engine, median_ms, fill = engine)) +
+p_time <- ggplot(res_st, aes(engine, median_ms, fill = engine)) +
   geom_col(width = 0.7) +
   geom_text(aes(label = round(median_ms)), hjust = -0.15, size = 3.2) +
   facet_wrap(~operation, ncol = 2, scales = "free_x") +
@@ -128,11 +128,11 @@ p_time <- ggplot(res_mt, aes(engine, median_ms, fill = engine)) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.18))) +
   scale_fill_manual(values = pal) +
   labs(x = NULL, y = "Median time (ms)", fill = NULL,
-       title = sprintf("Speed: %s rows, %d threads (dplyr is single-threaded)",
-                       format(N, big.mark = ","), nthreads_mt)) +
+       title = sprintf("Speed: %s rows, 1 thread (all engines)",
+                       format(N, big.mark = ","))) +
   base_theme
 
-p_mem <- ggplot(res_mt, aes(engine, mem_mb, fill = engine)) +
+p_mem <- ggplot(res_st, aes(engine, mem_mb, fill = engine)) +
   geom_col(width = 0.7) +
   geom_text(aes(label = ifelse(mem_mb < 1, sprintf("%.2f", mem_mb),
                                sprintf("%.0f", mem_mb))), hjust = -0.15, size = 3.2) +
@@ -141,7 +141,8 @@ p_mem <- ggplot(res_mt, aes(engine, mem_mb, fill = engine)) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.20))) +
   scale_fill_manual(values = pal) +
   labs(x = NULL, y = "Memory allocated (MB)", fill = NULL,
-       title = sprintf("Memory: %s rows", format(N, big.mark = ","))) +
+       title = sprintf("Memory: %s rows, 1 thread (all engines)",
+                       format(N, big.mark = ","))) +
   base_theme
 
 ggsave("man/figures/benchmark-time.png", p_time, width = 9, height = 7, dpi = 130)
