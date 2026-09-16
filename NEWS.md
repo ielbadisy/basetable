@@ -1,3 +1,15 @@
+# basetable 1.4.2
+
+## Fixes
+
+* `split()` on a non-data-frame `data` argument (the classic
+  `split(vector, factor)` base R idiom) now dispatches to `base::split()`
+  instead of erroring. Previously `split()` unconditionally treated its
+  first argument as a table, so attaching basetable broke
+  `split(vector, factor)` anywhere in a session, including inside
+  R Markdown/Quarto's own rendering pipeline, which calls `split()`
+  unqualified internally.
+
 # basetable 1.4.1
 
 ## New features
