@@ -1,27 +1,13 @@
-# CRAN submission comments: basetable 1.3.2
+# CRAN submission comments: basetable 1.4.2
 
 ## Note to CRAN
 
-This upload supersedes the earlier 0.9.0 submission, which was returned with
-a manual review (K. Lauseker, 2026-08-21). Since then the package replaced
-its 'data.table' and 'stringi' dependencies with a bundled 'C++' engine and
-plain-R tables, and renamed a few exports that clashed with other packages,
-so it is now at 1.3.2. Its 'Imports' are now only base and recommended
-packages. Please review this version in place of 0.9.0.
-
-The 1.3.1 auto-check (2026-08-31) failed the PDF-manual build: the
-`transliterate()` help page carried literal Greek and Cyrillic characters
-that the reference-manual LaTeX setup cannot typeset. That page is now
-pure ASCII (the example builds the sample strings with `intToUtf8()`), and
-`R CMD check --as-cran` builds the PDF manual cleanly.
-
-Both points from the 0.9.0 review are addressed:
-
-* Software names in the Description are single-quoted ('C++', 'basetable').
-* The vignettes no longer leave `options()` changed. `functions-reference`
-  and `benchmarking` capture the prior values in their setup chunk and
-  restore them in a teardown chunk (`options(.old_opts)` /
-  `options(basetable.threads = .old_threads)`).
+Bug-fix release. `split()` unconditionally treated its first argument as a
+table, so attaching basetable broke the base R idiom
+`split(vector, factor)` for any non-data-frame input. `split()` now checks
+`is.data.frame()` and dispatches to `base::split()` when the input is not a
+table, matching base R's behavior for vectors while keeping the existing
+table-splitting behavior unchanged.
 
 ## Test environments
 
@@ -31,36 +17,20 @@ Both points from the 0.9.0 review are addressed:
 
 ## R CMD check results
 
-0 errors | 0 warnings | 1 note (New submission)
+0 errors | 0 warnings | 3 notes
 
-`R CMD check --as-cran` locally reports a second NOTE that is machine-local:
-
-```
-checking compilation flags used ... NOTE
-  Compilation used the following non-portable flag(s):
-    '-mno-omit-leaf-frame-pointer'
-```
-
-This flag comes from the maintainer's personal `~/.R/Makevars`, not from the
-package. The package's own `src/Makevars` sets no non-portable flags, so this
-NOTE does not appear on the CI builders or on a clean toolchain.
-
-There is also an INFO about installed size (about 7.8 MB, `libs` about
-5.7 MB): the package is a single bundled C++ engine with no linked external
-library, and this is its compiled object code.
+* `Days since last update: 3` -- this is a quick bug-fix resubmission
+  following a regression found while writing user-facing documentation.
+* `checking compilation flags used ... NOTE` (`-mno-omit-leaf-frame-pointer`)
+  comes from the maintainer's personal `~/.R/Makevars`, not from the
+  package's own `src/Makevars`, and does not appear on the CI builders.
+* `unable to verify current time` is a local sandbox artifact (no network
+  access to a time server), not related to the package.
 
 ## Release summary
 
-First CRAN release. `basetable` depends on no external computation package.
-Every operation runs on a native C++ engine bundled with the package:
-projection, filtering, ordering, distinct and duplicate detection, grouping,
-grouped reducers, all join kinds, row-binding and `subset()` predicate
-evaluation are compiled `.Call` kernels, several of them multi-threaded via
-`setthreads()`. Results carry a light `basetable` S3 class over an ordinary
-data frame, with `print`, `[`, `as.data.frame` and `as.list` methods.
-
-`data.table` and `dplyr` remain in `Suggests` only, as
-competitors in the benchmark vignette.
+Patch release fixing a `split()` regression; no other functional changes.
+See NEWS.md.
 
 ## Downstream dependencies
 
