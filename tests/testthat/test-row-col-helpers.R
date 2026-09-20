@@ -34,6 +34,10 @@ test_that("name-cleaning helpers", {
   expect_equal(names(cleannames(df)), "a_b")
   expect_equal(names(repairnames(df, method = "unique")), "a_b")
 
+  messy <- data.frame(`First Name` = 1, `2nd_col` = 2, check.names = FALSE)
+  expect_equal(names(cleannames(messy)), c("first_name", "x2nd_col"))
+  expect_equal(names(repairnames(messy, method = "universal")), c("first_name", "x2nd_col"))
+
   df2 <- data.frame(a = 1, b = 2)
   expect_equal(names(renamewith(df2, "a", toupper)), c("A", "b"))
 })

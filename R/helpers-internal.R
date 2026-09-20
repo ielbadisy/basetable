@@ -271,9 +271,7 @@ bt_clean_names <- function(nms, method = c("unique", "universal", "minimal")) {
   cleaned <- gsub("^_+|_+$", "", cleaned)
   cleaned[cleaned == ""] <- "x"
 
-  if (method == "universal") {
-    cleaned <- make.names(cleaned, unique = FALSE)
-  }
+  cleaned <- tolower(make.names(cleaned, unique = FALSE))
 
   make.unique(cleaned, sep = "_")
 }

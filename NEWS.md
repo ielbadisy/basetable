@@ -2,6 +2,11 @@
 
 ## Fixes
 
+* `cleannames()` and `repairnames()` now always return syntactic column
+  names. Names starting with a digit get an `x` prefix (`"2nd_col"` becomes
+  `"x2nd_col"`) and reserved words are made valid, so `df$x2nd_col` works
+  (#126).
+
 * `split()` on a non-data-frame `data` argument (the classic
   `split(vector, factor)` base R idiom) now dispatches to `base::split()`
   instead of erroring. Previously `split()` unconditionally treated its
