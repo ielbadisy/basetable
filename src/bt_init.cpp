@@ -28,6 +28,9 @@ SEXP bt_range_join_(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 SEXP bt_rolling_join_(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 SEXP bt_expr_(SEXP, SEXP, SEXP, SEXP, SEXP);
 SEXP bt_rbind_(SEXP, SEXP, SEXP, SEXP);
+SEXP bt_nest_(SEXP, SEXP, SEXP, SEXP, SEXP);
+SEXP bt_unnest_lens_(SEXP);
+SEXP bt_unnest_frames_(SEXP, SEXP);
 void bt_init_altrep(DllInfo* dll);
 
 static const R_CallMethodDef CallEntries[] = {
@@ -49,6 +52,9 @@ static const R_CallMethodDef CallEntries[] = {
   { "bt_rolling_join_", (DL_FUNC) &bt_rolling_join_, 9 },
   { "bt_expr_",         (DL_FUNC) &bt_expr_,         5 },
   { "bt_rbind_",        (DL_FUNC) &bt_rbind_,        4 },
+  { "bt_nest_",         (DL_FUNC) &bt_nest_,         5 },
+  { "bt_unnest_lens_",  (DL_FUNC) &bt_unnest_lens_,  1 },
+  { "bt_unnest_frames_", (DL_FUNC) &bt_unnest_frames_, 2 },
   { NULL, NULL, 0 }
 };
 

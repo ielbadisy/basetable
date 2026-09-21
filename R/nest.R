@@ -28,14 +28,13 @@ nest <- function(data, by, name = "data") {
 
   rest <- setdiff(names(df), by)
   group_info <- bt_engine_groups(df, by)
-  groups <- bt_group_rows(group_info$id)
-
-  pieces <- lapply(groups, function(idx) {
-    bt_engine_subset(df, rows = idx, cols = rest)
-  })
+  pieces <- .Call(
+    bt_nest_, df, group_info$id, length(group_info$first),
+    bt_col_positions(df, rest), as.integer(bt_default_threads())
+  )
 
   out <- bt_as_data_frame(bt_engine_subset(df, rows = group_info$first, cols = by))
-  out[[name]] <- unname(pieces)
+  out[[name]] <- pieces
   bt_as_data_table(out)
 }
 
@@ -68,22 +67,36 @@ unnest <- function(data, cols) {
     )
   }
 
-  elt_len <- function(x) if (is.data.frame(x)) nrow(x) else length(x)
-  lens <- lapply(df[cols], function(col) vapply(col, elt_len, integer(1L)))
+  lens <- lapply(df[cols], function(col) .Call(bt_unnest_lens_, col))
   if (length(cols) > 1L && any(vapply(lens[-1L], function(l) any(l != lens[[1L]]), logical(1L)))) {
     stop("List-columns must have matching element lengths.", call. = FALSE)
   }
   lens <- lens[[1L]]
 
   idx <- rep.int(seq_len(nrow(df)), lens)
-  outer <- df[idx, setdiff(names(df), cols), drop = FALSE]
-  rownames(outer) <- NULL
+  keep <- setdiff(names(df), cols)
+  outer <- if (length(keep) > 0L) {
+    bt_as_data_frame(bt_engine_subset(df, rows = idx, cols = keep))
+  } else {
+    data.frame(row.names = seq_along(idx))
+  }
 
   for (col in cols) {
     elts <- df[[col]]
     elts <- elts[lens > 0L]
-    if (length(elts) > 0L && all(vapply(elts, is.data.frame, logical(1L)))) {
-      inner <- bt_as_data_frame(bt_rbind_fill(elts))
+    stacked <- if (length(elts) > 0L) {
+      .Call(bt_unnest_frames_, elts, as.integer(bt_default_threads()))
+    }
+    is_frames <- !is.null(stacked) ||
+      (length(elts) > 0L && all(vapply(elts, is.data.frame, logical(1L))))
+    if (is_frames) {
+      inner <- if (is.null(stacked)) {
+        bt_as_data_frame(bt_rbind_fill(elts))
+      } else {
+        attr(stacked, "row.names") <- c(NA_integer_, -length(idx))
+        class(stacked) <- "data.frame"
+        stacked
+      }
       clash <- intersect(names(inner), names(outer))
       if (length(clash) > 0L) {
         stop(

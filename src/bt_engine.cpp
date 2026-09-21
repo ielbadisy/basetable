@@ -3578,3 +3578,261 @@ extern "C" SEXP bt_expr_(SEXP df, SEXP s_code, SEXP s_args, SEXP s_consts, SEXP 
   UNPROTECT(1);
   return out;
 }
+
+// nest(): split the columns `cols` of `df` into one plain data.frame per group.
+// `ids` holds a 1-based group id per row (1..ngroups). Rows keep their input
+// order inside each group (stable counting sort), so the gather is one pass.
+extern "C" SEXP bt_nest_(SEXP df, SEXP s_ids, SEXP s_ngroups, SEXP s_cols,
+                         SEXP s_n_threads) {
+  Frame f = frame_from(df);
+  if (TYPEOF(s_ids) != INTSXP || Rf_xlength(s_ids) != f.nrow)
+    Rf_error("basetable: group ids must be an integer vector with one entry per row");
+  if (f.nrow > INT_MAX)
+    Rf_error("basetable: too many rows to nest");
+  int ng = Rf_asInteger(s_ngroups);
+  if (ng == NA_INTEGER || ng < 0)
+    Rf_error("basetable: invalid number of groups");
+  std::vector<int> cols = col_index(s_cols, f.ncol);
+  const int* ids = INTEGER(s_ids);
+  const int n = (int)f.nrow;
+  int nth = clamp_threads(s_n_threads, f.nrow, 200000);
+
+  std::vector<int> off((size_t)ng + 1, 0);
+  for (int i = 0; i < n; ++i) {
+    int g = ids[i];
+    if (g == NA_INTEGER || g < 1 || g > ng)
+      Rf_error("basetable: group id out of range");
+    ++off[(size_t)g];
+  }
+  for (int g = 0; g < ng; ++g) off[(size_t)g + 1] += off[(size_t)g];
+  std::vector<int> pos((size_t)n), cur(off.begin(), off.end() - 1);
+  for (int i = 0; i < n; ++i) pos[(size_t)cur[(size_t)ids[i] - 1]++] = i;
+
+  const R_xlen_t nc = (R_xlen_t)cols.size();
+  std::vector<SEXP> srcs((size_t)nc);
+  for (R_xlen_t j = 0; j < nc; ++j) {
+    srcs[(size_t)j] = VECTOR_ELT(df, cols[(size_t)j]);
+    int t = TYPEOF(srcs[(size_t)j]);
+    if (t != LGLSXP && t != INTSXP && t != REALSXP && t != STRSXP && t != VECSXP)
+      Rf_error("basetable: unsupported column type '%s'", Rf_type2char(t));
+  }
+
+  SEXP old_names = Rf_getAttrib(df, R_NamesSymbol);
+  SEXP names = PROTECT(Rf_allocVector(STRSXP, nc));
+  for (R_xlen_t j = 0; j < nc; ++j)
+    SET_STRING_ELT(names, j, STRING_ELT(old_names, cols[(size_t)j]));
+  SEXP cls = PROTECT(Rf_mkString("data.frame"));
+
+  // Pass 1 (R thread): allocate every frame and column. Pass 2: gather the
+  // numeric columns on worker threads. Pass 3 (R thread): fill string / list
+  // columns, which need the write barrier.
+  SEXP out = PROTECT(Rf_allocVector(VECSXP, ng));
+  std::vector<SEXP> dsts((size_t)ng * (size_t)nc);
+  for (int g = 0; g < ng; ++g) {
+    const int cnt = off[(size_t)g + 1] - off[(size_t)g];
+    SEXP frame = PROTECT(Rf_allocVector(VECSXP, nc));
+    for (R_xlen_t j = 0; j < nc; ++j) {
+      SEXP src = srcs[(size_t)j];
+      SEXP dst = Rf_allocVector(TYPEOF(src), cnt);
+      SET_VECTOR_ELT(frame, j, dst);
+      if (ATTRIB(src) != R_NilValue) copy_common_attrs(dst, src);
+      dsts[(size_t)g * (size_t)nc + (size_t)j] = dst;
+    }
+    Rf_setAttrib(frame, R_NamesSymbol, names);
+    Rf_setAttrib(frame, R_RowNamesSymbol, make_row_names(cnt));
+    Rf_setAttrib(frame, R_ClassSymbol, cls);
+    SET_VECTOR_ELT(out, g, frame);
+    UNPROTECT(1);
+  }
+
+  const int* posp = pos.data();
+  const int* offp = off.data();
+  auto gather = [&](R_xlen_t lo, R_xlen_t hi, bool atomic) {
+    for (R_xlen_t task = lo; task < hi; ++task) {
+      const int g = (int)(task / nc);
+      const R_xlen_t j = task % nc;
+      SEXP src = srcs[(size_t)j];
+      const int t = TYPEOF(src);
+      const bool is_atomic = t == LGLSXP || t == INTSXP || t == REALSXP;
+      if (is_atomic != atomic) continue;
+      SEXP dst = dsts[(size_t)task];
+      const int cnt = offp[g + 1] - offp[g];
+      const int* p = posp + offp[g];
+      switch (t) {
+        case LGLSXP: case INTSXP: {
+          const int* sp = INTEGER(src); int* d = INTEGER(dst);
+          for (int i = 0; i < cnt; ++i) d[i] = sp[p[i]];
+          break;
+        }
+        case REALSXP: {
+          const double* sp = REAL(src); double* d = REAL(dst);
+          for (int i = 0; i < cnt; ++i) d[i] = sp[p[i]];
+          break;
+        }
+        case STRSXP:
+          for (int i = 0; i < cnt; ++i) SET_STRING_ELT(dst, i, STRING_ELT(src, p[i]));
+          break;
+        default:
+          for (int i = 0; i < cnt; ++i) SET_VECTOR_ELT(dst, i, VECTOR_ELT(src, p[i]));
+      }
+    }
+  };
+  const R_xlen_t ntask = (R_xlen_t)ng * nc;
+  if (nth >= 2 && ntask >= 2) {
+    const R_xlen_t chunk = (ntask + nth - 1) / nth;
+    std::vector<std::thread> pool;
+    for (int t = 0; t < nth; ++t) {
+      R_xlen_t lo = (R_xlen_t)t * chunk, hi = std::min<R_xlen_t>(ntask, lo + chunk);
+      if (lo >= hi) break;
+      pool.emplace_back([&gather, lo, hi]() { gather(lo, hi, true); });
+    }
+    for (auto& th : pool) th.join();
+  } else {
+    gather(0, ntask, true);
+  }
+  gather(0, ntask, false);
+  UNPROTECT(3);
+  return out;
+}
+
+// unnest(): number of rows each element of a list-column expands to. A data
+// frame counts its rows, anything else its length.
+extern "C" SEXP bt_unnest_lens_(SEXP elts) {
+  if (TYPEOF(elts) != VECSXP) Rf_error("basetable: expected a list-column");
+  const R_xlen_t n = Rf_xlength(elts);
+  SEXP out = PROTECT(Rf_allocVector(INTSXP, n));
+  int* o = INTEGER(out);
+  for (R_xlen_t i = 0; i < n; ++i) {
+    SEXP e = VECTOR_ELT(elts, i);
+    R_xlen_t len;
+    if (Rf_isNewList(e) && Rf_inherits(e, "data.frame")) len = frame_nrow(e);
+    else len = Rf_xlength(e);
+    if (len > INT_MAX) { UNPROTECT(1); Rf_error("basetable: nested element too long"); }
+    o[i] = (int)len;
+  }
+  UNPROTECT(1);
+  return out;
+}
+
+// unnest(): stack a list of data frames that share column names, types and
+// attributes into one list of columns. Returns NULL when the frames differ
+// (the caller then takes the general fill-and-coerce path).
+extern "C" SEXP bt_unnest_frames_(SEXP elts, SEXP s_n_threads) {
+  if (TYPEOF(elts) != VECSXP) Rf_error("basetable: expected a list of data frames");
+  const R_xlen_t nf = Rf_xlength(elts);
+  if (nf == 0) return R_NilValue;
+  SEXP first = VECTOR_ELT(elts, 0);
+  if (!Rf_isNewList(first) || !Rf_inherits(first, "data.frame")) return R_NilValue;
+  const R_xlen_t nc = Rf_xlength(first);
+  SEXP names = Rf_getAttrib(first, R_NamesSymbol);
+  if (nc == 0 || TYPEOF(names) != STRSXP) return R_NilValue;
+
+  std::vector<SEXP> tmpl((size_t)nc);
+  for (R_xlen_t j = 0; j < nc; ++j) {
+    tmpl[(size_t)j] = VECTOR_ELT(first, j);
+    int t = TYPEOF(tmpl[(size_t)j]);
+    if (t != LGLSXP && t != INTSXP && t != REALSXP && t != STRSXP && t != VECSXP)
+      return R_NilValue;
+  }
+
+  std::vector<R_xlen_t> off((size_t)nf + 1, 0);
+  for (R_xlen_t i = 0; i < nf; ++i) {
+    SEXP e = VECTOR_ELT(elts, i);
+    if (!Rf_isNewList(e) || !Rf_inherits(e, "data.frame") || Rf_xlength(e) != nc)
+      return R_NilValue;
+    if (i > 0) {
+      SEXP nm = Rf_getAttrib(e, R_NamesSymbol);
+      if (nm != names) {
+        if (TYPEOF(nm) != STRSXP) return R_NilValue;
+        for (R_xlen_t j = 0; j < nc; ++j)
+          if (STRING_ELT(nm, j) != STRING_ELT(names, j)) return R_NilValue;
+      }
+    }
+    for (R_xlen_t j = 0; j < nc; ++j) {
+      SEXP c = VECTOR_ELT(e, j);
+      SEXP t = tmpl[(size_t)j];
+      if (c == t) continue;
+      if (TYPEOF(c) != TYPEOF(t)) return R_NilValue;
+      SEXP ac = ATTRIB(c), at = ATTRIB(t);
+      if ((ac != R_NilValue || at != R_NilValue) && !R_compute_identical(ac, at, 16))
+        return R_NilValue;
+    }
+    off[(size_t)i + 1] = off[(size_t)i] + Rf_xlength(VECTOR_ELT(e, 0));
+  }
+  const R_xlen_t total = off[(size_t)nf];
+  int nth = clamp_threads(s_n_threads, total, 200000);
+
+  SEXP out = PROTECT(Rf_allocVector(VECSXP, nc));
+  std::vector<SEXP> dsts((size_t)nc);
+  for (R_xlen_t j = 0; j < nc; ++j) {
+    SEXP d = Rf_allocVector(TYPEOF(tmpl[(size_t)j]), total);
+    SET_VECTOR_ELT(out, j, d);
+    if (ATTRIB(tmpl[(size_t)j]) != R_NilValue) copy_common_attrs(d, tmpl[(size_t)j]);
+    dsts[(size_t)j] = d;
+  }
+
+  // Resolve source data pointers on the R thread; workers only memcpy.
+  std::vector<const void*> srcp((size_t)nc * (size_t)nf, nullptr);
+  std::vector<void*> dstp((size_t)nc, nullptr);
+  for (R_xlen_t j = 0; j < nc; ++j) {
+    const int t = TYPEOF(dsts[(size_t)j]);
+    if (t != INTSXP && t != LGLSXP && t != REALSXP) continue;
+    dstp[(size_t)j] = t == REALSXP ? (void*)REAL(dsts[(size_t)j]) : (void*)INTEGER(dsts[(size_t)j]);
+    for (R_xlen_t i = 0; i < nf; ++i) {
+      SEXP c = VECTOR_ELT(VECTOR_ELT(elts, i), j);
+      srcp[(size_t)j * (size_t)nf + (size_t)i] =
+        t == REALSXP ? (const void*)REAL(c) : (const void*)INTEGER(c);
+    }
+  }
+
+  auto copy_col = [&](R_xlen_t j) {
+    SEXP d = dsts[(size_t)j];
+    const int t = TYPEOF(d);
+    const void** sp = srcp.data() + (size_t)j * (size_t)nf;
+    if (t == INTSXP || t == LGLSXP) {
+      int* dp = static_cast<int*>(dstp[(size_t)j]);
+      for (R_xlen_t i = 0; i < nf; ++i) {
+        R_xlen_t len = off[(size_t)i + 1] - off[(size_t)i];
+        if (len) std::memcpy(dp + off[(size_t)i], sp[i], (size_t)len * sizeof(int));
+      }
+    } else if (t == REALSXP) {
+      double* dp = static_cast<double*>(dstp[(size_t)j]);
+      for (R_xlen_t i = 0; i < nf; ++i) {
+        R_xlen_t len = off[(size_t)i + 1] - off[(size_t)i];
+        if (len) std::memcpy(dp + off[(size_t)i], sp[i], (size_t)len * sizeof(double));
+      }
+    } else if (t == STRSXP) {
+      for (R_xlen_t i = 0; i < nf; ++i) {
+        SEXP s = VECTOR_ELT(VECTOR_ELT(elts, i), j);
+        R_xlen_t len = off[(size_t)i + 1] - off[(size_t)i], b = off[(size_t)i];
+        for (R_xlen_t k = 0; k < len; ++k) SET_STRING_ELT(d, b + k, STRING_ELT(s, k));
+      }
+    } else {
+      for (R_xlen_t i = 0; i < nf; ++i) {
+        SEXP s = VECTOR_ELT(VECTOR_ELT(elts, i), j);
+        R_xlen_t len = off[(size_t)i + 1] - off[(size_t)i], b = off[(size_t)i];
+        for (R_xlen_t k = 0; k < len; ++k) SET_VECTOR_ELT(d, b + k, VECTOR_ELT(s, k));
+      }
+    }
+  };
+
+  // Numeric columns are independent memcpy streams: run them on workers while
+  // the R thread fills string / list columns (which need the write barrier).
+  std::vector<R_xlen_t> atomic_cols, ref_cols;
+  for (R_xlen_t j = 0; j < nc; ++j) {
+    int t = TYPEOF(dsts[(size_t)j]);
+    (t == STRSXP || t == VECSXP ? ref_cols : atomic_cols).push_back(j);
+  }
+  if (nth >= 2 && !atomic_cols.empty()) {
+    std::vector<std::thread> pool;
+    for (R_xlen_t j : atomic_cols) pool.emplace_back([&copy_col, j]() { copy_col(j); });
+    for (R_xlen_t j : ref_cols) copy_col(j);
+    for (auto& th : pool) th.join();
+  } else {
+    for (R_xlen_t j = 0; j < nc; ++j) copy_col(j);
+  }
+
+  Rf_setAttrib(out, R_NamesSymbol, names);
+  UNPROTECT(1);
+  return out;
+}
