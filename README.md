@@ -140,6 +140,30 @@ The one gap is **sorting**: `orderrows()` is a stable parallel radix, ~20x
 faster than base `order()`, but still ~1.3x of `data.table`, whose hand-tuned
 parallel radix is the one operation `basetable` does not match.
 
+## Nested tables
+
+`nest()` collapses each group into a data frame held in a list-column, and
+`unnest()` expands it back. They are compared here with `tidyr::nest()` and
+`dplyr::group_nest()` for nesting, and `tidyr::unnest()` for unnesting, at
+1,000,000 rows and four columns (integer key, double, integer, character),
+varying the number of groups. Medians and R-level allocations come from
+`bench`; `inst/benchmarks/benchmark-nest.R` reproduces them.
+
+| Operation | Groups | basetable | tidyr | dplyr | basetable mem | tidyr mem | dplyr mem |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| nest | 10 | 13 ms | 19 ms | 18 ms | 23 MB | 39 MB | 27 MB |
+| nest | 1e3 | 20 ms | 30 ms | 48 ms | 23 MB | 39 MB | 27 MB |
+| nest | 1e5 | 127 ms | 169 ms | 1.42 s | 6 MB | 24 MB | 20 MB |
+| unnest | 10 | 13 ms | 16 ms | 16 ms | 27 MB | 31 MB | 31 MB |
+| unnest | 1e3 | 13 ms | 21 ms | 21 ms | 27 MB | 31 MB | 31 MB |
+| unnest | 1e5 | 48 ms | 425 ms | 388 ms | 29 MB | 34 MB | 34 MB |
+
+`basetable` is faster than both packages on every row. The edge is modest for
+`nest()` (about 1.3x to 1.5x over `tidyr`) and grows with the number of
+groups for `unnest()`, where it is roughly 9x faster at 1e5 groups because
+the nested frames are stacked in one native pass. As elsewhere, the C++
+engine also uses `malloc`'d scratch buffers that `bench` does not count.
+
 ## Positioning
 
 `data.table` is faster on some workloads (notably sorting) and has a far
