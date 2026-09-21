@@ -1247,6 +1247,24 @@ bool match_mask_int_single(SEXP x, SEXP y, int x_by, int y_by, SEXP out) {
   return true;
 }
 
+bool match_mask_string_single(SEXP x, SEXP y, int x_by, int y_by, SEXP out) {
+  SEXP xc = VECTOR_ELT(x, x_by);
+  SEXP yc = VECTOR_ELT(y, y_by);
+  if (TYPEOF(xc) != STRSXP || TYPEOF(yc) != STRSXP ||
+      Rf_isFactor(xc) || Rf_isFactor(yc)) return false;
+  Frame xf = frame_from(x);
+  Frame yf = frame_from(y);
+  const SEXP* xp = STRING_PTR_RO(xc);
+  const SEXP* yp = STRING_PTR_RO(yc);
+  std::unordered_set<const void*> keys;
+  keys.reserve((size_t)yf.nrow);
+  for (R_xlen_t i = 0; i < yf.nrow; ++i) keys.emplace((const void*)yp[i]);
+  int* p = LOGICAL(out);
+  for (R_xlen_t i = 0; i < xf.nrow; ++i)
+    p[i] = keys.find((const void*)xp[i]) == keys.end() ? FALSE : TRUE;
+  return true;
+}
+
 
 // Order-preserving uint64 code for one key column: sorting the codes ascending
 // reproduces R's ordering for that column. NA sorts last (na_last) or first.
@@ -1475,7 +1493,10 @@ bool order_string_real2(SEXP df, int s_col, int x_col, R_xlen_t nrow, bool na_la
   auto sort_bucket = [&](size_t b) {
     R_xlen_t lo = (R_xlen_t)starts[b], hi = (R_xlen_t)starts[b + 1];
     if (hi - lo < 2) return;
-    std::stable_sort(ord.begin() + lo, ord.begin() + hi, [&](R_xlen_t a, R_xlen_t b) {
+    // The original row index is the explicit tie breaker, so an unstable
+    // sort retains the same stable result without the extra bookkeeping used
+    // by stable_sort.
+    std::sort(ord.begin() + lo, ord.begin() + hi, [&](R_xlen_t a, R_xlen_t b) {
       double xa = xp[a], xb = xp[b];
       bool ana = ISNAN(xa), bna = ISNAN(xb);
       if (ana || bna) {
@@ -2184,7 +2205,9 @@ extern "C" SEXP bt_match_mask_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by, SEXP s_
     Rf_error("basetable: join key length mismatch");
 
   SEXP out = PROTECT(Rf_allocVector(LGLSXP, xf.nrow));
-  if (x_by.size() == 1 && match_mask_int_single(x, y, x_by[0], y_by[0], out)) {
+  if (x_by.size() == 1 &&
+      (match_mask_int_single(x, y, x_by[0], y_by[0], out) ||
+       match_mask_string_single(x, y, x_by[0], y_by[0], out))) {
     UNPROTECT(1);
     return out;
   }
