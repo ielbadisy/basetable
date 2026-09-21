@@ -509,6 +509,57 @@ struct KeyHash {
   }
 };
 
+// R interns CHARSXP values, so single-key string operations can compare the
+// pointer directly. A flat table keeps the hot lookup probe contiguous and
+// avoids one allocation per node in unordered_map.
+struct FlatPtrIntMap {
+  std::vector<const void*> keys;
+  std::vector<int> values;
+  size_t mask = 0;
+
+  static size_t hash_ptr(const void* p) {
+    uint64_t x = (uint64_t)(uintptr_t)p;
+    x ^= x >> 30;
+    x *= 0xbf58476d1ce4e5b9ULL;
+    x ^= x >> 27;
+    x *= 0x94d049bb133111ebULL;
+    return (size_t)(x ^ (x >> 31));
+  }
+
+  void reserve(size_t n) {
+    size_t cap = 8;
+    while (cap < n * 2) cap <<= 1;
+    keys.assign(cap, nullptr);
+    values.assign(cap, 0);
+    mask = cap - 1;
+  }
+
+  const int* find(const void* key) const {
+    if (keys.empty()) return nullptr;
+    size_t i = hash_ptr(key) & mask;
+    for (;;) {
+      const void* at = keys[i];
+      if (at == nullptr) return nullptr;
+      if (at == key) return &values[i];
+      i = (i + 1) & mask;
+    }
+  }
+
+  bool insert(const void* key, int value) {
+    size_t i = hash_ptr(key) & mask;
+    for (;;) {
+      const void* at = keys[i];
+      if (at == nullptr) {
+        keys[i] = key;
+        values[i] = value;
+        return true;
+      }
+      if (at == key) return false;
+      i = (i + 1) & mask;
+    }
+  }
+};
+
 inline int64_t real_slot(double d) {
   if (ISNA(d)) return (int64_t)0x7ff00000000007a2LL;
   if (std::isnan(d)) return (int64_t)0x7ff00000000007a3LL;
@@ -615,14 +666,14 @@ bool group_single(SEXP col, R_xlen_t nrow, std::vector<int>& codes, std::vector<
     return true;
   }
   if (TYPEOF(col) == STRSXP) {
-    std::unordered_map<const void*, int> d;
+    FlatPtrIntMap d;
     d.reserve((size_t)nrow);
     for (R_xlen_t i = 0; i < nrow; ++i) {
       const void* s = (const void*)STRING_ELT(col, i);
-      auto it = d.find(s);
+      const int* it = d.find(s);
       int c;
-      if (it == d.end()) { c = (int)first.size(); d.emplace(s, c); first.push_back(i); }
-      else c = it->second;
+      if (it == nullptr) { c = (int)first.size(); d.insert(s, c); first.push_back(i); }
+      else c = *it;
       codes[(size_t)i] = c;
     }
     return true;
@@ -1256,12 +1307,12 @@ bool match_mask_string_single(SEXP x, SEXP y, int x_by, int y_by, SEXP out) {
   Frame yf = frame_from(y);
   const SEXP* xp = STRING_PTR_RO(xc);
   const SEXP* yp = STRING_PTR_RO(yc);
-  std::unordered_set<const void*> keys;
+  FlatPtrIntMap keys;
   keys.reserve((size_t)yf.nrow);
-  for (R_xlen_t i = 0; i < yf.nrow; ++i) keys.emplace((const void*)yp[i]);
+  for (R_xlen_t i = 0; i < yf.nrow; ++i) keys.insert((const void*)yp[i], 1);
   int* p = LOGICAL(out);
   for (R_xlen_t i = 0; i < xf.nrow; ++i)
-    p[i] = keys.find((const void*)xp[i]) == keys.end() ? FALSE : TRUE;
+    p[i] = keys.find((const void*)xp[i]) == nullptr ? FALSE : TRUE;
   return true;
 }
 
@@ -2355,6 +2406,57 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
   if (fast_string_join) {
     SEXP xc = VECTOR_ELT(x, x_by[0]);
     SEXP yc = VECTOR_ELT(y, y_by[0]);
+    FlatPtrIntMap unique_map;
+    unique_map.reserve((size_t)yf.nrow);
+    bool unique_y = yf.nrow <= INT_MAX;
+    if (unique_y) {
+      for (R_xlen_t j = 0; j < yf.nrow; ++j) {
+        if (!unique_map.insert((const void*)STRING_ELT(yc, j), (int)j)) {
+          unique_y = false;
+          break;
+        }
+      }
+    }
+
+    if (unique_y) {
+      if (JT >= 2) {
+        std::vector<std::vector<R_xlen_t>> lx((size_t)JT), ly((size_t)JT);
+        R_xlen_t chunk = (xf.nrow + JT - 1) / JT;
+        std::vector<std::thread> pool;
+        for (int t = 0; t < JT; ++t) {
+          R_xlen_t lo = (R_xlen_t)t * chunk, hi = std::min<R_xlen_t>(xf.nrow, lo + chunk);
+          if (lo >= hi) break;
+          pool.emplace_back([&, t, lo, hi]() {
+            auto& vx = lx[(size_t)t];
+            auto& vy = ly[(size_t)t];
+            vx.reserve((size_t)(hi - lo));
+            vy.reserve((size_t)(hi - lo));
+            for (R_xlen_t i = lo; i < hi; ++i) {
+              const int* yi = unique_map.find((const void*)STRING_ELT(xc, i));
+              if (yi != nullptr) { vx.push_back(i); vy.push_back(*yi); }
+              else if (all_x) { vx.push_back(i); vy.push_back(-1); }
+            }
+          });
+        }
+        for (auto& p : pool) p.join();
+        size_t tot = 0;
+        for (auto& v : lx) tot += v.size();
+        xrows.reserve(tot);
+        yrows.reserve(tot);
+        for (int t = 0; t < JT; ++t) {
+          xrows.insert(xrows.end(), lx[(size_t)t].begin(), lx[(size_t)t].end());
+          yrows.insert(yrows.end(), ly[(size_t)t].begin(), ly[(size_t)t].end());
+        }
+      } else {
+        xrows.reserve((size_t)xf.nrow);
+        yrows.reserve((size_t)xf.nrow);
+        for (R_xlen_t i = 0; i < xf.nrow; ++i) {
+          const int* yi = unique_map.find((const void*)STRING_ELT(xc, i));
+          if (yi != nullptr) { xrows.push_back(i); yrows.push_back(*yi); }
+          else if (all_x) { xrows.push_back(i); yrows.push_back(-1); }
+        }
+      }
+    } else {
     std::unordered_map<const void*, std::vector<R_xlen_t>> smap;
     smap.reserve((size_t)yf.nrow);
     for (R_xlen_t j = 0; j < yf.nrow; ++j)
@@ -2402,6 +2504,7 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
           yrows.push_back(-1);
         }
       }
+    }
     }
   } else if (fast_int_join) {
     SEXP xc = VECTOR_ELT(x, x_by[0]);
