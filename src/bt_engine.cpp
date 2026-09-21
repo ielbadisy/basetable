@@ -134,12 +134,24 @@ std::vector<R_xlen_t> row_index(SEXP s_rows, R_xlen_t nrow, int nth = 1) {
   }
   if (TYPEOF(s_rows) == INTSXP || TYPEOF(s_rows) == REALSXP) {
     R_xlen_t n = Rf_xlength(s_rows);
-    rows.reserve((size_t)n);
-    for (R_xlen_t i = 0; i < n; ++i) {
-      R_xlen_t v = TYPEOF(s_rows) == INTSXP ? INTEGER(s_rows)[i] : (R_xlen_t)REAL(s_rows)[i];
-      if (v == NA_INTEGER || v < 1 || v > nrow)
-        Rf_error("basetable: row index out of bounds");
-      rows.push_back(v - 1);
+    rows.resize((size_t)n);
+    // INTEGER() / REAL() are function calls; hoisting them keeps the loop tight.
+    if (TYPEOF(s_rows) == INTSXP) {
+      const int* ip = INTEGER(s_rows);
+      for (R_xlen_t i = 0; i < n; ++i) {
+        int v = ip[i];
+        if (v == NA_INTEGER || v < 1 || v > nrow)
+          Rf_error("basetable: row index out of bounds");
+        rows[(size_t)i] = (R_xlen_t)v - 1;
+      }
+    } else {
+      const double* rp = REAL(s_rows);
+      for (R_xlen_t i = 0; i < n; ++i) {
+        R_xlen_t v = (R_xlen_t)rp[i];
+        if (v == NA_INTEGER || v < 1 || v > nrow)
+          Rf_error("basetable: row index out of bounds");
+        rows[(size_t)i] = v - 1;
+      }
     }
     return rows;
   }
