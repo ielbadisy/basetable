@@ -1896,6 +1896,32 @@ extern "C" SEXP bt_filter_(SEXP df, SEXP s_cols, SEXP s_code, SEXP s_args,
   // advance the cursor by the predicate, so a ~50%-selective filter has no
   // data-dependent branch to mispredict.
   auto compact = [&](R_xlen_t lo, R_xlen_t hi, R_xlen_t* out) -> R_xlen_t {
+    if (ncmp == 1) {
+      const Cmp& c = cmp[0];
+      R_xlen_t k = 0;
+      if (c.type == REALSXP) {
+        const double* p = c.rp;
+        switch (c.op) {
+          case 20: for (R_xlen_t i = lo; i < hi; ++i) { double v = p[i]; unsigned ok = v == v && v <  c.s; out[k] = i; k += ok; } break;
+          case 21: for (R_xlen_t i = lo; i < hi; ++i) { double v = p[i]; unsigned ok = v == v && v <= c.s; out[k] = i; k += ok; } break;
+          case 22: for (R_xlen_t i = lo; i < hi; ++i) { double v = p[i]; unsigned ok = v == v && v >  c.s; out[k] = i; k += ok; } break;
+          case 23: for (R_xlen_t i = lo; i < hi; ++i) { double v = p[i]; unsigned ok = v == v && v >= c.s; out[k] = i; k += ok; } break;
+          case 24: for (R_xlen_t i = lo; i < hi; ++i) { double v = p[i]; unsigned ok = v == v && v == c.s; out[k] = i; k += ok; } break;
+          default: for (R_xlen_t i = lo; i < hi; ++i) { double v = p[i]; unsigned ok = v == v && v != c.s; out[k] = i; k += ok; } break;
+        }
+        return k;
+      }
+      const int* p = c.ip;
+      switch (c.op) {
+        case 20: for (R_xlen_t i = lo; i < hi; ++i) { int v = p[i]; unsigned ok = v != NA_INTEGER && v <  c.s; out[k] = i; k += ok; } break;
+        case 21: for (R_xlen_t i = lo; i < hi; ++i) { int v = p[i]; unsigned ok = v != NA_INTEGER && v <= c.s; out[k] = i; k += ok; } break;
+        case 22: for (R_xlen_t i = lo; i < hi; ++i) { int v = p[i]; unsigned ok = v != NA_INTEGER && v >  c.s; out[k] = i; k += ok; } break;
+        case 23: for (R_xlen_t i = lo; i < hi; ++i) { int v = p[i]; unsigned ok = v != NA_INTEGER && v >= c.s; out[k] = i; k += ok; } break;
+        case 24: for (R_xlen_t i = lo; i < hi; ++i) { int v = p[i]; unsigned ok = v != NA_INTEGER && v == c.s; out[k] = i; k += ok; } break;
+        default: for (R_xlen_t i = lo; i < hi; ++i) { int v = p[i]; unsigned ok = v != NA_INTEGER && v != c.s; out[k] = i; k += ok; } break;
+      }
+      return k;
+    }
     R_xlen_t k = 0;
     for (R_xlen_t i = lo; i < hi; ++i) { out[k] = i; k += keep(i); }
     return k;
