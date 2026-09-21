@@ -85,7 +85,11 @@ Timing and memory below come from the
 [`bench`](https://bench.r-lib.org) package at 1,000,000 rows on one Linux
 machine (`inst/benchmarks/make-readme-figures.R` regenerates the figures;
 the `Benchmarks` vignette has the full reproducible report). `basetable` is
-compared with `data.table` and `dplyr`.
+compared with `data.table`, `dplyr` and `collapse`. The table uses all cores,
+with `basetable`, `data.table` and `collapse` given the same thread budget
+(`dplyr` has no parallel path); the figures below are the single-thread pass.
+Timings vary a few milliseconds from run to run, so read differences of that
+size as ties.
 
 ### Speed
 
@@ -95,23 +99,30 @@ compared with `data.table` and `dplyr`.
 
 ![Memory allocated by engine at 1e6 rows](man/figures/benchmark-memory.png)
 
-| Operation | basetable | data.table | dplyr | basetable mem | data.table mem | dplyr mem |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| filter | 7 ms | 10 ms | 10 ms | 15 MB | 21 MB | 28 MB |
-| sort (string key) | 58 ms | 44 ms | 102 ms | 34 MB | 47 MB | 69 MB |
-| distinct | 5 ms | 8 ms | 13 ms | 0.03 MB | 20 MB | 12 MB |
-| count by group | 23 ms | 40 ms | 738 ms | 1 MB | 30 MB | 30 MB |
-| sd by group | 10 ms | 16 ms | 42 ms | 0.05 MB | 27 MB | 36 MB |
-| equi join | 16 ms | 15 ms | 66 ms | 8 MB | 8 MB | 101 MB |
-| semi join | 13 ms | 67 ms | 52 ms | 4 MB | 58 MB | 82 MB |
+| Operation | basetable | data.table | dplyr | collapse | basetable mem | data.table mem | dplyr mem | collapse mem |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| filter | 7 ms | 12 ms | 11 ms | 5 ms | 15 MB | 21 MB | 28 MB | 19 MB |
+| sort (string key) | 52 ms | 52 ms | 123 ms | 50 ms | 34 MB | 47 MB | 69 MB | 38 MB |
+| distinct | 4 ms | 8 ms | 5 ms | 3 ms | 0.03 MB | 20 MB | 12 MB | 3.9 MB |
+| count by group | 20 ms | 44 ms | 675 ms | 6 ms | 1 MB | 30 MB | 30 MB | 5.5 MB |
+| sd by group | 8 ms | 18 ms | 57 ms | 14 ms | 0.05 MB | 27 MB | 36 MB | 4.3 MB |
+| equi join | 19 ms | 19 ms | 48 ms | 5 ms | 8 MB | 8 MB | 101 MB | 12 MB |
+| semi join | 10 ms | 51 ms | 46 ms | 4 ms | 4 MB | 58 MB | 82 MB | 3.8 MB |
 
 (`equi join` pins `data.table` to `sort = FALSE`, matching `basetable::merge()`,
 which returns rows in input order.)
 
 `basetable` is faster than `data.table` on `filter`, `distinct`, grouped
-`count`, `sd` by group and `semi join`, and is level with it on `equi join`.
-Against `dplyr` it is faster on every operation here, by more than 30x on
-high-cardinality `count`. The one operation it loses is string `sort`.
+`count`, `sd` by group and `semi join`, and is level with it on string `sort`
+and `equi join`. Against `dplyr` it is faster on every operation here, by more
+than 30x on high-cardinality `count`.
+
+`collapse` is the fastest engine on most of these operations. It beats
+`basetable` on `filter`, `distinct`, grouped `count`, `equi join` and
+`semi join`, and is level on string `sort`. `basetable` is ahead of it on one
+operation, grouped `sd` (8 ms against 14 ms). With everything pinned to one
+thread, `collapse` also leads on string `sort` (40 ms against 151 ms for
+`basetable`).
 
 ### Memory, ranked by advantage
 
@@ -121,29 +132,32 @@ where the result is tiny and nothing intermediate is materialised in R;
 modest on operations that return a full table, where the output frame itself
 sets a floor.
 
-| Operation | basetable | data.table | dplyr | basetable vs data.table |
-| --- | ---: | ---: | ---: | ---: |
-| distinct | 0.03 MB | 20 MB | 12 MB | ~700x less |
-| sd by group | 0.05 MB | 27 MB | 36 MB | ~500x less |
-| count by group | 1 MB | 30 MB | 30 MB | ~30x less |
-| semi join | 4 MB | 58 MB | 82 MB | ~15x less |
-| filter | 15 MB | 21 MB | 28 MB | ~1.4x less |
-| sort (string key) | 34 MB | 47 MB | 69 MB | ~1.4x less |
-| equi join | 8 MB | 8 MB | 101 MB | ~parity |
+| Operation | basetable | data.table | dplyr | collapse | basetable vs data.table |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| distinct | 0.03 MB | 20 MB | 12 MB | 3.9 MB | ~700x less |
+| sd by group | 0.05 MB | 27 MB | 36 MB | 4.3 MB | ~500x less |
+| count by group | 1 MB | 30 MB | 30 MB | 5.5 MB | ~30x less |
+| semi join | 4 MB | 58 MB | 82 MB | 3.8 MB | ~15x less |
+| filter | 15 MB | 21 MB | 28 MB | 19 MB | ~1.4x less |
+| sort (string key) | 34 MB | 47 MB | 69 MB | 38 MB | ~1.4x less |
+| equi join | 8 MB | 8 MB | 101 MB | 12 MB | ~parity |
 
 These are R-level allocations as reported by `bench`. The C++ engine also
 uses `malloc`'d scratch buffers (radix keys, per-thread row-position
 vectors) that `bench` does not count, so peak process memory during a sort
-or filter is higher than the figure above; `data.table` does the same.
+or filter is higher than the figure above; `data.table` does the same, and
+`collapse` allocates in C as well.
 
-The one gap is **sorting**: `orderrows()` is a stable parallel radix, ~20x
-faster than base `order()`, but still ~1.3x of `data.table`, whose hand-tuned
-parallel radix is the one operation `basetable` does not match.
+The gaps to close are **speed** on `filter`, `distinct`, `count` and the
+joins against `collapse`, and **sorting** against both `collapse` and
+`data.table` when single-threaded: `orderrows()` is a stable parallel radix,
+~20x faster than base `order()`, but not the fastest available.
 
 ## Positioning
 
-`data.table` is faster on some workloads (notably sorting) and has a far
-larger ecosystem; `dplyr` is the tidyverse standard. `basetable` is a good
+`collapse` and `data.table` are faster on many workloads (see the benchmark
+above) and `data.table` has a far larger ecosystem; `dplyr` is the tidyverse
+standard. `basetable` is a good
 fit when you want:
 
 - **base-R syntax** and semantics, not `[i, j, by]`, tidy evaluation, or a
@@ -151,8 +165,9 @@ fit when you want:
 - **no dependencies** to install, pin, or reason about;
 - a package small enough to **read end to end**, teach from, and hand to a
   language model as a stable target;
-- competitive speed and best-in-class memory on the everyday operations
-  (filter, group, join, distinct) without changing how you write code.
+- competitive speed and the lowest memory use of the engines measured on the
+  everyday operations (filter, group, join, distinct) without changing how you
+  write code.
 
 Grouping is a `by` argument on the verb that needs it (`aggregate()`,
 `count()`, `summaries()`, `transform()`, `subset()`, `samplerows()`,
