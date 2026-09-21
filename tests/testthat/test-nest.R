@@ -46,3 +46,67 @@ test_that("nest() works on zero-row input", {
   n <- nest(data.frame(g = character(0), x = integer(0)), by = "g")
   expect_equal(nrow(n), 0L)
 })
+
+test_that("nest() groups integer, logical and wide-range keys", {
+  d <- data.frame(g = c(5L, NA, -3L, 5L, NA), x = 1:5)
+  n <- nest(d, by = "g")
+  expect_equal(n$g, c(5L, NA, -3L))
+  expect_equal(n$data[[1]]$x, c(1L, 4L))
+  expect_equal(n$data[[2]]$x, c(2L, 5L))
+
+  wide <- data.frame(g = c(1L, 2000000000L, 1L, -2000000000L), x = 1:4)
+  nw <- nest(wide, by = "g")
+  expect_equal(nw$g, c(1L, 2000000000L, -2000000000L))
+  expect_equal(nw$data[[1]]$x, c(1L, 3L))
+
+  lg <- nest(data.frame(g = c(TRUE, NA, TRUE), x = 1:3), by = "g")
+  expect_equal(lg$g, c(TRUE, NA))
+})
+
+test_that("nest() and unnest() keep factor, Date and list columns", {
+  d <- data.frame(
+    g = c("a", "b", "a"),
+    f = factor(c("u", "v", "u"), levels = c("v", "u", "w")),
+    dt = as.Date("2020-01-01") + 0:2
+  )
+  d$l <- list(1, "a", 1:2)
+  n <- nest(d, by = "g")
+  expect_equal(levels(n$data[[1]]$f), c("v", "u", "w"))
+  expect_s3_class(n$data[[1]]$dt, "Date")
+  expect_equal(n$data[[1]]$l, list(1, 1:2))
+  back <- as.data.frame(unnest(n, "data"))
+  expect_equal(back$f, factor(c("u", "u", "v"), levels = c("v", "u", "w")))
+  expect_equal(back$dt, as.Date("2020-01-01") + c(0L, 2L, 1L))
+})
+
+test_that("unnest() falls back when nested frames differ", {
+  d <- data.frame(id = 1:2)
+  d$data <- list(data.frame(a = 1:2), data.frame(a = 3L, b = "x"))
+  u <- unnest(d, "data")
+  expect_equal(u$id, c(1L, 1L, 2L))
+  expect_equal(u$a, 1:3)
+  expect_equal(u$b, c(NA, NA, "x"))
+
+  f <- data.frame(id = 1:2)
+  f$data <- list(
+    data.frame(k = factor("a")), data.frame(k = factor("b"))
+  )
+  expect_equal(nrow(unnest(f, "data")), 2L)
+})
+
+test_that("nest() and unnest() agree with tidyr", {
+  skip_if_not_installed("tidyr")
+  set.seed(1)
+  d <- data.frame(
+    g = sample(c(1:4, NA), 200, TRUE),
+    x = rnorm(200),
+    s = sample(c(letters, NA), 200, TRUE)
+  )
+  ours <- unnest(nest(d, by = "g"), "data")
+  ref <- tidyr::unnest(tidyr::nest(d, data = c(x, s), .by = "g"), data)
+  key <- function(u) as.data.frame(u)[c("g", "x", "s")]
+  o <- key(ours); r <- key(ref)
+  o <- o[do.call(order, o), ]; r <- r[do.call(order, r), ]
+  rownames(o) <- rownames(r) <- NULL
+  expect_equal(o, r)
+})
