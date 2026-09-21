@@ -4,13 +4,13 @@
 #
 # Writes man/figures/benchmark-time.png and man/figures/benchmark-memory.png
 # plus inst/benchmarks/benchmark-results.md (the tables the README embeds).
-# Uses bench for both timing and memory, comparing basetable, data.table and
-# dplyr. Size is controlled by BT_FIG_N (default 1e6).
+# Uses bench for both timing and memory, comparing basetable, data.table,
+# dplyr and collapse. Size is controlled by BT_FIG_N (default 1e6).
 #
 # Two passes are measured: one on all logical cores and one pinned to a single
-# thread. basetable and data.table are always given the same thread budget so
-# the two engines are compared on equal footing; dplyr has no parallel path and
-# is single-threaded in both passes. The figures use the single-thread pass so
+# thread. basetable, data.table and collapse are always given the same thread
+# budget so the engines are compared on equal footing; dplyr has no parallel
+# path and is single-threaded in both passes. The figures use the single-thread pass so
 # they compare the engines' algorithmic performance without parallelism.
 
 suppressPackageStartupMessages({
@@ -20,7 +20,8 @@ suppressPackageStartupMessages({
 })
 
 stopifnot(requireNamespace("data.table", quietly = TRUE),
-          requireNamespace("dplyr", quietly = TRUE))
+          requireNamespace("dplyr", quietly = TRUE),
+          requireNamespace("collapse", quietly = TRUE))
 
 N    <- as.integer(Sys.getenv("BT_FIG_N", "1e6"))
 REPS <- as.integer(Sys.getenv("BT_FIG_REPS", "15"))
@@ -59,40 +60,47 @@ measure_all <- function() {
     bench_one("filter", list(
       basetable  = quote(basetable::subset(d, x > 0.5)),
       data.table = quote(dt[x > 0.5]),
-      dplyr      = quote(dplyr::filter(d, x > 0.5)))),
+      dplyr      = quote(dplyr::filter(d, x > 0.5)),
+      collapse   = quote(collapse::fsubset(d, x > 0.5)))),
     bench_one("sort (string key)", list(
       basetable  = quote(basetable::orderrows(d, by = c("g", "x"))),
       data.table = quote(data.table::setorder(data.table::copy(dt), g, x)),
-      dplyr      = quote(dplyr::arrange(d, g, x)))),
+      dplyr      = quote(dplyr::arrange(d, g, x)),
+      collapse   = quote(collapse::roworderv(d, c("g", "x"))))),
     bench_one("distinct", list(
       basetable  = quote(basetable::uniquerows(d, cols = "g")),
       data.table = quote(unique(dt[, list(g)])),
-      dplyr      = quote(dplyr::distinct(d, g)))),
+      dplyr      = quote(dplyr::distinct(d, g)),
+      collapse   = quote(collapse::funique(collapse::get_vars(d, "g"))))),
     bench_one("count by group", list(
       basetable  = quote(basetable::count(d, by = "gh", sort = FALSE)),
       data.table = quote(dt[, .N, by = gh]),
-      dplyr      = quote(dplyr::count(d, gh)))),
+      dplyr      = quote(dplyr::count(d, gh)),
+      collapse   = quote(collapse::fcount(d, gh)))),
     bench_one("sd by group", list(
       basetable  = quote(basetable::aggregate(d, by = "g", value = "x", fun = sd, sort = FALSE)),
       data.table = quote(dt[, list(x = sd(x)), by = g]),
-      dplyr      = quote(dplyr::summarise(dplyr::group_by(d, g), x = sd(x), .groups = "drop")))),
+      dplyr      = quote(dplyr::summarise(dplyr::group_by(d, g), x = sd(x), .groups = "drop")),
+      collapse   = quote(collapse::collap(d, x ~ g, collapse::fsd, sort = FALSE)))),
     bench_one("equi join", list(
       # basetable::merge() returns rows in input order; pin data.table to
       # sort = FALSE so both materialise the join without also sorting it.
       basetable  = quote(basetable::merge(d, dim_tbl, by = "g")),
       data.table = quote(merge(dt, dmt, by = "g", sort = FALSE)),
-      dplyr      = quote(dplyr::inner_join(d, dim_tbl, by = "g")))),
+      dplyr      = quote(dplyr::inner_join(d, dim_tbl, by = "g")),
+      collapse   = quote(collapse::join(d, dim_tbl, on = "g", how = "inner", verbose = 0)))),
     bench_one("semi join", list(
       basetable  = quote(basetable::semimerge(d, dim_tbl, by = "g")),
       data.table = quote(dt[dmt, on = "g", nomatch = NULL]),
-      dplyr      = quote(dplyr::semi_join(d, dim_tbl, by = "g"))))
+      dplyr      = quote(dplyr::semi_join(d, dim_tbl, by = "g")),
+      collapse   = quote(collapse::join(d, dim_tbl, on = "g", how = "semi", verbose = 0))))
   ))
   res$operation <- factor(res$operation, levels = ops)
-  res$engine    <- factor(res$engine, levels = c("basetable", "data.table", "dplyr"))
+  res$engine    <- factor(res$engine, levels = c("basetable", "data.table", "dplyr", "collapse"))
   res
 }
 
-# Give basetable and data.table the same budget on every pass.
+# Give basetable, data.table and collapse the same budget on every pass.
 set_threads <- function(threads = NULL, percent = NULL) {
   if (!is.null(percent)) {
     basetable::setthreads(percent = percent)
@@ -101,6 +109,7 @@ set_threads <- function(threads = NULL, percent = NULL) {
     basetable::setthreads(threads = threads)
     data.table::setDTthreads(threads = threads)
   }
+  collapse::set_collapse(nthreads = data.table::getDTthreads())
   getOption("basetable.threads", 1L)
 }
 
@@ -113,7 +122,8 @@ res_st <- measure_all()
 # Restore a full budget for anything downstream (figures, interactive use).
 set_threads(percent = 100)
 
-pal <- c(basetable = "#1b7837", data.table = "#762a83", dplyr = "#c2a5cf")
+pal <- c(basetable = "#1b7837", data.table = "#762a83", dplyr = "#c2a5cf",
+         collapse = "#e08214")
 base_theme <- theme_minimal(base_size = 12) +
   theme(legend.position = "none", strip.text = element_text(face = "bold"),
         panel.grid.minor = element_blank())
@@ -155,15 +165,15 @@ emit_table <- function(res, header) {
   out <- c(
     header,
     "",
-    "| Operation | basetable | data.table | dplyr | basetable mem | data.table mem | dplyr mem |",
-    "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"
+    "| Operation | basetable | data.table | dplyr | collapse | basetable mem | data.table mem | dplyr mem | collapse mem |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
   )
   for (i in seq_len(nrow(wide))) {
     w <- wide[i, ]
     out <- c(out, sprintf(
-      "| %s | %.0f ms | %.0f ms | %.0f ms | %.2f MB | %.2f MB | %.2f MB |",
-      w$operation, w$t_basetable, w$t_data.table, w$t_dplyr,
-      w$m_basetable, w$m_data.table, w$m_dplyr))
+      "| %s | %.0f ms | %.0f ms | %.0f ms | %.0f ms | %.2f MB | %.2f MB | %.2f MB | %.2f MB |",
+      w$operation, w$t_basetable, w$t_data.table, w$t_dplyr, w$t_collapse,
+      w$m_basetable, w$m_data.table, w$m_dplyr, w$m_collapse))
   }
   out
 }
@@ -175,7 +185,7 @@ lines <- c(
   emit_table(res_mt, sprintf(
     "### All cores (%d threads; dplyr single-threaded)", nthreads_mt)),
   "",
-  emit_table(res_st, "### Single thread (basetable and data.table pinned to 1)")
+  emit_table(res_st, "### Single thread (basetable, data.table and collapse pinned to 1)")
 )
 writeLines(lines, "inst/benchmarks/benchmark-results.md")
 cat("wrote figures + inst/benchmarks/benchmark-results.md\n")
