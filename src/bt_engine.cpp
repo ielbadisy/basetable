@@ -7,6 +7,7 @@
 #define R_NO_REMAP
 #include <R.h>
 #include <Rinternals.h>
+#include "bt_profile.h"
 
 #include <algorithm>
 #include <array>
@@ -186,6 +187,7 @@ void gather_atomic(SEXP dst, SEXP src, const std::vector<R_xlen_t>& rows) {
 
 SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<int>& cols,
                  int nth = 1) {
+  BtProfile profile("materialize");
   R_xlen_t nc = (R_xlen_t)cols.size();
   R_xlen_t nr = (R_xlen_t)rows.size();
   SEXP out = PROTECT(Rf_allocVector(VECSXP, nc));
@@ -235,6 +237,7 @@ SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<i
     SET_STRING_ELT(names, j, STRING_ELT(old_names, cols[(size_t)j]));
   }
 
+  profile.mark("allocate");
   {
     bool par = nth >= 2 && nr >= 100000;
     // Worker threads do everything that needs no R API: the atomic-column
@@ -244,7 +247,7 @@ SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<i
     std::vector<std::vector<SEXP>> str_buf(ref_cols.size());
     std::vector<int> str_cols;
     for (size_t r = 0; r < ref_cols.size(); ++r)
-      if (TYPEOF(srcs[(size_t)ref_cols[r]]) == STRSXP) {
+      if (par && TYPEOF(srcs[(size_t)ref_cols[r]]) == STRSXP) {
         str_buf[r].resize((size_t)nr);
         str_cols.push_back((int)r);
       }
@@ -279,12 +282,18 @@ SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<i
       for (auto& t : tasks) run_task(t);
     }
 
+    profile.mark("gather");
     // R-thread finish: STRSXP from the gathered buffers, VECSXP directly.
     for (size_t r = 0; r < ref_cols.size(); ++r) {
       SEXP d = dsts[(size_t)ref_cols[r]], s = srcs[(size_t)ref_cols[r]];
       if (TYPEOF(s) == STRSXP) {
-        const SEXP* b = str_buf[r].data();
-        for (R_xlen_t i = 0; i < nr; ++i) SET_STRING_ELT(d, i, b[i]);
+        if (par) {
+          const SEXP* b = str_buf[r].data();
+          for (R_xlen_t i = 0; i < nr; ++i) SET_STRING_ELT(d, i, b[i]);
+        } else {
+          const SEXP* sp = STRING_PTR_RO(s);
+          for (R_xlen_t i = 0; i < nr; ++i) SET_STRING_ELT(d, i, sp[rows[(size_t)i]]);
+        }
       } else {
         for (R_xlen_t i = 0; i < nr; ++i)
           SET_VECTOR_ELT(d, i, VECTOR_ELT(s, rows[(size_t)i]));
@@ -292,6 +301,7 @@ SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<i
     }
   }
 
+  profile.mark("reference_write");
   Rf_setAttrib(out, R_NamesSymbol, names);
   Rf_setAttrib(out, R_RowNamesSymbol, make_row_names(nr));
   set_table_class(out);
@@ -516,6 +526,7 @@ struct FlatPtrIntMap {
   std::vector<const void*> keys;
   std::vector<int> values;
   size_t mask = 0;
+  size_t used = 0;
 
   static size_t hash_ptr(const void* p) {
     uint64_t x = (uint64_t)(uintptr_t)p;
@@ -528,10 +539,22 @@ struct FlatPtrIntMap {
 
   void reserve(size_t n) {
     size_t cap = 8;
-    while (cap < n * 2) cap <<= 1;
+    while (cap < std::min<size_t>(n, 1024) * 2) cap <<= 1;
     keys.assign(cap, nullptr);
     values.assign(cap, 0);
     mask = cap - 1;
+    used = 0;
+  }
+
+  void grow() {
+    auto old_keys = std::move(keys);
+    auto old_values = std::move(values);
+    keys.assign(old_keys.size() * 2, nullptr);
+    values.assign(keys.size(), 0);
+    mask = keys.size() - 1;
+    used = 0;
+    for (size_t j = 0; j < old_keys.size(); ++j)
+      if (old_keys[j]) insert(old_keys[j], old_values[j]);
   }
 
   const int* find(const void* key) const {
@@ -550,8 +573,13 @@ struct FlatPtrIntMap {
     for (;;) {
       const void* at = keys[i];
       if (at == nullptr) {
+        if ((used + 1) * 2 > keys.size()) {
+          grow();
+          return insert(key, value);
+        }
         keys[i] = key;
         values[i] = value;
+        ++used;
         return true;
       }
       if (at == key) return false;
@@ -651,6 +679,7 @@ struct KeyCodec {
 // factors by level code, so neither builds a byte key. Returns false for
 // column types the dense integer path in *_single already covers.
 bool group_single(SEXP col, R_xlen_t nrow, std::vector<int>& codes, std::vector<R_xlen_t>& first) {
+  BtProfile profile("group");
   codes.resize((size_t)nrow);
   if (Rf_isFactor(col)) {
     std::unordered_map<int, int> d;
@@ -668,6 +697,7 @@ bool group_single(SEXP col, R_xlen_t nrow, std::vector<int>& codes, std::vector<
   if (TYPEOF(col) == STRSXP) {
     FlatPtrIntMap d;
     d.reserve((size_t)nrow);
+    profile.mark("allocate");
     for (R_xlen_t i = 0; i < nrow; ++i) {
       const void* s = (const void*)STRING_ELT(col, i);
       const int* it = d.find(s);
@@ -676,6 +706,7 @@ bool group_single(SEXP col, R_xlen_t nrow, std::vector<int>& codes, std::vector<
       else c = *it;
       codes[(size_t)i] = c;
     }
+    profile.mark("lookup");
     return true;
   }
   if (TYPEOF(col) == REALSXP) {
@@ -868,6 +899,15 @@ bool unique_single(SEXP col, R_xlen_t nrow, std::vector<R_xlen_t>& rows) {
     case INTSXP:
       return unique_int_dense(INTEGER(col), nrow, rows) ||
              unique_hash_typed<int>(INTEGER(col), nrow, rows);
+    case STRSXP: {
+      FlatPtrIntMap seen;
+      seen.reserve((size_t)nrow);
+      for (R_xlen_t i = 0; i < nrow; ++i) {
+        const void* key = (const void*)STRING_ELT(col, i);
+        if (seen.insert(key, 1)) rows.push_back(i);
+      }
+      return true;
+    }
     default:
       return false;
   }
@@ -1052,6 +1092,42 @@ bool count_hash_typed(SEXP df, int by, const T* p, R_xlen_t nrow, SEXP s_name, S
   return true;
 }
 
+bool count_string(SEXP df, int by, SEXP col, R_xlen_t nrow, SEXP s_name, SEXP* out_ptr) {
+  FlatPtrIntMap pos;
+  pos.reserve((size_t)nrow);
+  std::vector<R_xlen_t> first;
+  std::vector<int> counts;
+  for (R_xlen_t i = 0; i < nrow; ++i) {
+    const void* key = (const void*)STRING_ELT(col, i);
+    const int* it = pos.find(key);
+    if (it == nullptr) {
+      int k = (int)first.size();
+      pos.insert(key, k);
+      first.push_back(i);
+      counts.push_back(1);
+    } else {
+      ++counts[(size_t)*it];
+    }
+  }
+
+  std::vector<int> key_cols{by};
+  SEXP keys = PROTECT(build_frame(df, first, key_cols));
+  SEXP out = PROTECT(Rf_allocVector(VECSXP, 2));
+  SEXP names = PROTECT(Rf_allocVector(STRSXP, 2));
+  SET_VECTOR_ELT(out, 0, VECTOR_ELT(keys, 0));
+  SET_STRING_ELT(names, 0, STRING_ELT(Rf_getAttrib(keys, R_NamesSymbol), 0));
+  SEXP ncol = PROTECT(Rf_allocVector(INTSXP, (R_xlen_t)counts.size()));
+  for (R_xlen_t i = 0; i < (R_xlen_t)counts.size(); ++i) INTEGER(ncol)[i] = counts[(size_t)i];
+  SET_VECTOR_ELT(out, 1, ncol);
+  SET_STRING_ELT(names, 1, STRING_ELT(s_name, 0));
+  Rf_setAttrib(out, R_NamesSymbol, names);
+  Rf_setAttrib(out, R_RowNamesSymbol, make_row_names((R_xlen_t)counts.size()));
+  set_table_class(out);
+  UNPROTECT(4);
+  *out_ptr = out;
+  return true;
+}
+
 bool count_single(SEXP df, int by, R_xlen_t nrow, SEXP s_name, SEXP* out) {
   SEXP col = VECTOR_ELT(df, by);
   switch (TYPEOF(col)) {
@@ -1061,6 +1137,8 @@ bool count_single(SEXP df, int by, R_xlen_t nrow, SEXP s_name, SEXP* out) {
     case INTSXP:
       return count_int_dense(df, by, INTEGER(col), nrow, s_name, out) ||
              count_hash_typed<int>(df, by, INTEGER(col), nrow, s_name, out);
+    case STRSXP:
+      return count_string(df, by, col, nrow, s_name, out);
     default:
       return false;
   }
@@ -1504,6 +1582,7 @@ void radix_pairs(std::vector<uint64_t>& key, std::vector<R_xlen_t>& idx, int nth
 
 bool order_string_real2(SEXP df, int s_col, int x_col, R_xlen_t nrow, bool na_last,
                         std::vector<R_xlen_t>& ord, int nth) {
+  BtProfile profile("sort");
   if (!na_last) return false;
   SEXP sc = VECTOR_ELT(df, s_col);
   SEXP xc = VECTOR_ELT(df, x_col);
@@ -1514,6 +1593,7 @@ bool order_string_real2(SEXP df, int s_col, int x_col, R_xlen_t nrow, bool na_la
   std::vector<uint64_t> skey = order_codes(sc, nrow, true, false, supported, nth);
   if (!supported) return false;
 
+  profile.mark("string_ranking");
   uint64_t max_key = 0;
   bool have_na = false;
   const uint64_t NA_HI = ~(uint64_t)0;
@@ -1540,9 +1620,11 @@ bool order_string_real2(SEXP df, int s_col, int x_col, R_xlen_t nrow, bool na_la
     ord[cursor[b]++] = i;
   }
 
+  profile.mark("bucket_scatter");
   bool x_supported = false;
   std::vector<uint64_t> xkey = order_codes(xc, nrow, true, false, x_supported, 1);
   if (!x_supported) return false;
+  profile.mark("numeric_keys");
   auto sort_bucket = [&](size_t b) {
     R_xlen_t lo = (R_xlen_t)starts[b], hi = (R_xlen_t)starts[b + 1];
     if (hi - lo < 2) return;
@@ -1567,6 +1649,7 @@ bool order_string_real2(SEXP df, int s_col, int x_col, R_xlen_t nrow, bool na_la
     }
     for (auto& th : pool) th.join();
   }
+  profile.mark("bucket_sort");
   return true;
 }
 
@@ -2364,6 +2447,7 @@ extern "C" SEXP bt_group_id_(SEXP df, SEXP s_by) {
 extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
                          SEXP s_all_x, SEXP s_all_y, SEXP s_suffixes,
                          SEXP s_n_threads) {
+  BtProfile profile("join");
   Frame xf = frame_from(x);
   Frame yf = frame_from(y);
   std::vector<int> x_by = col_index(s_x_by, xf.ncol);
@@ -2770,6 +2854,8 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
     }
   }
 
+  profile.mark("probe");
+
   R_xlen_t nout = (R_xlen_t)xrows.size();
   bool x_identity = nout == xf.nrow;
   for (R_xlen_t i = 0; x_identity && i < nout; ++i)
@@ -2814,6 +2900,8 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
     SET_STRING_ELT(names, p, STRING_ELT(x_names, x_by[k]));
     ++p;
   }
+
+  profile.mark("allocate");
   for (int c : x_extra) {
     SEXP src = VECTOR_ELT(x, c);
     if (x_identity) {
@@ -2864,6 +2952,8 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
       for (auto& t : pool) t.join();
     }
   }
+
+  profile.mark("gather");
 
   Rf_setAttrib(out, R_NamesSymbol, names);
   Rf_setAttrib(out, R_RowNamesSymbol, make_row_names(nout));
