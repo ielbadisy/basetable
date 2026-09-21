@@ -1,3 +1,11 @@
+# basetable (development version)
+
+## New features
+
+* `nest()` and `unnest()` support nested tables: `nest()` collapses each group
+  into a data frame stored in a list-column, and `unnest()` expands list-columns
+  back into rows.
+
 # basetable 1.4.2
 
 ## Fixes
