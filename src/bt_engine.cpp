@@ -639,6 +639,41 @@ bool group_single(SEXP col, R_xlen_t nrow, std::vector<int>& codes, std::vector<
     }
     return true;
   }
+  if (TYPEOF(col) == INTSXP || TYPEOF(col) == LGLSXP) {
+    const int* p = INTEGER(col);
+    int lo = INT_MAX, hi = INT_MIN;
+    bool has_na = false;
+    for (R_xlen_t i = 0; i < nrow; ++i) {
+      int v = p[i];
+      if (v == NA_INTEGER) { has_na = true; continue; }
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+    int64_t range = hi >= lo ? (int64_t)hi - (int64_t)lo + 1 : 0;
+    if (range <= (int64_t)4 * nrow + 1024) {
+      // dense table indexed by value: no hashing; slot `range` holds NA
+      std::vector<int> tab((size_t)range + 1, -1);
+      for (R_xlen_t i = 0; i < nrow; ++i) {
+        int v = p[i];
+        size_t k = v == NA_INTEGER ? (size_t)range : (size_t)((int64_t)v - lo);
+        int c = tab[k];
+        if (c < 0) { c = (int)first.size(); tab[k] = c; first.push_back(i); }
+        codes[(size_t)i] = c;
+      }
+      (void)has_na;
+      return true;
+    }
+    std::unordered_map<int, int> d;
+    d.reserve((size_t)nrow);
+    for (R_xlen_t i = 0; i < nrow; ++i) {
+      auto it = d.find(p[i]);
+      int c;
+      if (it == d.end()) { c = (int)first.size(); d.emplace(p[i], c); first.push_back(i); }
+      else c = it->second;
+      codes[(size_t)i] = c;
+    }
+    return true;
+  }
   if (TYPEOF(col) == REALSXP) {
     std::unordered_map<int64_t, int> d;
     d.reserve((size_t)nrow);
@@ -2233,7 +2268,9 @@ extern "C" SEXP bt_group_id_(SEXP df, SEXP s_by) {
   std::vector<int> codes;
 
   if (by.size() == 1 && group_single(VECTOR_ELT(df, by[0]), f.nrow, codes, first)) {
-    for (R_xlen_t i = 0; i < f.nrow; ++i) INTEGER(ids)[i] = codes[(size_t)i] + 1;
+    int* idp = INTEGER(ids);
+    const int* cp = codes.data();
+    for (R_xlen_t i = 0; i < f.nrow; ++i) idp[i] = cp[i] + 1;
     for (size_t g = 0; g < first.size(); ++g) first[g] += 1;  // to 1-based row index
   } else {
     KeyCodec codec(df, by);
