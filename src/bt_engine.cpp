@@ -1540,7 +1540,9 @@ bool order_string_real2(SEXP df, int s_col, int x_col, R_xlen_t nrow, bool na_la
     ord[cursor[b]++] = i;
   }
 
-  const double* xp = REAL(xc);
+  bool x_supported = false;
+  std::vector<uint64_t> xkey = order_codes(xc, nrow, true, false, x_supported, 1);
+  if (!x_supported) return false;
   auto sort_bucket = [&](size_t b) {
     R_xlen_t lo = (R_xlen_t)starts[b], hi = (R_xlen_t)starts[b + 1];
     if (hi - lo < 2) return;
@@ -1548,12 +1550,7 @@ bool order_string_real2(SEXP df, int s_col, int x_col, R_xlen_t nrow, bool na_la
     // sort retains the same stable result without the extra bookkeeping used
     // by stable_sort.
     std::sort(ord.begin() + lo, ord.begin() + hi, [&](R_xlen_t a, R_xlen_t b) {
-      double xa = xp[a], xb = xp[b];
-      bool ana = ISNAN(xa), bna = ISNAN(xb);
-      if (ana || bna) {
-        if (ana && bna) return a < b;
-        return !ana;
-      }
+      uint64_t xa = xkey[(size_t)a], xb = xkey[(size_t)b];
       if (xa == xb) return a < b;
       return xa < xb;
     });
