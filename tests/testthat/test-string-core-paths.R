@@ -63,6 +63,21 @@ test_that("string numeric sorting preserves ties and handles skewed groups", {
   }
 })
 
+test_that("string numeric ordering ranks missing and repeated groups stably", {
+  old <- options("basetable.threads")
+  on.exit(options(old), add = TRUE)
+  set.seed(517)
+  x <- data.frame(g = sample(c(NA_character_, "", letters), 220000L, TRUE),
+                  x = sample(c(NA_real_, NaN, -Inf, -0, 0, 2, Inf),
+                             220000L, TRUE), id = seq_len(220000L))
+  expected <- x$id[order(x$g, x$x, method = "radix", na.last = TRUE)]
+  for (threads in c(1L, 4L)) {
+    options(basetable.threads = threads)
+    expect_identical(orderrows(x, by = c("g", "x"))$id, expected)
+    expect_identical(orderrows(x[FALSE, ], by = c("g", "x"))$id, integer())
+  }
+})
+
 test_that("group reducers read numeric storage consistently across types", {
   old <- options("basetable.threads")
   on.exit(options(old), add = TRUE)

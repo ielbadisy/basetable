@@ -23,6 +23,16 @@
 
 namespace {
 
+// Optional cache hint only: retain the normal R write barrier on every store.
+// Compilers without this intrinsic use the same gather without the hint.
+inline void prefetch_string(SEXP value) {
+#if defined(__GNUC__) || defined(__clang__)
+  __builtin_prefetch(static_cast<const void*>(value), 0, 1);
+#else
+  (void)value;
+#endif
+}
+
 enum AggFun {
   AGG_SUM = 0,
   AGG_MEAN = 1,
@@ -289,7 +299,10 @@ SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<i
       if (TYPEOF(s) == STRSXP) {
         if (par) {
           const SEXP* b = str_buf[r].data();
-          for (R_xlen_t i = 0; i < nr; ++i) SET_STRING_ELT(d, i, b[i]);
+          for (R_xlen_t i = 0; i < nr; ++i) {
+            if (i + 32 < nr) prefetch_string(b[i + 32]);
+            SET_STRING_ELT(d, i, b[i]);
+          }
         } else {
           const SEXP* sp = STRING_PTR_RO(s);
           std::array<SEXP, 512> buffer;
@@ -297,8 +310,10 @@ SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<i
             R_xlen_t count = std::min<R_xlen_t>(buffer.size(), nr - start);
             for (R_xlen_t j = 0; j < count; ++j)
               buffer[(size_t)j] = sp[rows[(size_t)(start + j)]];
-            for (R_xlen_t j = 0; j < count; ++j)
+            for (R_xlen_t j = 0; j < count; ++j) {
+              if (j + 32 < count) prefetch_string(buffer[(size_t)j + 32]);
               SET_STRING_ELT(d, start + j, buffer[(size_t)j]);
+            }
           }
         }
       } else {
