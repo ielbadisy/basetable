@@ -407,6 +407,23 @@ struct AggState {
   bool bad = false;
 };
 
+// Resolve storage on the R thread, including any ALTREP materialization.
+struct NumericColumnView {
+  const double* real = nullptr;
+  const int* integer = nullptr;
+  explicit NumericColumnView(SEXP col) {
+    if (TYPEOF(col) == REALSXP) real = REAL(col);
+    else if (TYPEOF(col) == INTSXP) integer = INTEGER(col);
+    else if (TYPEOF(col) == LGLSXP) integer = LOGICAL(col);
+  }
+  double get(R_xlen_t i, bool& na) const {
+    if (real) { double x = real[i]; na = std::isnan(x); return x; }
+    if (integer) { int x = integer[i]; na = x == NA_INTEGER; return na ? NA_REAL : (double)x; }
+    na = true;
+    return NA_REAL;
+  }
+};
+
 double value_as_double(SEXP col, R_xlen_t i, bool& na) {
   na = false;
   switch (TYPEOF(col)) {
@@ -772,6 +789,8 @@ bool fused_group_agg_1key(SEXP col, R_xlen_t nrow, const std::vector<SEXP>& vcol
   else return false;
 
   const int nv = (int)vcols.size();
+  std::vector<NumericColumnView> values;
+  for (SEXP value : vcols) values.emplace_back(value);
   auto slot = [&](R_xlen_t i) -> int64_t {
     if (kkind == 1) return (int64_t)(intptr_t)STRING_ELT(col, i);
     if (kkind == 2) return real_slot(REAL(col)[i]);
@@ -805,7 +824,7 @@ bool fused_group_agg_1key(SEXP col, R_xlen_t nrow, const std::vector<SEXP>& vcol
         AggState& s = L.acc[(size_t)g * (size_t)nv + (size_t)j];
         if (fun == AGG_N) { ++s.n; continue; }
         bool na = false;
-        double x = value_as_double(vcols[(size_t)j], i, na);
+        double x = values[(size_t)j].get(i, na);
         if (na) { if (!na_rm) s.bad = true; continue; }
         agg_update(s, fun, x);
       }
@@ -1435,22 +1454,23 @@ std::vector<uint64_t> order_codes(SEXP col, R_xlen_t nrow, bool na_last, bool de
   const uint64_t NA_HI = ~(uint64_t)0;
 
   if (TYPEOF(col) == STRSXP && !Rf_isFactor(col)) {
-    std::unordered_map<const void*, int> seen;
+    FlatPtrIntMap seen;
     std::vector<SEXP> distinct;
     std::vector<int> row_code((size_t)nrow, 0);
     seen.reserve((size_t)std::min<R_xlen_t>(nrow, 65536));
+    const SEXP* strings = STRING_PTR_RO(col);
     for (R_xlen_t i = 0; i < nrow; ++i) {
-      SEXP s = STRING_ELT(col, i);
+      SEXP s = strings[i];
       if (s == NA_STRING) continue;
       const void* key = (const void*)s;
       auto it = seen.find(key);
-      if (it == seen.end()) {
+      if (it == nullptr) {
         int id = (int)distinct.size() + 1;
-        seen.emplace(key, id);
+        seen.insert(key, id);
         distinct.push_back(s);
         row_code[(size_t)i] = id;
       } else {
-        row_code[(size_t)i] = it->second;
+        row_code[(size_t)i] = *it;
       }
     }
     std::sort(distinct.begin(), distinct.end(),
@@ -1458,8 +1478,8 @@ std::vector<uint64_t> order_codes(SEXP col, R_xlen_t nrow, bool na_last, bool de
     std::vector<int> rank((size_t)distinct.size() + 1, 0);
     for (size_t r = 0; r < distinct.size(); ++r) {
       int rr = (r > 0 && std::strcmp(CHAR(distinct[r - 1]), CHAR(distinct[r])) == 0)
-        ? rank[(size_t)seen[(const void*)distinct[r - 1]]] : (int)r + 1;
-      rank[(size_t)seen[(const void*)distinct[r]]] = rr;
+        ? rank[(size_t)*seen.find((const void*)distinct[r - 1])] : (int)r + 1;
+      rank[(size_t)*seen.find((const void*)distinct[r])] = rr;
     }
     uint64_t* cp = code.data();
     const int* rcp = row_code.data();
@@ -2286,11 +2306,13 @@ extern "C" SEXP bt_group_agg_(SEXP df, SEXP s_by, SEXP s_value, SEXP s_fun, SEXP
   const int nv = (int)val.size();
 
   std::vector<SEXP> vcols((size_t)nv);
+  std::vector<NumericColumnView> values;
   for (int j = 0; j < nv; ++j) {
     vcols[(size_t)j] = VECTOR_ELT(df, val[(size_t)j]);
     int t = TYPEOF(vcols[(size_t)j]);
     if (fun != AGG_N && t != LGLSXP && t != INTSXP && t != REALSXP)
       Rf_error("basetable: aggregate value columns must be numeric, integer, or logical");
+    values.emplace_back(vcols[(size_t)j]);
   }
 
   // Cardinality-aware dispatch for a single key column: below a few thousand
@@ -2322,7 +2344,7 @@ extern "C" SEXP bt_group_agg_(SEXP df, SEXP s_by, SEXP s_value, SEXP s_fun, SEXP
           AggState& s = st[base + (size_t)j];
           if (fun == AGG_N) { ++s.n; continue; }
           bool na = false;
-          double x = value_as_double(vcols[(size_t)j], i, na);
+          double x = values[(size_t)j].get(i, na);
           if (na) { if (!na_rm) s.bad = true; continue; }
           agg_update(s, fun, x);
         }
@@ -2366,7 +2388,7 @@ extern "C" SEXP bt_group_agg_(SEXP df, SEXP s_by, SEXP s_value, SEXP s_fun, SEXP
         AggState& s = state[(size_t)g * nv + j];
         if (fun == AGG_N) { ++s.n; continue; }
         bool na = false;
-        double x = value_as_double(vcols[(size_t)j], i, na);
+        double x = values[(size_t)j].get(i, na);
         if (na) { if (!na_rm) s.bad = true; continue; }
         agg_update(s, fun, x);
       }

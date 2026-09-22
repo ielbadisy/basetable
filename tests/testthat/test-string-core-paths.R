@@ -62,3 +62,23 @@ test_that("string numeric sorting preserves ties and handles skewed groups", {
     }
   }
 })
+
+test_that("group reducers read numeric storage consistently across types", {
+  old <- options("basetable.threads")
+  on.exit(options(old), add = TRUE)
+  for (value in list(c(1, NA, NaN, 4), c(1L, NA_integer_, 3L, 4L),
+                     c(TRUE, NA, FALSE, TRUE))) {
+    x <- data.frame(g = rep(c("a", "b"), 200000L),
+                    value = rep(value, 100000L))
+    for (threads in c(1L, 4L)) {
+      options(basetable.threads = threads)
+      for (remove in c(FALSE, TRUE)) {
+        out <- aggregate(x, by = "g", value = "value", fun = sd,
+                         na.rm = remove, sort = FALSE)
+        expected <- vapply(c("a", "b"), function(g)
+          stats::sd(x$value[x$g == g], na.rm = remove), numeric(1))
+        expect_equal(out$value, unname(expected))
+      }
+    }
+  }
+})
