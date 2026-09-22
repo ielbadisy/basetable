@@ -292,7 +292,14 @@ SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<i
           for (R_xlen_t i = 0; i < nr; ++i) SET_STRING_ELT(d, i, b[i]);
         } else {
           const SEXP* sp = STRING_PTR_RO(s);
-          for (R_xlen_t i = 0; i < nr; ++i) SET_STRING_ELT(d, i, sp[rows[(size_t)i]]);
+          std::array<SEXP, 512> buffer;
+          for (R_xlen_t start = 0; start < nr; start += buffer.size()) {
+            R_xlen_t count = std::min<R_xlen_t>(buffer.size(), nr - start);
+            for (R_xlen_t j = 0; j < count; ++j)
+              buffer[(size_t)j] = sp[rows[(size_t)(start + j)]];
+            for (R_xlen_t j = 0; j < count; ++j)
+              SET_STRING_ELT(d, start + j, buffer[(size_t)j]);
+          }
         }
       } else {
         for (R_xlen_t i = 0; i < nr; ++i)
@@ -908,7 +915,10 @@ bool unique_single(SEXP col, R_xlen_t nrow, std::vector<R_xlen_t>& rows) {
       const SEXP* strings = STRING_PTR_RO(col);
       for (R_xlen_t i = 0; i < nrow; ++i) {
         const void* key = (const void*)strings[i];
-        if (seen.insert(key, 1)) rows.push_back(i);
+        if (seen.find(key) == nullptr) {
+          seen.insert(key, 1);
+          rows.push_back(i);
+        }
       }
       return true;
     }
