@@ -78,6 +78,25 @@ test_that("string numeric ordering ranks missing and repeated groups stably", {
   }
 })
 
+test_that("numeric prefix ordering refines close values without losing precision", {
+  old <- options("basetable.threads")
+  on.exit(options(old), add = TRUE)
+  set.seed(910)
+  for (n in c(50L, 500L, 10000L)) {
+    # These values share their leading bits but differ near machine precision.
+    values <- 1 + sample(0:100, n, TRUE) * .Machine$double.eps
+    x <- data.frame(g = rep(c("a", "b"), length.out = n),
+                    x = values, id = seq_len(n))
+    ref <- order(x$g, x$x, method = "radix")
+    for (threads in c(1L, 4L)) {
+      options(basetable.threads = threads)
+      out <- orderrows(x, by = c("g", "x"))
+      expect_identical(out$id, x$id[ref])
+      expect_identical(out$x, x$x[ref])
+    }
+  }
+})
+
 test_that("group reducers read numeric storage consistently across types", {
   old <- options("basetable.threads")
   on.exit(options(old), add = TRUE)

@@ -1707,21 +1707,40 @@ bool order_string_real2(SEXP df, int s_col, int x_col, R_xlen_t nrow, bool na_la
     if (local.size() < 64) {
       std::sort(local.begin(), local.end());
     } else {
-      // Bucket scattering preserves input order. Stable numeric radix passes
-      // therefore preserve the original row order for equal numeric keys.
+      // First order the leading 24 bits. Only colliding prefixes need the
+      // remaining 40 bits sorted; no numeric precision is discarded.
       auto scratch = local;
-      for (unsigned shift = 0; shift < 64; shift += 8) {
-        std::array<size_t, 256> counts{};
-        for (const auto& entry : local) ++counts[(entry.first >> shift) & 255];
-        size_t offset = 0;
-        for (auto& count : counts) {
-          size_t n = count;
-          count = offset;
-          offset += n;
+      auto radix = [&](size_t begin, size_t end, unsigned first, unsigned last) {
+        auto* src = local.data() + begin;
+        auto* dst = scratch.data() + begin;
+        size_t n = end - begin;
+        for (unsigned shift = first; shift < last; shift += 8) {
+          std::array<size_t, 256> counts{};
+          for (size_t i = 0; i < n; ++i)
+            ++counts[(src[i].first >> shift) & 255];
+          if (std::find(counts.begin(), counts.end(), n) != counts.end()) continue;
+          size_t offset = 0;
+          for (auto& count : counts) {
+            size_t k = count;
+            count = offset;
+            offset += k;
+          }
+          for (size_t i = 0; i < n; ++i)
+            dst[counts[(src[i].first >> shift) & 255]++] = src[i];
+          std::swap(src, dst);
         }
-        for (const auto& entry : local)
-          scratch[counts[(entry.first >> shift) & 255]++] = entry;
-        local.swap(scratch);
+        if (src != local.data() + begin)
+          std::copy(src, src + n, local.begin() + begin);
+      };
+      radix(0, local.size(), 40, 64);
+      for (size_t begin = 0; begin < local.size();) {
+        size_t end = begin + 1;
+        while (end < local.size() &&
+               (local[end].first >> 40) == (local[begin].first >> 40)) ++end;
+        if (end - begin >= 64) radix(begin, end, 0, 40);
+        else if (end - begin > 1)
+          std::sort(local.begin() + begin, local.begin() + end);
+        begin = end;
       }
     }
     for (R_xlen_t i = lo; i < hi; ++i)
