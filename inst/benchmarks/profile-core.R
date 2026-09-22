@@ -9,6 +9,9 @@ for (expr in expressions) {
   eval(expr, .GlobalEnv)
 }
 bench_one <- function(label, exprs) {
+  selected <- Sys.getenv("BT_OPERATIONS", "")
+  if (nzchar(selected) && !label %in% strsplit(selected, ",", fixed = TRUE)[[1L]])
+    return(NULL)
   exprs <- exprs[c("basetable", "collapse")]
   # Compare every column independently of container class and row names.
   a <- as.data.frame(eval(exprs[[1]], .GlobalEnv))

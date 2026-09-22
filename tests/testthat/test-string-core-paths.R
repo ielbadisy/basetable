@@ -1,0 +1,49 @@
+test_that("string dictionaries retain keys across growth and missing values", {
+  keys <- c(sprintf("key-%05d", 1:12000), NA_character_, "")
+  g <- rep(keys, 2L)
+  x <- data.frame(g = g, value = seq_along(g))
+  expect_identical(uniquerows(x, cols = "g")$g, keys)
+  counts <- count(x, by = "g", sort = FALSE)
+  expect_identical(counts$g, keys)
+  expect_identical(counts$n, rep(2L, length(keys)))
+  y <- data.frame(g = keys, extra = seq_along(keys))
+  old <- options("basetable.threads")
+  on.exit(options(old), add = TRUE)
+  for (threads in c(1L, 4L)) {
+    options(basetable.threads = threads)
+    out <- merge(x, y, by = "g")
+    expect_identical(out$value, x$value)
+    expect_identical(out$extra, rep(seq_along(keys), 2L))
+    expect_identical(semimerge(x, y, by = "g")$value, x$value)
+  }
+})
+
+test_that("all-row selection preserves columns and partial masks exclude NA", {
+  x <- data.frame(g = c("a", NA, "b"), value = 1:3)
+  all <- basetable:::bt_engine_subset(x, rows = rep(TRUE, 3))
+  expect_identical(all$g, x$g)
+  all$value[1] <- 99L
+  expect_identical(x$value, 1:3)
+  part <- basetable:::bt_engine_subset(x, rows = c(TRUE, NA, FALSE))
+  expect_identical(part$value, 1L)
+  empty <- basetable:::bt_engine_subset(x[FALSE, ], rows = logical())
+  expect_equal(nrow(empty), 0L)
+  expect_identical(names(empty), names(x))
+})
+
+test_that("parallel string join compacts unmatched rows in input order", {
+  x <- data.frame(g = rep(c("a", "missing", NA, "b"), 60000L),
+                  value = seq_len(240000L))
+  y <- data.frame(g = c("b", NA, "a"), extra = 1:3)
+  matched <- match(x$g, y$g)
+  old <- options(basetable.threads = 4L)
+  on.exit(options(old), add = TRUE)
+  inner <- merge(x, y, by = "g")
+  expect_identical(inner$value, x$value[!is.na(matched)])
+  expect_identical(inner$extra, y$extra[matched[!is.na(matched)]])
+  left <- merge(x, y, by = "g", all.x = TRUE)
+  expect_identical(left$value, x$value)
+  expect_identical(left$extra, y$extra[matched])
+  duplicate <- merge(x, y[c(1L, 1L), ], by = "g")
+  expect_identical(duplicate$value, rep(x$value[x$g %in% "b"], each = 2L))
+})

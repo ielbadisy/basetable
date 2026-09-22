@@ -186,16 +186,16 @@ void gather_atomic(SEXP dst, SEXP src, const std::vector<R_xlen_t>& rows) {
 }
 
 SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<int>& cols,
-                 int nth = 1) {
+                 int nth = 1, bool all_rows = false) {
   BtProfile profile("materialize");
   R_xlen_t nc = (R_xlen_t)cols.size();
-  R_xlen_t nr = (R_xlen_t)rows.size();
+  R_xlen_t nr = all_rows ? frame_nrow(df) : (R_xlen_t)rows.size();
   SEXP out = PROTECT(Rf_allocVector(VECSXP, nc));
   SEXP names = PROTECT(Rf_allocVector(STRSXP, nc));
   SEXP old_names = Rf_getAttrib(df, R_NamesSymbol);
 
   bool identity_rows = nr == frame_nrow(df);
-  for (R_xlen_t i = 0; identity_rows && i < nr; ++i)
+  for (R_xlen_t i = 0; !all_rows && identity_rows && i < nr; ++i)
     if (rows[(size_t)i] != i) identity_rows = false;
 
   if (identity_rows) {
@@ -527,19 +527,17 @@ struct FlatPtrIntMap {
   std::vector<int> values;
   size_t mask = 0;
   size_t used = 0;
+  unsigned shift = 61;
 
-  static size_t hash_ptr(const void* p) {
+  size_t hash_ptr(const void* p) const {
     uint64_t x = (uint64_t)(uintptr_t)p;
-    x ^= x >> 30;
-    x *= 0xbf58476d1ce4e5b9ULL;
-    x ^= x >> 27;
-    x *= 0x94d049bb133111ebULL;
-    return (size_t)(x ^ (x >> 31));
+    return (size_t)((x * UINT64_C(11400714819323198485)) >> shift);
   }
 
   void reserve(size_t n) {
     size_t cap = 8;
-    while (cap < std::min<size_t>(n, 1024) * 2) cap <<= 1;
+    shift = 61;
+    while (cap < std::min<size_t>(n, 1024) * 2) { cap <<= 1; --shift; }
     keys.assign(cap, nullptr);
     values.assign(cap, 0);
     mask = cap - 1;
@@ -552,6 +550,7 @@ struct FlatPtrIntMap {
     keys.assign(old_keys.size() * 2, nullptr);
     values.assign(keys.size(), 0);
     mask = keys.size() - 1;
+    --shift;
     used = 0;
     for (size_t j = 0; j < old_keys.size(); ++j)
       if (old_keys[j]) insert(old_keys[j], old_values[j]);
@@ -573,7 +572,10 @@ struct FlatPtrIntMap {
     for (;;) {
       const void* at = keys[i];
       if (at == nullptr) {
-        if ((used + 1) * 2 > keys.size()) {
+        // Sparse small dictionaries shorten the hot probe chain. Larger
+        // dictionaries retain the 50% bound to limit memory and cache cost.
+        size_t load_scale = keys.size() <= 8192 ? 4 : 2;
+        if ((used + 1) * load_scale > keys.size()) {
           grow();
           return insert(key, value);
         }
@@ -697,9 +699,10 @@ bool group_single(SEXP col, R_xlen_t nrow, std::vector<int>& codes, std::vector<
   if (TYPEOF(col) == STRSXP) {
     FlatPtrIntMap d;
     d.reserve((size_t)nrow);
+    const SEXP* strings = STRING_PTR_RO(col);
     profile.mark("allocate");
     for (R_xlen_t i = 0; i < nrow; ++i) {
-      const void* s = (const void*)STRING_ELT(col, i);
+      const void* s = (const void*)strings[i];
       const int* it = d.find(s);
       int c;
       if (it == nullptr) { c = (int)first.size(); d.insert(s, c); first.push_back(i); }
@@ -902,8 +905,9 @@ bool unique_single(SEXP col, R_xlen_t nrow, std::vector<R_xlen_t>& rows) {
     case STRSXP: {
       FlatPtrIntMap seen;
       seen.reserve((size_t)nrow);
+      const SEXP* strings = STRING_PTR_RO(col);
       for (R_xlen_t i = 0; i < nrow; ++i) {
-        const void* key = (const void*)STRING_ELT(col, i);
+        const void* key = (const void*)strings[i];
         if (seen.insert(key, 1)) rows.push_back(i);
       }
       return true;
@@ -1097,8 +1101,9 @@ bool count_string(SEXP df, int by, SEXP col, R_xlen_t nrow, SEXP s_name, SEXP* o
   pos.reserve((size_t)nrow);
   std::vector<R_xlen_t> first;
   std::vector<int> counts;
+  const SEXP* strings = STRING_PTR_RO(col);
   for (R_xlen_t i = 0; i < nrow; ++i) {
-    const void* key = (const void*)STRING_ELT(col, i);
+    const void* key = (const void*)strings[i];
     const int* it = pos.find(key);
     if (it == nullptr) {
       int k = (int)first.size();
@@ -1858,8 +1863,14 @@ bool pred_ok(int sign, int op) {
 extern "C" SEXP bt_subset_(SEXP df, SEXP s_rows, SEXP s_cols, SEXP s_n_threads) {
   Frame f = frame_from(df);
   int nth = clamp_threads(s_n_threads, f.nrow, 200000);
-  std::vector<R_xlen_t> rows = row_index(s_rows, f.nrow, nth);
   std::vector<int> cols = col_index(s_cols, f.ncol);
+  bool all_rows = Rf_isNull(s_rows);
+  if (TYPEOF(s_rows) == LGLSXP && Rf_xlength(s_rows) == f.nrow) {
+    const int* mask = LOGICAL(s_rows);
+    all_rows = std::all_of(mask, mask + f.nrow, [](int v) { return v == TRUE; });
+  }
+  if (all_rows) return build_frame(df, {}, cols, nth, true);
+  std::vector<R_xlen_t> rows = row_index(s_rows, f.nrow, nth);
   return build_frame(df, rows, cols, nth);
 }
 
@@ -2513,12 +2524,14 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
   if (fast_string_join) {
     SEXP xc = VECTOR_ELT(x, x_by[0]);
     SEXP yc = VECTOR_ELT(y, y_by[0]);
+    const SEXP* xp = STRING_PTR_RO(xc);
+    const SEXP* yp = STRING_PTR_RO(yc);
     FlatPtrIntMap unique_map;
     unique_map.reserve((size_t)yf.nrow);
     bool unique_y = yf.nrow <= INT_MAX;
     if (unique_y) {
       for (R_xlen_t j = 0; j < yf.nrow; ++j) {
-        if (!unique_map.insert((const void*)STRING_ELT(yc, j), (int)j)) {
+        if (!unique_map.insert((const void*)yp[j], (int)j)) {
           unique_y = false;
           break;
         }
@@ -2526,42 +2539,30 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
     }
 
     if (unique_y) {
-      if (JT >= 2) {
-        std::vector<std::vector<R_xlen_t>> lx((size_t)JT), ly((size_t)JT);
-        R_xlen_t chunk = (xf.nrow + JT - 1) / JT;
-        std::vector<std::thread> pool;
-        for (int t = 0; t < JT; ++t) {
-          R_xlen_t lo = (R_xlen_t)t * chunk, hi = std::min<R_xlen_t>(xf.nrow, lo + chunk);
-          if (lo >= hi) break;
-          pool.emplace_back([&, t, lo, hi]() {
-            auto& vx = lx[(size_t)t];
-            auto& vy = ly[(size_t)t];
-            vx.reserve((size_t)(hi - lo));
-            vy.reserve((size_t)(hi - lo));
-            for (R_xlen_t i = lo; i < hi; ++i) {
-              const int* yi = unique_map.find((const void*)STRING_ELT(xc, i));
-              if (yi != nullptr) { vx.push_back(i); vy.push_back(*yi); }
-              else if (all_x) { vx.push_back(i); vy.push_back(-1); }
-            }
-          });
+      // Each probe owns one slot. This avoids per-thread allocations and the
+      // concatenation copy; unmatched inner rows are compacted in place.
+      xrows.resize((size_t)xf.nrow);
+      yrows.resize((size_t)xf.nrow);
+      par_rows(xf.nrow, JT, [&](R_xlen_t lo, R_xlen_t hi) {
+        for (R_xlen_t i = lo; i < hi; ++i) {
+          const int* yi = unique_map.find((const void*)xp[i]);
+          xrows[(size_t)i] = i;
+          yrows[(size_t)i] = yi == nullptr ? -1 : *yi;
         }
-        for (auto& p : pool) p.join();
-        size_t tot = 0;
-        for (auto& v : lx) tot += v.size();
-        xrows.reserve(tot);
-        yrows.reserve(tot);
-        for (int t = 0; t < JT; ++t) {
-          xrows.insert(xrows.end(), lx[(size_t)t].begin(), lx[(size_t)t].end());
-          yrows.insert(yrows.end(), ly[(size_t)t].begin(), ly[(size_t)t].end());
+      });
+      if (!all_x) {
+        size_t first_missing = 0;
+        while (first_missing < yrows.size() && yrows[first_missing] >= 0)
+          ++first_missing;
+        size_t dest = first_missing;
+        for (size_t i = first_missing; i < yrows.size(); ++i) {
+          if (yrows[i] >= 0) {
+            xrows[dest] = xrows[i];
+            yrows[dest++] = yrows[i];
+          }
         }
-      } else {
-        xrows.reserve((size_t)xf.nrow);
-        yrows.reserve((size_t)xf.nrow);
-        for (R_xlen_t i = 0; i < xf.nrow; ++i) {
-          const int* yi = unique_map.find((const void*)STRING_ELT(xc, i));
-          if (yi != nullptr) { xrows.push_back(i); yrows.push_back(*yi); }
-          else if (all_x) { xrows.push_back(i); yrows.push_back(-1); }
-        }
+        xrows.resize(dest);
+        yrows.resize(dest);
       }
     } else {
     std::unordered_map<const void*, std::vector<R_xlen_t>> smap;
