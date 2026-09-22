@@ -591,6 +591,10 @@ struct FlatPtrIntMap {
     }
   }
 
+  int* find_mutable(const void* key) {
+    return const_cast<int*>(static_cast<const FlatPtrIntMap&>(*this).find(key));
+  }
+
   bool insert(const void* key, int value) {
     size_t i = hash_ptr(key) & mask;
     for (;;) {
@@ -1133,16 +1137,16 @@ bool count_string(SEXP df, int by, SEXP col, R_xlen_t nrow, SEXP s_name, SEXP* o
   const SEXP* strings = STRING_PTR_RO(col);
   for (R_xlen_t i = 0; i < nrow; ++i) {
     const void* key = (const void*)strings[i];
-    const int* it = pos.find(key);
+    int* it = pos.find_mutable(key);
     if (it == nullptr) {
-      int k = (int)first.size();
-      pos.insert(key, k);
+      pos.insert(key, 1);
       first.push_back(i);
-      counts.push_back(1);
     } else {
-      ++counts[(size_t)*it];
+      ++*it;
     }
   }
+  counts.reserve(first.size());
+  for (R_xlen_t row : first) counts.push_back(*pos.find((const void*)strings[row]));
 
   std::vector<int> key_cols{by};
   SEXP keys = PROTECT(build_frame(df, first, key_cols));
