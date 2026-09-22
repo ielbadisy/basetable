@@ -1647,7 +1647,7 @@ bool order_string_real2(SEXP df, int s_col, int x_col, R_xlen_t nrow, bool na_la
     // sort retains the same stable result without the extra bookkeeping used
     // by stable_sort.
     // Bound scratch space for skewed groups (at most 1 MiB per worker).
-    if (hi - lo > 65536) {
+    if (hi - lo > 32768) {
       std::sort(ord.begin() + lo, ord.begin() + hi, [&](R_xlen_t a, R_xlen_t b) {
         uint64_t xa = xkey[(size_t)a], xb = xkey[(size_t)b];
         return xa == xb ? a < b : xa < xb;
@@ -1659,7 +1659,26 @@ bool order_string_real2(SEXP df, int s_col, int x_col, R_xlen_t nrow, bool na_la
       R_xlen_t row = ord[(size_t)i];
       local[(size_t)(i - lo)] = {xkey[(size_t)row], row};
     }
-    std::sort(local.begin(), local.end());
+    if (local.size() < 64) {
+      std::sort(local.begin(), local.end());
+    } else {
+      // Bucket scattering preserves input order. Stable numeric radix passes
+      // therefore preserve the original row order for equal numeric keys.
+      auto scratch = local;
+      for (unsigned shift = 0; shift < 64; shift += 8) {
+        std::array<size_t, 256> counts{};
+        for (const auto& entry : local) ++counts[(entry.first >> shift) & 255];
+        size_t offset = 0;
+        for (auto& count : counts) {
+          size_t n = count;
+          count = offset;
+          offset += n;
+        }
+        for (const auto& entry : local)
+          scratch[counts[(entry.first >> shift) & 255]++] = entry;
+        local.swap(scratch);
+      }
+    }
     for (R_xlen_t i = lo; i < hi; ++i)
       ord[(size_t)i] = local[(size_t)(i - lo)].second;
   };
