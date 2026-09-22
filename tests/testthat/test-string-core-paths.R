@@ -47,3 +47,18 @@ test_that("parallel string join compacts unmatched rows in input order", {
   duplicate <- merge(x, y[c(1L, 1L), ], by = "g")
   expect_identical(duplicate$value, rep(x$value[x$g %in% "b"], each = 2L))
 })
+
+test_that("string numeric sorting preserves ties and handles skewed groups", {
+  old <- options("basetable.threads")
+  on.exit(options(old), add = TRUE)
+  for (n in c(1000L, 70000L)) {
+    x <- data.frame(g = rep("same", n),
+                    x = rep(c(NA_real_, NaN, -Inf, -0, 0, 2, Inf), length.out = n),
+                    id = seq_len(n))
+    ref <- order(x$g, x$x, method = "radix", na.last = TRUE)
+    for (threads in c(1L, 4L)) {
+      options(basetable.threads = threads)
+      expect_identical(orderrows(x, by = c("g", "x"))$id, x$id[ref])
+    }
+  }
+})

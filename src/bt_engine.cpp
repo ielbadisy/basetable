@@ -1636,11 +1636,22 @@ bool order_string_real2(SEXP df, int s_col, int x_col, R_xlen_t nrow, bool na_la
     // The original row index is the explicit tie breaker, so an unstable
     // sort retains the same stable result without the extra bookkeeping used
     // by stable_sort.
-    std::sort(ord.begin() + lo, ord.begin() + hi, [&](R_xlen_t a, R_xlen_t b) {
-      uint64_t xa = xkey[(size_t)a], xb = xkey[(size_t)b];
-      if (xa == xb) return a < b;
-      return xa < xb;
-    });
+    // Bound scratch space for skewed groups (at most 1 MiB per worker).
+    if (hi - lo > 65536) {
+      std::sort(ord.begin() + lo, ord.begin() + hi, [&](R_xlen_t a, R_xlen_t b) {
+        uint64_t xa = xkey[(size_t)a], xb = xkey[(size_t)b];
+        return xa == xb ? a < b : xa < xb;
+      });
+      return;
+    }
+    std::vector<std::pair<uint64_t, R_xlen_t>> local((size_t)(hi - lo));
+    for (R_xlen_t i = lo; i < hi; ++i) {
+      R_xlen_t row = ord[(size_t)i];
+      local[(size_t)(i - lo)] = {xkey[(size_t)row], row};
+    }
+    std::sort(local.begin(), local.end());
+    for (R_xlen_t i = lo; i < hi; ++i)
+      ord[(size_t)i] = local[(size_t)(i - lo)].second;
   };
 
   if (nth < 2 || nrow < 200000 || nb < 16) {
