@@ -1628,36 +1628,42 @@ bool order_string_real2(SEXP df, int s_col, int x_col, R_xlen_t nrow, bool na_la
   if (TYPEOF(sc) != STRSXP || Rf_isFactor(sc) || TYPEOF(xc) != REALSXP)
     return false;
 
-  bool supported = false;
-  std::vector<uint64_t> skey = order_codes(sc, nrow, true, false, supported, nth);
-  if (!supported) return false;
-
-  profile.mark("string_ranking");
-  uint64_t max_key = 0;
-  bool have_na = false;
-  const uint64_t NA_HI = ~(uint64_t)0;
-  for (R_xlen_t i = 0; i < nrow; ++i) {
-    uint64_t k = skey[(size_t)i];
-    if (k == NA_HI) { have_na = true; continue; }
-    if (k > max_key) max_key = k;
+  std::vector<int> group;
+  std::vector<R_xlen_t> first;
+  group_single(sc, nrow, group, first);
+  const SEXP* strings = STRING_PTR_RO(sc);
+  std::vector<size_t> sorted(first.size());
+  for (size_t g = 0; g < sorted.size(); ++g) sorted[g] = g;
+  std::sort(sorted.begin(), sorted.end(), [&](size_t a, size_t b) {
+    SEXP sa = strings[first[a]], sb = strings[first[b]];
+    if (sa == NA_STRING) return false;
+    if (sb == NA_STRING) return true;
+    int cmp = std::strcmp(CHAR(sa), CHAR(sb));
+    return cmp == 0 ? a < b : cmp < 0;
+  });
+  std::vector<int> rank(first.size());
+  size_t nb = 0;
+  SEXP previous = R_NilValue;
+  for (size_t g : sorted) {
+    SEXP key = strings[first[g]];
+    bool same = previous != R_NilValue &&
+      (key == previous || (key != NA_STRING && previous != NA_STRING &&
+                           std::strcmp(CHAR(key), CHAR(previous)) == 0));
+    if (!same) ++nb;
+    rank[g] = (int)(nb - 1);
+    previous = key;
   }
-  if (max_key > (uint64_t)nrow) return false;
-
-  size_t nb = (size_t)max_key + (have_na ? 2U : 1U);
-  size_t na_bucket = nb - 1U;
-  std::vector<size_t> counts(nb, 0), starts(nb + 1, 0), cursor(nb, 0);
-  for (R_xlen_t i = 0; i < nrow; ++i) {
-    uint64_t k = skey[(size_t)i];
-    ++counts[k == NA_HI ? na_bucket : (size_t)k];
+  profile.mark("string_ranking");
+  std::vector<size_t> counts(nb, 0), starts(nb + 1, 0);
+  for (int& code : group) {
+    code = rank[(size_t)code];
+    ++counts[(size_t)code];
   }
   for (size_t b = 0; b < nb; ++b) starts[b + 1] = starts[b] + counts[b];
-  cursor = starts;
+  auto cursor = starts;
   ord.resize((size_t)nrow);
-  for (R_xlen_t i = 0; i < nrow; ++i) {
-    uint64_t k = skey[(size_t)i];
-    size_t b = k == NA_HI ? na_bucket : (size_t)k;
-    ord[cursor[b]++] = i;
-  }
+  for (R_xlen_t i = 0; i < nrow; ++i)
+    ord[cursor[(size_t)group[(size_t)i]]++] = i;
 
   profile.mark("bucket_scatter");
   bool x_supported = false;
