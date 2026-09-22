@@ -2599,6 +2599,7 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
   }
 
   std::vector<R_xlen_t> xrows, yrows;
+  bool implicit_x_identity = false;
   std::vector<char> y_matched(all_y ? (size_t)yf.nrow : 0, 0);
 
   // Parallel probe for the common inner / left join (no `all_y`): each worker
@@ -2626,30 +2627,34 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
     }
 
     if (unique_y) {
-      // Each probe owns one slot. This avoids per-thread allocations and the
-      // concatenation copy; unmatched inner rows are compacted in place.
-      xrows.resize((size_t)xf.nrow);
+      // A unique right key gives at most one result per left row. Keep the
+      // left indices implicit unless missing matches require compaction.
       yrows.resize((size_t)xf.nrow);
       par_rows(xf.nrow, JT, [&](R_xlen_t lo, R_xlen_t hi) {
         for (R_xlen_t i = lo; i < hi; ++i) {
           const int* yi = unique_map.find((const void*)xp[i]);
-          xrows[(size_t)i] = i;
           yrows[(size_t)i] = yi == nullptr ? -1 : *yi;
         }
       });
+      implicit_x_identity = true;
       if (!all_x) {
         size_t first_missing = 0;
         while (first_missing < yrows.size() && yrows[first_missing] >= 0)
           ++first_missing;
-        size_t dest = first_missing;
-        for (size_t i = first_missing; i < yrows.size(); ++i) {
-          if (yrows[i] >= 0) {
-            xrows[dest] = xrows[i];
-            yrows[dest++] = yrows[i];
+        if (first_missing < yrows.size()) {
+          implicit_x_identity = false;
+          xrows.resize(yrows.size());
+          for (size_t i = 0; i < first_missing; ++i) xrows[i] = (R_xlen_t)i;
+          size_t dest = first_missing;
+          for (size_t i = first_missing; i < yrows.size(); ++i) {
+            if (yrows[i] >= 0) {
+              xrows[dest] = (R_xlen_t)i;
+              yrows[dest++] = yrows[i];
+            }
           }
+          xrows.resize(dest);
+          yrows.resize(dest);
         }
-        xrows.resize(dest);
-        yrows.resize(dest);
       }
     } else {
     std::unordered_map<const void*, std::vector<R_xlen_t>> smap;
@@ -2944,9 +2949,9 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
 
   profile.mark("probe");
 
-  R_xlen_t nout = (R_xlen_t)xrows.size();
+  R_xlen_t nout = implicit_x_identity ? xf.nrow : (R_xlen_t)xrows.size();
   bool x_identity = nout == xf.nrow;
-  for (R_xlen_t i = 0; x_identity && i < nout; ++i)
+  for (R_xlen_t i = 0; !implicit_x_identity && x_identity && i < nout; ++i)
     if (xrows[(size_t)i] != i) x_identity = false;
 
   R_xlen_t ncol_out = (R_xlen_t)(x_by.size() + x_extra.size() + y_extra.size());
