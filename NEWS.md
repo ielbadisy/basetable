@@ -26,6 +26,11 @@
 * `aggregate()` with a non-native `fun` keeps the value columns when the
   input has no rows.
 
+* `intersectrows()` and `diffrows()` without `by` now compare whole rows on
+  every column of `x`. They called `base::intersect()`/`base::setdiff()`,
+  which treat a data frame as a list of columns, so they returned an empty
+  or malformed table.
+
 # basetable 1.4.2
 
 ## Fixes

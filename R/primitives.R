@@ -1033,10 +1033,11 @@ unionrows <- function(x, y, by = NULL) {
 #' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
-#' @return Rows of `x` also present in `y`.
+#' @return Rows of `x` also present in `y`. With `by = NULL`, rows are
+#'   compared on every column of `x`, all of which must exist in `y`.
 #' @export
 intersectrows <- function(x, y, by = NULL) {
-  if (is.null(by)) return(bt_as_data_table(intersect(bt_as_data_frame(x), bt_as_data_frame(y))))
+  by <- by %||% bt_all_row_cols(x, y)
   bt_as_data_table(matchedkeys(x, y, by))
 }
 
@@ -1046,11 +1047,23 @@ intersectrows <- function(x, y, by = NULL) {
 #' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
-#' @return Rows of `x` absent from `y`.
+#' @return Rows of `x` absent from `y`. With `by = NULL`, rows are compared
+#'   on every column of `x`, all of which must exist in `y`.
 #' @export
 diffrows <- function(x, y, by = NULL) {
-  if (is.null(by)) return(bt_as_data_table(setdiff(bt_as_data_frame(x), bt_as_data_frame(y))))
+  by <- by %||% bt_all_row_cols(x, y)
   bt_as_data_table(unmatchedkeys(x, y, by))
+}
+
+# Whole-row key for the set verbs: every column of `x`, required in `y`.
+bt_all_row_cols <- function(x, y) {
+  cols <- names(x)
+  missing <- setdiff(cols, names(y))
+  if (length(missing)) {
+    stop("`y` is missing column(s) of `x`: ", paste(missing, collapse = ", "),
+         "; supply `by`.", call. = FALSE)
+  }
+  cols
 }
 
 #' Compare two tables' rows for equality
