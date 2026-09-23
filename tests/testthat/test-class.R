@@ -1,3 +1,5 @@
+# ---- basetable class -------------------------------------------------------
+
 test_that("verbs return a basetable, not a data.table", {
   out <- pick(mtcars, c("mpg", "cyl"))
   expect_s3_class(out, "basetable")
