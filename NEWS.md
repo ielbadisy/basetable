@@ -1,3 +1,12 @@
+# basetable (development version)
+
+## Fixes
+
+* `semimerge()`, `antimerge()`, `matchedkeys()`, `unmatchedkeys()`,
+  `intersectrows()` and `diffrows()` now match factor keys by label.
+  Previously two factor keys were compared by their integer codes, so
+  factors with different levels silently returned the wrong rows.
+
 # basetable 1.4.2
 
 ## Fixes

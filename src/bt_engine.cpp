@@ -1473,8 +1473,10 @@ bool group_agg_int_single(SEXP df, int by, const std::vector<int>& val, AggFun f
 bool match_mask_int_single(SEXP x, SEXP y, int x_by, int y_by, SEXP out) {
   SEXP xc = VECTOR_ELT(x, x_by);
   SEXP yc = VECTOR_ELT(y, y_by);
+  // Factors match by label, not by code; the generic codec handles them.
   if ((TYPEOF(xc) != INTSXP && TYPEOF(xc) != LGLSXP) ||
-      (TYPEOF(yc) != INTSXP && TYPEOF(yc) != LGLSXP)) return false;
+      (TYPEOF(yc) != INTSXP && TYPEOF(yc) != LGLSXP) ||
+      Rf_isFactor(xc) || Rf_isFactor(yc)) return false;
   Frame xf = frame_from(x);
   Frame yf = frame_from(y);
   const int* xp = TYPEOF(xc) == INTSXP ? INTEGER(xc) : LOGICAL(xc);
