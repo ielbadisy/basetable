@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <climits>
 #include <cmath>
 #include <cstdint>
@@ -564,8 +565,8 @@ struct FlatPtrIntMap {
     size_t i = hash_ptr(key) & mask;
     for (;;) {
       const void* at = keys[i];
-      if (at == nullptr) return nullptr;
       if (at == key) return &values[i];
+      if (at == nullptr) return nullptr;
       i = (i + 1) & mask;
     }
   }
@@ -581,7 +582,7 @@ struct FlatPtrIntMap {
       if (at == nullptr) {
         // Sparse small dictionaries shorten the hot probe chain. Larger
         // dictionaries retain the 50% bound to limit memory and cache cost.
-        size_t load_scale = keys.size() <= 8192 ? 4 : 2;
+        size_t load_scale = keys.size() <= 32768 ? 16 : 2;
         if ((used + 1) * load_scale > keys.size()) {
           grow();
           return insert(key, value);
@@ -1912,8 +1913,8 @@ bool join_atomic_kind(SEXP s) {
   int t = TYPEOF(s);
   return (t == LGLSXP || t == INTSXP || t == REALSXP) && !Rf_isFactor(s);
 }
-void join_gather_atomic(SEXP dst, SEXP src, const std::vector<R_xlen_t>& rows) {
-  R_xlen_t n = (R_xlen_t)rows.size();
+template <typename Idx>
+void join_gather_atomic(SEXP dst, SEXP src, const Idx* rows, R_xlen_t n) {
   switch (TYPEOF(src)) {
     case LGLSXP: case INTSXP: {
       const int* s = INTEGER(src); int* d = INTEGER(dst);
@@ -2680,6 +2681,14 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
 
   std::vector<R_xlen_t> xrows, yrows;
   bool implicit_x_identity = false;
+  // Unique string joins keep right matches here (-1 = none) instead of yrows.
+  std::vector<int> ymatch;
+  bool y_compact = false;
+  auto expand_ymatch = [&]() {
+    if (!y_compact) return;
+    yrows.assign(ymatch.begin(), ymatch.end());
+    y_compact = false;
+  };
   std::vector<char> y_matched(all_y ? (size_t)yf.nrow : 0, 0);
 
   // Parallel probe for the common inner / left join (no `all_y`): each worker
@@ -2708,33 +2717,32 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
 
     if (unique_y) {
       // A unique right key gives at most one result per left row. Keep the
-      // left indices implicit unless missing matches require compaction.
-      yrows.resize((size_t)xf.nrow);
+      // left indices implicit and the right ones as compact 32-bit matches
+      // unless missing matches require compaction.
+      ymatch.resize((size_t)xf.nrow);
+      std::atomic<bool> any_missing(false);
       par_rows(xf.nrow, JT, [&](R_xlen_t lo, R_xlen_t hi) {
+        int* out = ymatch.data();
+        bool missing = false;
         for (R_xlen_t i = lo; i < hi; ++i) {
           const int* yi = unique_map.find((const void*)xp[i]);
-          yrows[(size_t)i] = yi == nullptr ? -1 : *yi;
+          missing |= yi == nullptr;
+          out[i] = yi == nullptr ? -1 : *yi;
         }
+        if (missing) any_missing.store(true, std::memory_order_relaxed);
       });
       implicit_x_identity = true;
-      if (!all_x) {
-        size_t first_missing = 0;
-        while (first_missing < yrows.size() && yrows[first_missing] >= 0)
-          ++first_missing;
-        if (first_missing < yrows.size()) {
-          implicit_x_identity = false;
-          xrows.resize(yrows.size());
-          for (size_t i = 0; i < first_missing; ++i) xrows[i] = (R_xlen_t)i;
-          size_t dest = first_missing;
-          for (size_t i = first_missing; i < yrows.size(); ++i) {
-            if (yrows[i] >= 0) {
-              xrows[dest] = (R_xlen_t)i;
-              yrows[dest++] = yrows[i];
-            }
+      y_compact = true;
+      if (!all_x && any_missing.load()) {
+        implicit_x_identity = false;
+        y_compact = false;
+        for (size_t i = 0; i < ymatch.size(); ++i) {
+          if (ymatch[i] >= 0) {
+            xrows.push_back((R_xlen_t)i);
+            yrows.push_back(ymatch[i]);
           }
-          xrows.resize(dest);
-          yrows.resize(dest);
         }
+        std::vector<int>().swap(ymatch);
       }
     } else {
     std::unordered_map<const void*, std::vector<R_xlen_t>> smap;
@@ -3056,7 +3064,7 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
   SEXP names = PROTECT(Rf_allocVector(STRSXP, ncol_out));
   // Atomic output columns are allocated here and gathered on worker threads
   // afterwards; key and string/list columns are materialised inline.
-  struct GJob { SEXP dst; SEXP src; const std::vector<R_xlen_t>* rows; };
+  struct GJob { SEXP dst; SEXP src; const R_xlen_t* rows; const int* rows32; };
   std::vector<GJob> jobs;
   R_xlen_t p = 0;
   for (size_t k = 0; k < x_by.size(); ++k) {
@@ -3068,6 +3076,7 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
     if (x_identity && (TYPEOF(xc) == TYPEOF(yc) || same_factor)) {
       SET_VECTOR_ELT(out, p, xc);
     } else {
+      expand_ymatch();
       SET_VECTOR_ELT(out, p, join_take_key(xc, yc, xrows, yrows));
     }
     SET_STRING_ELT(names, p, STRING_ELT(x_names, x_by[k]));
@@ -3083,7 +3092,7 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
       SEXP dst = Rf_allocVector(TYPEOF(src), nout);
       SET_VECTOR_ELT(out, p, dst);
       copy_common_attrs(dst, src);
-      jobs.push_back({dst, src, &xrows});
+      jobs.push_back({dst, src, xrows.data(), nullptr});
     } else {
       SET_VECTOR_ELT(out, p, join_take(src, xrows));
     }
@@ -3098,8 +3107,9 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
       SEXP dst = Rf_allocVector(TYPEOF(src), nout);
       SET_VECTOR_ELT(out, p, dst);
       copy_common_attrs(dst, src);
-      jobs.push_back({dst, src, &yrows});
+      jobs.push_back({dst, src, nullptr, nullptr});
     } else {
+      expand_ymatch();
       SET_VECTOR_ELT(out, p, join_take(src, yrows));
     }
     std::string nm = CHAR(STRING_ELT(y_names, c));
@@ -3108,18 +3118,29 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
     ++p;
   }
 
+  // Right-side jobs bind their rows only now: a string column above may have
+  // expanded the compact matches into yrows.
+  for (auto& j : jobs) {
+    if (j.rows != nullptr) continue;
+    if (y_compact) j.rows32 = ymatch.data();
+    else j.rows = yrows.data();
+  }
+  auto run_job = [&](const GJob& j) {
+    if (j.rows32) join_gather_atomic(j.dst, j.src, j.rows32, nout);
+    else join_gather_atomic(j.dst, j.src, j.rows, nout);
+  };
   if (!jobs.empty()) {
     int mnth = clamp_threads(s_n_threads, nout, 100000);
     int MT = (mnth < 2 || nout < 100000 || (int)jobs.size() < 2)
       ? 1 : std::min<int>(mnth, (int)jobs.size());
     if (MT <= 1) {
-      for (auto& j : jobs) join_gather_atomic(j.dst, j.src, *j.rows);
+      for (auto& j : jobs) run_job(j);
     } else {
       std::vector<std::thread> pool;
       for (int w = 0; w < MT; ++w) {
         pool.emplace_back([&, w]() {
           for (size_t a = (size_t)w; a < jobs.size(); a += (size_t)MT)
-            join_gather_atomic(jobs[a].dst, jobs[a].src, *jobs[a].rows);
+            run_job(jobs[a]);
         });
       }
       for (auto& t : pool) t.join();
