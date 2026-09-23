@@ -633,6 +633,47 @@ struct FlatPtrIntMap {
   }
 };
 
+// Keys-only pointer set for distinct. Small sets stay very sparse so almost
+// every probe resolves on its first slot; large sets fall back to 50% load.
+struct FlatPtrSet {
+  std::vector<const void*> keys;
+  size_t mask = 0;
+  size_t used = 0;
+  unsigned shift = 0;
+
+  FlatPtrSet() { resize(1u << 16); }
+
+  void resize(size_t cap) {
+    auto old = std::move(keys);
+    keys.assign(cap, nullptr);
+    mask = cap - 1;
+    shift = 64;
+    for (size_t c = cap; c > 1; c >>= 1) --shift;
+    used = 0;
+    for (const void* k : old) if (k) insert(k);
+  }
+
+  // Returns true when `key` was not yet present.
+  bool insert(const void* key) {
+    size_t i = (size_t)(((uint64_t)(uintptr_t)key *
+                         UINT64_C(11400714819323198485)) >> shift);
+    for (;;) {
+      const void* at = keys[i];
+      if (at == key) return false;
+      if (at == nullptr) break;
+      i = (i + 1) & mask;
+    }
+    size_t load_scale = keys.size() <= (1u << 17) ? 16 : 2;
+    if ((used + 1) * load_scale > keys.size()) {
+      resize(keys.size() * 2);
+      return insert(key);
+    }
+    keys[i] = key;
+    ++used;
+    return true;
+  }
+};
+
 inline int64_t real_slot(double d) {
   if (ISNA(d)) return (int64_t)0x7ff00000000007a2LL;
   if (std::isnan(d)) return (int64_t)0x7ff00000000007a3LL;
@@ -949,17 +990,11 @@ bool unique_single(SEXP col, R_xlen_t nrow, std::vector<R_xlen_t>& rows) {
              unique_hash_typed<int>(INTEGER(col), nrow, rows);
     case STRSXP: {
       BtProfile profile("distinct");
-      FlatPtrIntMap seen;
-      seen.reserve((size_t)nrow);
+      FlatPtrSet seen;
       const SEXP* strings = STRING_PTR_RO(col);
       profile.mark("allocate");
-      for (R_xlen_t i = 0; i < nrow; ++i) {
-        const void* key = (const void*)strings[i];
-        if (seen.find(key) == nullptr) {
-          seen.insert(key, 1);
-          rows.push_back(i);
-        }
-      }
+      for (R_xlen_t i = 0; i < nrow; ++i)
+        if (seen.insert((const void*)strings[i])) rows.push_back(i);
       profile.mark("lookup");
       return true;
     }
