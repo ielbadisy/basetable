@@ -499,11 +499,19 @@ bt_aggregate_fun_name <- function(expr, value) {
   if (is.character(value) && length(value) == 1L) {
     return(value)
   }
-  if (is.symbol(expr)) {
-    nm <- as.character(expr)
-    if (nm %in% c("sum", "mean", "min", "max", "var", "sd", "n", "length")) {
-      return(nm)
+  # Match the function itself, so `f <- min; fun = f` takes the same native
+  # path as `fun = min`, and a user function that happens to be named `min`
+  # is never replaced by the native reducer.
+  if (is.function(value)) {
+    native <- list(sum = base::sum, mean = base::mean, min = base::min,
+                   max = base::max, var = stats::var, sd = stats::sd,
+                   length = base::length)
+    for (nm in names(native)) {
+      if (identical(value, native[[nm]])) return(nm)
     }
+  }
+  if (is.symbol(expr) && identical(as.character(expr), "n")) {
+    return("n")
   }
   NULL
 }

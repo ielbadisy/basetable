@@ -16,6 +16,16 @@
   does. Factors were returned as character, including when a table without
   the column was filled with `NA`.
 
+* `aggregate()` now recognises the native reducers (`sum`, `mean`, `min`,
+  `max`, `var`, `sd`, `length`) by the function itself rather than by how
+  it is spelled, so `f <- min; aggregate(..., fun = f)` gives the same
+  result as `fun = min`. Before, the spelling decided the code path, so an
+  all-`NA` group under `na.rm = TRUE` gave `NA` or `Inf` depending on the
+  call, and a user function named `min` was replaced by the native one.
+
+* `aggregate()` with a non-native `fun` keeps the value columns when the
+  input has no rows.
+
 # basetable 1.4.2
 
 ## Fixes
