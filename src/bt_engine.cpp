@@ -23,16 +23,6 @@
 
 namespace {
 
-// Optional cache hint only: retain the normal R write barrier on every store.
-// Compilers without this intrinsic use the same gather without the hint.
-inline void prefetch_string(SEXP value) {
-#if defined(__GNUC__) || defined(__clang__)
-  __builtin_prefetch(static_cast<const void*>(value), 0, 1);
-#else
-  (void)value;
-#endif
-}
-
 enum AggFun {
   AGG_SUM = 0,
   AGG_MEAN = 1,
@@ -250,33 +240,30 @@ SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<i
   profile.mark("allocate");
   {
     bool par = nth >= 2 && nr >= 100000;
-    // Worker threads do everything that needs no R API: the atomic-column
-    // gather, plus a plain-pointer gather of each STRSXP column's rows (the
-    // cache-miss-bound part). The R thread then only walks those buffers with
-    // SET_STRING_ELT (sequential, barrier only). VECSXP stays fully serial.
-    std::vector<std::vector<SEXP>> str_buf(ref_cols.size());
-    std::vector<int> str_cols;
-    for (size_t r = 0; r < ref_cols.size(); ++r)
-      if (par && TYPEOF(srcs[(size_t)ref_cols[r]]) == STRSXP) {
-        str_buf[r].resize((size_t)nr);
-        str_cols.push_back((int)r);
-      }
-
-    struct GTask { int kind; SEXP dst; SEXP src; const SEXP* ssp; SEXP* buf; };
+    // Worker threads gather every atomic and STRSXP column without the R API.
+    // Strings are written as raw pointers into the fresh output vector, as
+    // data.table and collapse do: no allocation happens during the fill, and
+    // every CHARSXP already existed before the output was allocated, so it is
+    // at least as old and the generational write barrier has nothing to
+    // record. VECSXP columns stay on the R thread with SET_VECTOR_ELT.
+    struct GTask { int kind; SEXP dst; SEXP src; const SEXP* ssp; SEXP* dsp; };
     std::vector<GTask> tasks;
+    std::vector<int> list_cols;
     for (int j : atomic_cols)
       tasks.push_back({0, dsts[(size_t)j], srcs[(size_t)j], nullptr, nullptr});
-    for (int r : str_cols) {
-      SEXP s = srcs[(size_t)ref_cols[(size_t)r]];
+    for (int j : ref_cols) {
+      SEXP s = srcs[(size_t)j], d = dsts[(size_t)j];
+      if (TYPEOF(s) != STRSXP) { list_cols.push_back(j); continue; }
       // STRING_PTR_RO may materialise an ALTREP source: force it here, on the
       // R thread, before any worker touches it.
-      tasks.push_back({1, nullptr, s, STRING_PTR_RO(s), str_buf[(size_t)r].data()});
+      tasks.push_back({1, d, s, STRING_PTR_RO(s), const_cast<SEXP*>(STRING_PTR_RO(d))});
     }
 
     auto run_task = [&](const GTask& t) {
       if (t.kind == 0) { gather_atomic(t.dst, t.src, rows); return; }
       const SEXP* sp = t.ssp;
-      for (R_xlen_t i = 0; i < nr; ++i) t.buf[i] = sp[rows[(size_t)i]];
+      SEXP* dp = t.dsp;
+      for (R_xlen_t i = 0; i < nr; ++i) dp[i] = sp[rows[(size_t)i]];
     };
 
     int use = par && (int)tasks.size() >= 2
@@ -293,33 +280,10 @@ SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<i
     }
 
     profile.mark("gather");
-    // R-thread finish: STRSXP from the gathered buffers, VECSXP directly.
-    for (size_t r = 0; r < ref_cols.size(); ++r) {
-      SEXP d = dsts[(size_t)ref_cols[r]], s = srcs[(size_t)ref_cols[r]];
-      if (TYPEOF(s) == STRSXP) {
-        if (par) {
-          const SEXP* b = str_buf[r].data();
-          for (R_xlen_t i = 0; i < nr; ++i) {
-            if (i + 32 < nr) prefetch_string(b[i + 32]);
-            SET_STRING_ELT(d, i, b[i]);
-          }
-        } else {
-          const SEXP* sp = STRING_PTR_RO(s);
-          std::array<SEXP, 512> buffer;
-          for (R_xlen_t start = 0; start < nr; start += buffer.size()) {
-            R_xlen_t count = std::min<R_xlen_t>(buffer.size(), nr - start);
-            for (R_xlen_t j = 0; j < count; ++j)
-              buffer[(size_t)j] = sp[rows[(size_t)(start + j)]];
-            for (R_xlen_t j = 0; j < count; ++j) {
-              if (j + 32 < count) prefetch_string(buffer[(size_t)j + 32]);
-              SET_STRING_ELT(d, start + j, buffer[(size_t)j]);
-            }
-          }
-        }
-      } else {
-        for (R_xlen_t i = 0; i < nr; ++i)
-          SET_VECTOR_ELT(d, i, VECTOR_ELT(s, rows[(size_t)i]));
-      }
+    for (int j : list_cols) {
+      SEXP d = dsts[(size_t)j], s = srcs[(size_t)j];
+      for (R_xlen_t i = 0; i < nr; ++i)
+        SET_VECTOR_ELT(d, i, VECTOR_ELT(s, rows[(size_t)i]));
     }
   }
 
