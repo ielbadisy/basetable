@@ -1,3 +1,5 @@
+# ---- string helpers --------------------------------------------------------
+
 test_that("basic whitespace/case helpers", {
   expect_equal(trim("  a  "), "a")
   expect_equal(squish("  a   b  "), "a b")
@@ -87,4 +89,86 @@ test_that("recode/collapse/lump/factor-level helpers", {
   f <- factor(c("low", "high", "mid"), levels = c("low", "mid", "high"))
   expect_equal(levels(reorderlevels(f, c("high", "mid", "low"))), c("high", "mid", "low"))
   expect_equal(levels(expandlevels(f, "extra")), c("low", "mid", "high", "extra"))
+})
+
+# ---- string helper regressions ---------------------------------------------
+
+test_that("padleft/padright honor a custom pad character", {
+  expect_equal(padleft("5", 3, pad = "0"), "005")
+  expect_equal(padright("5", 3, pad = "0"), "500")
+  expect_equal(padleft(c("1", "22", "333"), 4, pad = "*"), c("***1", "**22", "*333"))
+})
+
+test_that("startswith/endswith honor fixed and stay vectorized against x", {
+  # fixed = TRUE: "a." is a literal prefix, not a regex
+  expect_true(startswith("a.b", "a.", fixed = TRUE))
+  expect_false(startswith("axb", "a.", fixed = TRUE))
+
+  # fixed = FALSE (default): real regex support
+  expect_equal(startswith(c("abc", "xbc"), "a.c"), c(TRUE, FALSE))
+  expect_equal(endswith(c("abc", "abd"), ".c"), c(TRUE, FALSE))
+
+  # endswith must return one value per element of x, not a matrix
+  out <- endswith(c("abc", "xyz", "abd"), "c")
+  expect_null(dim(out))
+  expect_equal(out, c(TRUE, FALSE, FALSE))
+})
+
+test_that("matchestext() with fixed = TRUE does a literal comparison, not a broken anchored regex", {
+  expect_true(matchestext("a.b", "a.b", fixed = TRUE))
+  expect_false(matchestext("axb", "a.b", fixed = TRUE))
+  expect_true(matchestext("axb", "a.b", fixed = FALSE))
+})
+
+# ---- transliterate ---------------------------------------------------------
+
+test_that("removeaccents folds Latin-1 and Latin Extended-A to ICU Latin-ASCII", {
+  expect_equal(
+    removeaccents(c("café", "naïve", "Zürich", "Kraków",
+                    "Æther", "œuvre", "Straße", "Þór",
+                    "Đorđe", "piñata", "hôtel", "Málaga",
+                    "Łódź", "Ångström", "Nîmes",
+                    "Timișoara", "İstanbul")),
+    c("cafe", "naive", "Zurich", "Krakow", "AEther", "oeuvre", "Strasse",
+      "THor", "Dorde", "pinata", "hotel", "Malaga", "Lodz", "Angstrom",
+      "Nimes", "Timisoara", "Istanbul")
+  )
+})
+
+test_that("removeaccents leaves ASCII and unmapped scripts untouched", {
+  expect_equal(removeaccents(c("plain ascii 123", "a-b_c.d")),
+               c("plain ascii 123", "a-b_c.d"))
+  # Greek is not folded by removeaccents(); it only strips Latin accents.
+  expect_equal(removeaccents("Αθήνα"),
+               "Αθήνα")
+})
+
+test_that("removeaccents handles NA, empty, factor and non-character input", {
+  expect_identical(removeaccents(NA_character_), NA_character_)
+  expect_identical(removeaccents(""), "")
+  expect_identical(removeaccents(c("café", NA)), c("cafe", NA))
+  expect_identical(removeaccents(factor("café")), "cafe")
+  expect_identical(removeaccents(1:3), c("1", "2", "3"))
+})
+
+test_that("transliterate romanises Greek and Cyrillic like ICU Any-Latin", {
+  expect_equal(
+    transliterate(c("Αθήνα",       # Athena
+                    "Ελλάδα",  # Ellada
+                    "Μοσχα",        # Moscha
+                    "Москва",  # Moskva
+                    "Достоевский", # Dostoevskij
+                    "Чайковский")),      # Cajkovskij
+    c("Athena", "Ellada", "Moscha", "Moskva", "Dostoevskij", "Cajkovskij")
+  )
+})
+
+test_that("transliterate also does everything removeaccents does", {
+  expect_equal(transliterate(c("café", "Zürich", "Straße")),
+               c("cafe", "Zurich", "Strasse"))
+})
+
+test_that("transliterate leaves scripts it does not cover unchanged", {
+  han <- "北京"
+  expect_equal(transliterate(han), han)
 })

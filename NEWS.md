@@ -1,3 +1,41 @@
+# basetable (development version)
+
+## Fixes
+
+* `semimerge()`, `antimerge()`, `matchedkeys()`, `unmatchedkeys()`,
+  `intersectrows()` and `diffrows()` now match factor keys by label.
+  Previously two factor keys were compared by their integer codes, so
+  factors with different levels silently returned the wrong rows.
+
+* `merge()` keeps a factor key a factor with the levels of `x`, plus any new
+  levels of `y` for right and full joins, as `base::merge()` does. It was
+  returned as character.
+
+* `rbindfill()` keeps a column that is a factor in every input holding it as
+  a factor, with the union of levels in input order, as `base::rbind()`
+  does. Factors were returned as character, including when a table without
+  the column was filled with `NA`.
+
+* `aggregate()` now recognises the native reducers (`sum`, `mean`, `min`,
+  `max`, `var`, `sd`, `length`) by the function itself rather than by how
+  it is spelled, so `f <- min; aggregate(..., fun = f)` gives the same
+  result as `fun = min`. Before, the spelling decided the code path, so an
+  all-`NA` group under `na.rm = TRUE` gave `NA` or `Inf` depending on the
+  call, and a user function named `min` was replaced by the native one.
+
+* `aggregate()` with a non-native `fun` keeps the value columns when the
+  input has no rows.
+
+* `intersectrows()` and `diffrows()` without `by` now compare whole rows on
+  every column of `x`. They called `base::intersect()`/`base::setdiff()`,
+  which treat a data frame as a list of columns, so they returned an empty
+  or malformed table.
+
+* `towide()` with the default `fun = NULL` now places each cell's value
+  instead of counting it, so `towide(tolong(x, ...))` round-trips. Cells
+  holding several values are still counted with `length()`, now with a
+  message. Its argument documentation is rewritten.
+
 # basetable 1.4.2
 
 ## Fixes
