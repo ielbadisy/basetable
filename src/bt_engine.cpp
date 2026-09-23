@@ -674,6 +674,62 @@ struct FlatPtrSet {
   }
 };
 
+// Pointer-keyed counter whose key, running count and first-seen group share
+// one 16-byte slot, so each row touches a single cache line.
+struct FlatPtrCounter {
+  struct Slot { const void* key; int count; int group; };
+  std::vector<Slot> slots;
+  size_t mask = 0;
+  size_t used = 0;
+  unsigned shift = 0;
+
+  FlatPtrCounter() { resize(1u << 12); }
+
+  void resize(size_t cap) {
+    auto old = std::move(slots);
+    slots.assign(cap, Slot{nullptr, 0, 0});
+    mask = cap - 1;
+    shift = 64;
+    for (size_t c = cap; c > 1; c >>= 1) --shift;
+    used = 0;
+    for (const Slot& o : old) if (o.key) *place(o.key) = o;
+  }
+
+  size_t home(const void* key) const {
+    return (size_t)(((uint64_t)(uintptr_t)key *
+                     UINT64_C(11400714819323198485)) >> shift);
+  }
+
+  Slot* place(const void* key) {
+    size_t i = home(key);
+    while (slots[i].key != nullptr) i = (i + 1) & mask;
+    ++used;
+    return &slots[i];
+  }
+
+  void prefetch(const void* key) const {
+    __builtin_prefetch(&slots[home(key)]);
+  }
+
+  // Counts `key`; returns true when it opens a new group.
+  bool add(const void* key, int group) {
+    size_t i = home(key);
+    for (;;) {
+      Slot& at = slots[i];
+      if (at.key == key) { ++at.count; return false; }
+      if (at.key == nullptr) break;
+      i = (i + 1) & mask;
+    }
+    size_t load_scale = slots.size() <= (1u << 16) ? 16 : 2;
+    if ((used + 1) * load_scale > slots.size()) {
+      resize(slots.size() * 2);
+      return add(key, group);
+    }
+    *place(key) = Slot{key, 1, group};
+    return true;
+  }
+};
+
 inline int64_t real_slot(double d) {
   if (ISNA(d)) return (int64_t)0x7ff00000000007a2LL;
   if (std::isnan(d)) return (int64_t)0x7ff00000000007a3LL;
@@ -1184,25 +1240,19 @@ bool count_hash_typed(SEXP df, int by, const T* p, R_xlen_t nrow, SEXP s_name, S
 
 bool count_string(SEXP df, int by, SEXP col, R_xlen_t nrow, SEXP s_name, SEXP* out_ptr) {
   BtProfile profile("count");
-  FlatPtrIntMap pos;
-  pos.reserve((size_t)nrow);
+  FlatPtrCounter pos;
   std::vector<R_xlen_t> first;
-  std::vector<int> counts;
   const SEXP* strings = STRING_PTR_RO(col);
   profile.mark("allocate");
+  // Large dictionaries miss cache; prefetch the home slot a few rows ahead.
+  const R_xlen_t ahead = 16;
   for (R_xlen_t i = 0; i < nrow; ++i) {
-    const void* key = (const void*)strings[i];
-    int* it = pos.find_mutable(key);
-    if (it == nullptr) {
-      pos.insert(key, 1);
-      first.push_back(i);
-    } else {
-      ++*it;
-    }
+    if (i + ahead < nrow) pos.prefetch((const void*)strings[i + ahead]);
+    if (pos.add((const void*)strings[i], (int)first.size())) first.push_back(i);
   }
   profile.mark("lookup_and_accumulate");
-  counts.reserve(first.size());
-  for (R_xlen_t row : first) counts.push_back(*pos.find((const void*)strings[row]));
+  std::vector<int> counts(first.size());
+  for (const auto& slot : pos.slots) if (slot.key) counts[(size_t)slot.group] = slot.count;
   profile.mark("gather_counts");
 
   std::vector<int> key_cols{by};
