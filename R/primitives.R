@@ -1114,11 +1114,15 @@ tolong <- function(data, cols, names = "variable", values = "value", idcols = NU
 #' Reshape rows into columns
 #'
 #' @param data A data.frame.
-#' @param names Name for the resulting key/value column, depending on the function.
-#' @param values Vector or list of replacement values.
-#' @param idcols Columns to keep as row identifiers.
-#' @param fun Function applied to each element, column, or group.
-#' @param fill Value used for positions where no window/result is available.
+#' @param names Column whose values become the new column names.
+#' @param values Column whose values fill the new columns.
+#' @param idcols Columns to keep as row identifiers. Defaults to every column
+#'   other than `names` and `values`.
+#' @param fun Function that reduces the values falling in one cell. When
+#'   `NULL` (the default), each cell takes its single value; if any cell holds
+#'   more than one value, cells are counted with `length()` and a message says
+#'   so.
+#' @param fill Value used for cells with no matching row.
 #'
 #' @return A wide-format basetable.
 #' @export
@@ -1126,8 +1130,6 @@ towide <- function(data, names, values, idcols = NULL, fun = NULL, fill = NA) {
   df <- bt_as_data_frame(data)
   idcols <- if (is.null(idcols)) setdiff(names(df), c(names, values)) else bt_resolve_cols(df, idcols)
   bt_resolve_cols(df, c(names, values, idcols))
-  agg <- fun %||% length
-
   name_vec <- as.character(df[[names]])
   value_vec <- df[[values]]
   lvls <- unique(name_vec)
@@ -1141,6 +1143,17 @@ towide <- function(data, names, values, idcols = NULL, fun = NULL, fill = NA) {
     gid <- rep(1L, nrow(df))
     out <- list()
     ng <- 1L
+  }
+
+  agg <- fun
+  if (is.null(agg)) {
+    if (anyDuplicated(data.frame(gid, name_vec))) {
+      message("`towide()`: some cells hold several values; counting them with `length()`. ",
+              "Supply `fun` to choose a summary.")
+      agg <- length
+    } else {
+      agg <- function(v) v
+    }
   }
 
   for (lvl in lvls) {

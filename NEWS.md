@@ -31,6 +31,11 @@
   which treat a data frame as a list of columns, so they returned an empty
   or malformed table.
 
+* `towide()` with the default `fun = NULL` now places each cell's value
+  instead of counting it, so `towide(tolong(x, ...))` round-trips. Cells
+  holding several values are still counted with `length()`, now with a
+  message. Its argument documentation is rewritten.
+
 # basetable 1.4.2
 
 ## Fixes
