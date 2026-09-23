@@ -4,22 +4,22 @@
 
 | Operation | basetable | data.table | dplyr | collapse | basetable mem | data.table mem | dplyr mem | collapse mem |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| filter | 7 ms | 12 ms | 11 ms | 5 ms | 14.51 MB | 21.19 MB | 28.34 MB | 19.42 MB |
-| sort (string key) | 52 ms | 52 ms | 123 ms | 50 ms | 34.37 MB | 46.85 MB | 68.83 MB | 38.23 MB |
-| distinct | 4 ms | 8 ms | 5 ms | 3 ms | 0.03 MB | 19.59 MB | 12.02 MB | 3.92 MB |
-| count by group | 20 ms | 44 ms | 675 ms | 6 ms | 1.16 MB | 30.27 MB | 29.72 MB | 5.47 MB |
-| sd by group | 8 ms | 18 ms | 57 ms | 14 ms | 0.05 MB | 26.91 MB | 36.02 MB | 4.25 MB |
-| equi join | 19 ms | 19 ms | 48 ms | 5 ms | 7.64 MB | 7.63 MB | 101.08 MB | 11.75 MB |
-| semi join | 10 ms | 51 ms | 46 ms | 4 ms | 3.84 MB | 57.80 MB | 81.57 MB | 3.81 MB |
+| filter | 2 ms | 15 ms | 12 ms | 5 ms | 14.51 MB | 21.19 MB | 28.34 MB | 19.42 MB |
+| sort (string key) | 22 ms | 49 ms | 95 ms | 44 ms | 34.37 MB | 46.85 MB | 68.83 MB | 38.23 MB |
+| distinct | 1 ms | 7 ms | 6 ms | 3 ms | 0.03 MB | 19.59 MB | 12.02 MB | 3.92 MB |
+| count by group | 5 ms | 53 ms | 678 ms | 8 ms | 1.16 MB | 30.27 MB | 29.72 MB | 5.47 MB |
+| sd by group | 7 ms | 41 ms | 41 ms | 11 ms | 0.05 MB | 26.91 MB | 36.02 MB | 4.25 MB |
+| equi join | 2 ms | 4 ms | 50 ms | 5 ms | 7.64 MB | 7.63 MB | 101.08 MB | 11.75 MB |
+| semi join | 2 ms | 47 ms | 43 ms | 4 ms | 3.84 MB | 57.80 MB | 81.57 MB | 3.81 MB |
 
 ### Single thread (basetable, data.table and collapse pinned to 1)
 
 | Operation | basetable | data.table | dplyr | collapse | basetable mem | data.table mem | dplyr mem | collapse mem |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| filter | 9 ms | 10 ms | 11 ms | 5 ms | 10.58 MB | 19.40 MB | 27.01 MB | 19.38 MB |
-| sort (string key) | 151 ms | 150 ms | 77 ms | 40 ms | 34.33 MB | 46.75 MB | 68.11 MB | 38.15 MB |
-| distinct | 4 ms | 14 ms | 5 ms | 2 ms | 0.02 MB | 19.18 MB | 11.85 MB | 3.84 MB |
-| count by group | 25 ms | 49 ms | 727 ms | 7 ms | 1.14 MB | 29.41 MB | 28.80 MB | 5.34 MB |
-| sd by group | 11 ms | 24 ms | 41 ms | 14 ms | 0.03 MB | 26.84 MB | 35.99 MB | 3.89 MB |
-| equi join | 21 ms | 21 ms | 66 ms | 7 ms | 7.63 MB | 7.63 MB | 100.60 MB | 11.44 MB |
-| semi join | 53 ms | 62 ms | 54 ms | 6 ms | 3.81 MB | 57.37 MB | 81.52 MB | 3.81 MB |
+| filter | 3 ms | 9 ms | 11 ms | 5 ms | 10.58 MB | 19.40 MB | 27.01 MB | 19.38 MB |
+| sort (string key) | 35 ms | 125 ms | 79 ms | 40 ms | 34.33 MB | 46.75 MB | 68.11 MB | 38.15 MB |
+| distinct | 1 ms | 15 ms | 5 ms | 2 ms | 0.02 MB | 19.18 MB | 11.85 MB | 3.84 MB |
+| count by group | 5 ms | 46 ms | 730 ms | 7 ms | 1.14 MB | 29.41 MB | 28.80 MB | 5.34 MB |
+| sd by group | 5 ms | 27 ms | 44 ms | 12 ms | 0.03 MB | 26.84 MB | 35.99 MB | 3.89 MB |
+| equi join | 3 ms | 2 ms | 59 ms | 6 ms | 7.63 MB | 7.63 MB | 100.60 MB | 11.44 MB |
+| semi join | 2 ms | 69 ms | 61 ms | 6 ms | 3.81 MB | 57.37 MB | 81.52 MB | 3.81 MB |
