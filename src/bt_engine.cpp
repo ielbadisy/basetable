@@ -7,9 +7,11 @@
 #define R_NO_REMAP
 #include <R.h>
 #include <Rinternals.h>
+#include "bt_profile.h"
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <climits>
 #include <cmath>
 #include <cstdint>
@@ -197,15 +199,16 @@ void gather_atomic(SEXP dst, SEXP src, const std::vector<R_xlen_t>& rows) {
 }
 
 SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<int>& cols,
-                 int nth = 1) {
+                 int nth = 1, bool all_rows = false) {
+  BtProfile profile("materialize");
   R_xlen_t nc = (R_xlen_t)cols.size();
-  R_xlen_t nr = (R_xlen_t)rows.size();
+  R_xlen_t nr = all_rows ? frame_nrow(df) : (R_xlen_t)rows.size();
   SEXP out = PROTECT(Rf_allocVector(VECSXP, nc));
   SEXP names = PROTECT(Rf_allocVector(STRSXP, nc));
   SEXP old_names = Rf_getAttrib(df, R_NamesSymbol);
 
   bool identity_rows = nr == frame_nrow(df);
-  for (R_xlen_t i = 0; identity_rows && i < nr; ++i)
+  for (R_xlen_t i = 0; !all_rows && identity_rows && i < nr; ++i)
     if (rows[(size_t)i] != i) identity_rows = false;
 
   if (identity_rows) {
@@ -247,35 +250,33 @@ SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<i
     SET_STRING_ELT(names, j, STRING_ELT(old_names, cols[(size_t)j]));
   }
 
+  profile.mark("allocate");
   {
     bool par = nth >= 2 && nr >= 100000;
-    // Worker threads do everything that needs no R API: the atomic-column
-    // gather, plus a plain-pointer gather of each STRSXP column's rows (the
-    // cache-miss-bound part). The R thread then only walks those buffers with
-    // SET_STRING_ELT (sequential, barrier only). VECSXP stays fully serial.
-    std::vector<std::vector<SEXP>> str_buf(ref_cols.size());
-    std::vector<int> str_cols;
-    for (size_t r = 0; r < ref_cols.size(); ++r)
-      if (TYPEOF(srcs[(size_t)ref_cols[r]]) == STRSXP) {
-        str_buf[r].resize((size_t)nr);
-        str_cols.push_back((int)r);
-      }
-
-    struct GTask { int kind; SEXP dst; SEXP src; const SEXP* ssp; SEXP* buf; };
+    // Worker threads gather every atomic and STRSXP column without the R API.
+    // Strings are written as raw pointers into the fresh output vector, as
+    // data.table and collapse do: no allocation happens during the fill, and
+    // every CHARSXP already existed before the output was allocated, so it is
+    // at least as old and the generational write barrier has nothing to
+    // record. VECSXP columns stay on the R thread with SET_VECTOR_ELT.
+    struct GTask { int kind; SEXP dst; SEXP src; const SEXP* ssp; SEXP* dsp; };
     std::vector<GTask> tasks;
+    std::vector<int> list_cols;
     for (int j : atomic_cols)
       tasks.push_back({0, dsts[(size_t)j], srcs[(size_t)j], nullptr, nullptr});
-    for (int r : str_cols) {
-      SEXP s = srcs[(size_t)ref_cols[(size_t)r]];
+    for (int j : ref_cols) {
+      SEXP s = srcs[(size_t)j], d = dsts[(size_t)j];
+      if (TYPEOF(s) != STRSXP) { list_cols.push_back(j); continue; }
       // STRING_PTR_RO may materialise an ALTREP source: force it here, on the
       // R thread, before any worker touches it.
-      tasks.push_back({1, nullptr, s, STRING_PTR_RO(s), str_buf[(size_t)r].data()});
+      tasks.push_back({1, d, s, STRING_PTR_RO(s), const_cast<SEXP*>(STRING_PTR_RO(d))});
     }
 
     auto run_task = [&](const GTask& t) {
       if (t.kind == 0) { gather_atomic(t.dst, t.src, rows); return; }
       const SEXP* sp = t.ssp;
-      for (R_xlen_t i = 0; i < nr; ++i) t.buf[i] = sp[rows[(size_t)i]];
+      SEXP* dp = t.dsp;
+      for (R_xlen_t i = 0; i < nr; ++i) dp[i] = sp[rows[(size_t)i]];
     };
 
     int use = par && (int)tasks.size() >= 2
@@ -291,19 +292,15 @@ SEXP build_frame(SEXP df, const std::vector<R_xlen_t>& rows, const std::vector<i
       for (auto& t : tasks) run_task(t);
     }
 
-    // R-thread finish: STRSXP from the gathered buffers, VECSXP directly.
-    for (size_t r = 0; r < ref_cols.size(); ++r) {
-      SEXP d = dsts[(size_t)ref_cols[r]], s = srcs[(size_t)ref_cols[r]];
-      if (TYPEOF(s) == STRSXP) {
-        const SEXP* b = str_buf[r].data();
-        for (R_xlen_t i = 0; i < nr; ++i) SET_STRING_ELT(d, i, b[i]);
-      } else {
-        for (R_xlen_t i = 0; i < nr; ++i)
-          SET_VECTOR_ELT(d, i, VECTOR_ELT(s, rows[(size_t)i]));
-      }
+    profile.mark("gather");
+    for (int j : list_cols) {
+      SEXP d = dsts[(size_t)j], s = srcs[(size_t)j];
+      for (R_xlen_t i = 0; i < nr; ++i)
+        SET_VECTOR_ELT(d, i, VECTOR_ELT(s, rows[(size_t)i]));
     }
   }
 
+  profile.mark("reference_write");
   Rf_setAttrib(out, R_NamesSymbol, names);
   Rf_setAttrib(out, R_RowNamesSymbol, make_row_names(nr));
   set_table_class(out);
@@ -400,6 +397,23 @@ struct AggState {
   double max = R_NegInf;
   int n = 0;
   bool bad = false;
+};
+
+// Resolve storage on the R thread, including any ALTREP materialization.
+struct NumericColumnView {
+  const double* real = nullptr;
+  const int* integer = nullptr;
+  explicit NumericColumnView(SEXP col) {
+    if (TYPEOF(col) == REALSXP) real = REAL(col);
+    else if (TYPEOF(col) == INTSXP) integer = INTEGER(col);
+    else if (TYPEOF(col) == LGLSXP) integer = LOGICAL(col);
+  }
+  double get(R_xlen_t i, bool& na) const {
+    if (real) { double x = real[i]; na = std::isnan(x); return x; }
+    if (integer) { int x = integer[i]; na = x == NA_INTEGER; return na ? NA_REAL : (double)x; }
+    na = true;
+    return NA_REAL;
+  }
 };
 
 double value_as_double(SEXP col, R_xlen_t i, bool& na) {
@@ -521,6 +535,180 @@ struct KeyHash {
   }
 };
 
+// R interns CHARSXP values, so single-key string operations can compare the
+// pointer directly. A flat table keeps the hot lookup probe contiguous and
+// avoids one allocation per node in unordered_map.
+struct FlatPtrIntMap {
+  std::vector<const void*> keys;
+  std::vector<int> values;
+  size_t mask = 0;
+  size_t used = 0;
+  unsigned shift = 61;
+
+  size_t hash_ptr(const void* p) const {
+    uint64_t x = (uint64_t)(uintptr_t)p;
+    return (size_t)((x * UINT64_C(11400714819323198485)) >> shift);
+  }
+
+  void reserve(size_t n) {
+    size_t cap = 8;
+    shift = 61;
+    while (cap < std::min<size_t>(n, 1024) * 2) { cap <<= 1; --shift; }
+    keys.assign(cap, nullptr);
+    values.assign(cap, 0);
+    mask = cap - 1;
+    used = 0;
+  }
+
+  void grow() {
+    auto old_keys = std::move(keys);
+    auto old_values = std::move(values);
+    keys.assign(old_keys.size() * 2, nullptr);
+    values.assign(keys.size(), 0);
+    mask = keys.size() - 1;
+    --shift;
+    used = 0;
+    for (size_t j = 0; j < old_keys.size(); ++j)
+      if (old_keys[j]) insert(old_keys[j], old_values[j]);
+  }
+
+  const int* find(const void* key) const {
+    if (keys.empty()) return nullptr;
+    size_t i = hash_ptr(key) & mask;
+    for (;;) {
+      const void* at = keys[i];
+      if (at == key) return &values[i];
+      if (at == nullptr) return nullptr;
+      i = (i + 1) & mask;
+    }
+  }
+
+  int* find_mutable(const void* key) {
+    return const_cast<int*>(static_cast<const FlatPtrIntMap&>(*this).find(key));
+  }
+
+  bool insert(const void* key, int value) {
+    size_t i = hash_ptr(key) & mask;
+    for (;;) {
+      const void* at = keys[i];
+      if (at == nullptr) {
+        // Sparse small dictionaries shorten the hot probe chain. Larger
+        // dictionaries retain the 50% bound to limit memory and cache cost.
+        size_t load_scale = keys.size() <= 32768 ? 16 : 2;
+        if ((used + 1) * load_scale > keys.size()) {
+          grow();
+          return insert(key, value);
+        }
+        keys[i] = key;
+        values[i] = value;
+        ++used;
+        return true;
+      }
+      if (at == key) return false;
+      i = (i + 1) & mask;
+    }
+  }
+};
+
+// Keys-only pointer set for distinct. Small sets stay very sparse so almost
+// every probe resolves on its first slot; large sets fall back to 50% load.
+struct FlatPtrSet {
+  std::vector<const void*> keys;
+  size_t mask = 0;
+  size_t used = 0;
+  unsigned shift = 0;
+
+  FlatPtrSet() { resize(1u << 16); }
+
+  void resize(size_t cap) {
+    auto old = std::move(keys);
+    keys.assign(cap, nullptr);
+    mask = cap - 1;
+    shift = 64;
+    for (size_t c = cap; c > 1; c >>= 1) --shift;
+    used = 0;
+    for (const void* k : old) if (k) insert(k);
+  }
+
+  // Returns true when `key` was not yet present.
+  bool insert(const void* key) {
+    size_t i = (size_t)(((uint64_t)(uintptr_t)key *
+                         UINT64_C(11400714819323198485)) >> shift);
+    for (;;) {
+      const void* at = keys[i];
+      if (at == key) return false;
+      if (at == nullptr) break;
+      i = (i + 1) & mask;
+    }
+    size_t load_scale = keys.size() <= (1u << 17) ? 16 : 2;
+    if ((used + 1) * load_scale > keys.size()) {
+      resize(keys.size() * 2);
+      return insert(key);
+    }
+    keys[i] = key;
+    ++used;
+    return true;
+  }
+};
+
+// Pointer-keyed counter whose key, running count and first-seen group share
+// one 16-byte slot, so each row touches a single cache line.
+struct FlatPtrCounter {
+  struct Slot { const void* key; int count; int group; };
+  std::vector<Slot> slots;
+  size_t mask = 0;
+  size_t used = 0;
+  unsigned shift = 0;
+
+  FlatPtrCounter() { resize(1u << 12); }
+
+  void resize(size_t cap) {
+    auto old = std::move(slots);
+    slots.assign(cap, Slot{nullptr, 0, 0});
+    mask = cap - 1;
+    shift = 64;
+    for (size_t c = cap; c > 1; c >>= 1) --shift;
+    used = 0;
+    for (const Slot& o : old) if (o.key) *place(o.key) = o;
+  }
+
+  size_t home(const void* key) const {
+    return (size_t)(((uint64_t)(uintptr_t)key *
+                     UINT64_C(11400714819323198485)) >> shift);
+  }
+
+  Slot* place(const void* key) {
+    size_t i = home(key);
+    while (slots[i].key != nullptr) i = (i + 1) & mask;
+    ++used;
+    return &slots[i];
+  }
+
+  void prefetch(const void* key) const {
+    __builtin_prefetch(&slots[home(key)]);
+  }
+
+  // Counts `key`; returns true when it opens a new group.
+  bool add(const void* key, int group) {
+    size_t i = home(key);
+    for (;;) {
+      Slot& at = slots[i];
+      if (at.key == key) { ++at.count; return false; }
+      if (at.key == nullptr) break;
+      i = (i + 1) & mask;
+    }
+    insert_new(key, group);
+    return true;
+  }
+
+  // Cold path, kept out of line so add() stays small enough to inline.
+  __attribute__((noinline)) void insert_new(const void* key, int group) {
+    size_t load_scale = slots.size() <= (1u << 16) ? 16 : 2;
+    if ((used + 1) * load_scale > slots.size()) resize(slots.size() * 4);
+    *place(key) = Slot{key, 1, group};
+  }
+};
+
 inline int64_t real_slot(double d) {
   if (ISNA(d)) return (int64_t)0x7ff00000000007a2LL;
   if (std::isnan(d)) return (int64_t)0x7ff00000000007a3LL;
@@ -612,6 +800,7 @@ struct KeyCodec {
 // factors by level code, so neither builds a byte key. Returns false for
 // column types the dense integer path in *_single already covers.
 bool group_single(SEXP col, R_xlen_t nrow, std::vector<int>& codes, std::vector<R_xlen_t>& first) {
+  BtProfile profile("group");
   codes.resize((size_t)nrow);
   if (Rf_isFactor(col)) {
     std::unordered_map<int, int> d;
@@ -627,16 +816,19 @@ bool group_single(SEXP col, R_xlen_t nrow, std::vector<int>& codes, std::vector<
     return true;
   }
   if (TYPEOF(col) == STRSXP) {
-    std::unordered_map<const void*, int> d;
+    FlatPtrIntMap d;
     d.reserve((size_t)nrow);
+    const SEXP* strings = STRING_PTR_RO(col);
+    profile.mark("allocate");
     for (R_xlen_t i = 0; i < nrow; ++i) {
-      const void* s = (const void*)STRING_ELT(col, i);
-      auto it = d.find(s);
+      const void* s = (const void*)strings[i];
+      const int* it = d.find(s);
       int c;
-      if (it == d.end()) { c = (int)first.size(); d.emplace(s, c); first.push_back(i); }
-      else c = it->second;
+      if (it == nullptr) { c = (int)first.size(); d.insert(s, c); first.push_back(i); }
+      else c = *it;
       codes[(size_t)i] = c;
     }
+    profile.mark("lookup");
     return true;
   }
   if (TYPEOF(col) == INTSXP || TYPEOF(col) == LGLSXP) {
@@ -727,6 +919,8 @@ bool fused_group_agg_1key(SEXP col, R_xlen_t nrow, const std::vector<SEXP>& vcol
   else return false;
 
   const int nv = (int)vcols.size();
+  std::vector<NumericColumnView> values;
+  for (SEXP value : vcols) values.emplace_back(value);
   auto slot = [&](R_xlen_t i) -> int64_t {
     if (kkind == 1) return (int64_t)(intptr_t)STRING_ELT(col, i);
     if (kkind == 2) return real_slot(REAL(col)[i]);
@@ -760,7 +954,7 @@ bool fused_group_agg_1key(SEXP col, R_xlen_t nrow, const std::vector<SEXP>& vcol
         AggState& s = L.acc[(size_t)g * (size_t)nv + (size_t)j];
         if (fun == AGG_N) { ++s.n; continue; }
         bool na = false;
-        double x = value_as_double(vcols[(size_t)j], i, na);
+        double x = values[(size_t)j].get(i, na);
         if (na) { if (!na_rm) s.bad = true; continue; }
         agg_update(s, fun, x);
       }
@@ -864,6 +1058,16 @@ bool unique_single(SEXP col, R_xlen_t nrow, std::vector<R_xlen_t>& rows) {
     case INTSXP:
       return unique_int_dense(INTEGER(col), nrow, rows) ||
              unique_hash_typed<int>(INTEGER(col), nrow, rows);
+    case STRSXP: {
+      BtProfile profile("distinct");
+      FlatPtrSet seen;
+      const SEXP* strings = STRING_PTR_RO(col);
+      profile.mark("allocate");
+      for (R_xlen_t i = 0; i < nrow; ++i)
+        if (seen.insert((const void*)strings[i])) rows.push_back(i);
+      profile.mark("lookup");
+      return true;
+    }
     default:
       return false;
   }
@@ -1048,6 +1252,41 @@ bool count_hash_typed(SEXP df, int by, const T* p, R_xlen_t nrow, SEXP s_name, S
   return true;
 }
 
+bool count_string(SEXP df, int by, SEXP col, R_xlen_t nrow, SEXP s_name, SEXP* out_ptr) {
+  BtProfile profile("count");
+  FlatPtrCounter pos;
+  std::vector<R_xlen_t> first;
+  const SEXP* strings = STRING_PTR_RO(col);
+  profile.mark("allocate");
+  // Large dictionaries miss cache; prefetch the home slot a few rows ahead.
+  const R_xlen_t ahead = 16;
+  for (R_xlen_t i = 0; i < nrow; ++i) {
+    if (i + ahead < nrow) pos.prefetch((const void*)strings[i + ahead]);
+    if (pos.add((const void*)strings[i], (int)first.size())) first.push_back(i);
+  }
+  profile.mark("lookup_and_accumulate");
+  std::vector<int> counts(first.size());
+  for (const auto& slot : pos.slots) if (slot.key) counts[(size_t)slot.group] = slot.count;
+  profile.mark("gather_counts");
+
+  std::vector<int> key_cols{by};
+  SEXP keys = PROTECT(build_frame(df, first, key_cols));
+  SEXP out = PROTECT(Rf_allocVector(VECSXP, 2));
+  SEXP names = PROTECT(Rf_allocVector(STRSXP, 2));
+  SET_VECTOR_ELT(out, 0, VECTOR_ELT(keys, 0));
+  SET_STRING_ELT(names, 0, STRING_ELT(Rf_getAttrib(keys, R_NamesSymbol), 0));
+  SEXP ncol = PROTECT(Rf_allocVector(INTSXP, (R_xlen_t)counts.size()));
+  for (R_xlen_t i = 0; i < (R_xlen_t)counts.size(); ++i) INTEGER(ncol)[i] = counts[(size_t)i];
+  SET_VECTOR_ELT(out, 1, ncol);
+  SET_STRING_ELT(names, 1, STRING_ELT(s_name, 0));
+  Rf_setAttrib(out, R_NamesSymbol, names);
+  Rf_setAttrib(out, R_RowNamesSymbol, make_row_names((R_xlen_t)counts.size()));
+  set_table_class(out);
+  UNPROTECT(4);
+  *out_ptr = out;
+  return true;
+}
+
 bool count_single(SEXP df, int by, R_xlen_t nrow, SEXP s_name, SEXP* out) {
   SEXP col = VECTOR_ELT(df, by);
   switch (TYPEOF(col)) {
@@ -1057,6 +1296,8 @@ bool count_single(SEXP df, int by, R_xlen_t nrow, SEXP s_name, SEXP* out) {
     case INTSXP:
       return count_int_dense(df, by, INTEGER(col), nrow, s_name, out) ||
              count_hash_typed<int>(df, by, INTEGER(col), nrow, s_name, out);
+    case STRSXP:
+      return count_string(df, by, col, nrow, s_name, out);
     default:
       return false;
   }
@@ -1279,8 +1520,10 @@ bool group_agg_int_single(SEXP df, int by, const std::vector<int>& val, AggFun f
 bool match_mask_int_single(SEXP x, SEXP y, int x_by, int y_by, SEXP out) {
   SEXP xc = VECTOR_ELT(x, x_by);
   SEXP yc = VECTOR_ELT(y, y_by);
+  // Factors match by label, not by code; the generic codec handles them.
   if ((TYPEOF(xc) != INTSXP && TYPEOF(xc) != LGLSXP) ||
-      (TYPEOF(yc) != INTSXP && TYPEOF(yc) != LGLSXP)) return false;
+      (TYPEOF(yc) != INTSXP && TYPEOF(yc) != LGLSXP) ||
+      Rf_isFactor(xc) || Rf_isFactor(yc)) return false;
   Frame xf = frame_from(x);
   Frame yf = frame_from(y);
   const int* xp = TYPEOF(xc) == INTSXP ? INTEGER(xc) : LOGICAL(xc);
@@ -1291,6 +1534,24 @@ bool match_mask_int_single(SEXP x, SEXP y, int x_by, int y_by, SEXP out) {
   int* p = LOGICAL(out);
   for (R_xlen_t i = 0; i < xf.nrow; ++i)
     p[i] = keys.find(xp[i]) == keys.end() ? FALSE : TRUE;
+  return true;
+}
+
+bool match_mask_string_single(SEXP x, SEXP y, int x_by, int y_by, SEXP out) {
+  SEXP xc = VECTOR_ELT(x, x_by);
+  SEXP yc = VECTOR_ELT(y, y_by);
+  if (TYPEOF(xc) != STRSXP || TYPEOF(yc) != STRSXP ||
+      Rf_isFactor(xc) || Rf_isFactor(yc)) return false;
+  Frame xf = frame_from(x);
+  Frame yf = frame_from(y);
+  const SEXP* xp = STRING_PTR_RO(xc);
+  const SEXP* yp = STRING_PTR_RO(yc);
+  FlatPtrIntMap keys;
+  keys.reserve((size_t)yf.nrow);
+  for (R_xlen_t i = 0; i < yf.nrow; ++i) keys.insert((const void*)yp[i], 1);
+  int* p = LOGICAL(out);
+  for (R_xlen_t i = 0; i < xf.nrow; ++i)
+    p[i] = keys.find((const void*)xp[i]) == nullptr ? FALSE : TRUE;
   return true;
 }
 
@@ -1313,6 +1574,17 @@ void par_rows(R_xlen_t nrow, int nth, F body) {
   for (auto& x : pool) x.join();
 }
 
+// Order-preserving unsigned code for a double: NaN/NA first or last, and
+// -0.0 folded onto +0.0.
+inline uint64_t real_order_code(double d, bool na_last, bool decreasing) {
+  if (ISNAN(d)) return na_last ? ~(uint64_t)0 : 0ULL;
+  uint64_t u;
+  std::memcpy(&u, &d, sizeof(u));
+  if ((u << 1) == 0) u = 0;
+  u ^= (uint64_t)(-(int64_t)(u >> 63)) | 0x8000000000000000ULL;
+  return decreasing ? ~u : u;
+}
+
 std::vector<uint64_t> order_codes(SEXP col, R_xlen_t nrow, bool na_last, bool decreasing,
                                   bool& supported, int nth = 1) {
   supported = true;
@@ -1320,22 +1592,23 @@ std::vector<uint64_t> order_codes(SEXP col, R_xlen_t nrow, bool na_last, bool de
   const uint64_t NA_HI = ~(uint64_t)0;
 
   if (TYPEOF(col) == STRSXP && !Rf_isFactor(col)) {
-    std::unordered_map<const void*, int> seen;
+    FlatPtrIntMap seen;
     std::vector<SEXP> distinct;
     std::vector<int> row_code((size_t)nrow, 0);
     seen.reserve((size_t)std::min<R_xlen_t>(nrow, 65536));
+    const SEXP* strings = STRING_PTR_RO(col);
     for (R_xlen_t i = 0; i < nrow; ++i) {
-      SEXP s = STRING_ELT(col, i);
+      SEXP s = strings[i];
       if (s == NA_STRING) continue;
       const void* key = (const void*)s;
       auto it = seen.find(key);
-      if (it == seen.end()) {
+      if (it == nullptr) {
         int id = (int)distinct.size() + 1;
-        seen.emplace(key, id);
+        seen.insert(key, id);
         distinct.push_back(s);
         row_code[(size_t)i] = id;
       } else {
-        row_code[(size_t)i] = it->second;
+        row_code[(size_t)i] = *it;
       }
     }
     std::sort(distinct.begin(), distinct.end(),
@@ -1343,8 +1616,8 @@ std::vector<uint64_t> order_codes(SEXP col, R_xlen_t nrow, bool na_last, bool de
     std::vector<int> rank((size_t)distinct.size() + 1, 0);
     for (size_t r = 0; r < distinct.size(); ++r) {
       int rr = (r > 0 && std::strcmp(CHAR(distinct[r - 1]), CHAR(distinct[r])) == 0)
-        ? rank[(size_t)seen[(const void*)distinct[r - 1]]] : (int)r + 1;
-      rank[(size_t)seen[(const void*)distinct[r]]] = rr;
+        ? rank[(size_t)*seen.find((const void*)distinct[r - 1])] : (int)r + 1;
+      rank[(size_t)*seen.find((const void*)distinct[r])] = rr;
     }
     uint64_t* cp = code.data();
     const int* rcp = row_code.data();
@@ -1391,15 +1664,8 @@ std::vector<uint64_t> order_codes(SEXP col, R_xlen_t nrow, bool na_last, bool de
     case REALSXP: {
       const double* p = REAL(col);
       par_rows(nrow, nth, [&](R_xlen_t lo, R_xlen_t hi) {
-        for (R_xlen_t i = lo; i < hi; ++i) {
-          double d = p[i];
-          if (ISNAN(d)) { cp[i] = na_last ? NA_HI : 0ULL; continue; }
-          uint64_t u;
-          std::memcpy(&u, &d, sizeof(u));
-          if ((u << 1) == 0) u = 0;  // -0.0 and +0.0 compare equal
-          u ^= (uint64_t)(-(int64_t)(u >> 63)) | 0x8000000000000000ULL;
-          cp[i] = decreasing ? ~u : u;
-        }
+        for (R_xlen_t i = lo; i < hi; ++i)
+          cp[i] = real_order_code(p[i], na_last, decreasing);
       });
       return code;
     }
@@ -1482,56 +1748,99 @@ void radix_pairs(std::vector<uint64_t>& key, std::vector<R_xlen_t>& idx, int nth
 
 bool order_string_real2(SEXP df, int s_col, int x_col, R_xlen_t nrow, bool na_last,
                         std::vector<R_xlen_t>& ord, int nth) {
+  BtProfile profile("sort");
   if (!na_last) return false;
   SEXP sc = VECTOR_ELT(df, s_col);
   SEXP xc = VECTOR_ELT(df, x_col);
   if (TYPEOF(sc) != STRSXP || Rf_isFactor(sc) || TYPEOF(xc) != REALSXP)
     return false;
 
-  bool supported = false;
-  std::vector<uint64_t> skey = order_codes(sc, nrow, true, false, supported, nth);
-  if (!supported) return false;
-
-  uint64_t max_key = 0;
-  bool have_na = false;
-  const uint64_t NA_HI = ~(uint64_t)0;
-  for (R_xlen_t i = 0; i < nrow; ++i) {
-    uint64_t k = skey[(size_t)i];
-    if (k == NA_HI) { have_na = true; continue; }
-    if (k > max_key) max_key = k;
+  std::vector<int> group;
+  std::vector<R_xlen_t> first;
+  group_single(sc, nrow, group, first);
+  const SEXP* strings = STRING_PTR_RO(sc);
+  std::vector<size_t> sorted(first.size());
+  for (size_t g = 0; g < sorted.size(); ++g) sorted[g] = g;
+  std::sort(sorted.begin(), sorted.end(), [&](size_t a, size_t b) {
+    SEXP sa = strings[first[a]], sb = strings[first[b]];
+    if (sa == NA_STRING) return false;
+    if (sb == NA_STRING) return true;
+    int cmp = std::strcmp(CHAR(sa), CHAR(sb));
+    return cmp == 0 ? a < b : cmp < 0;
+  });
+  std::vector<int> rank(first.size());
+  size_t nb = 0;
+  SEXP previous = R_NilValue;
+  for (size_t g : sorted) {
+    SEXP key = strings[first[g]];
+    bool same = previous != R_NilValue &&
+      (key == previous || (key != NA_STRING && previous != NA_STRING &&
+                           std::strcmp(CHAR(key), CHAR(previous)) == 0));
+    if (!same) ++nb;
+    rank[g] = (int)(nb - 1);
+    previous = key;
   }
-  if (max_key > (uint64_t)nrow) return false;
-
-  size_t nb = (size_t)max_key + (have_na ? 2U : 1U);
-  size_t na_bucket = nb - 1U;
-  std::vector<size_t> counts(nb, 0), starts(nb + 1, 0), cursor(nb, 0);
-  for (R_xlen_t i = 0; i < nrow; ++i) {
-    uint64_t k = skey[(size_t)i];
-    ++counts[k == NA_HI ? na_bucket : (size_t)k];
+  profile.mark("string_ranking");
+  std::vector<size_t> counts(nb, 0), starts(nb + 1, 0);
+  for (int& code : group) {
+    code = rank[(size_t)code];
+    ++counts[(size_t)code];
   }
   for (size_t b = 0; b < nb; ++b) starts[b + 1] = starts[b] + counts[b];
-  cursor = starts;
-  ord.resize((size_t)nrow);
-  for (R_xlen_t i = 0; i < nrow; ++i) {
-    uint64_t k = skey[(size_t)i];
-    size_t b = k == NA_HI ? na_bucket : (size_t)k;
-    ord[cursor[b]++] = i;
-  }
-
+  // Scatter (numeric code, row) pairs straight into their string bucket, so
+  // each bucket sorts contiguous memory instead of chasing a key array.
+  using KeyRow = std::pair<uint64_t, R_xlen_t>;
   const double* xp = REAL(xc);
+  std::vector<KeyRow> pairs((size_t)nrow);
+  auto cursor = starts;
+  for (R_xlen_t i = 0; i < nrow; ++i)
+    pairs[cursor[(size_t)group[(size_t)i]]++] = {real_order_code(xp[i], true, false), i};
+  ord.resize((size_t)nrow);
+
+  profile.mark("bucket_scatter");
   auto sort_bucket = [&](size_t b) {
-    R_xlen_t lo = (R_xlen_t)starts[b], hi = (R_xlen_t)starts[b + 1];
-    if (hi - lo < 2) return;
-    std::stable_sort(ord.begin() + lo, ord.begin() + hi, [&](R_xlen_t a, R_xlen_t b) {
-      double xa = xp[a], xb = xp[b];
-      bool ana = ISNAN(xa), bna = ISNAN(xb);
-      if (ana || bna) {
-        if (ana && bna) return a < b;
-        return !ana;
+    size_t lo = starts[b], n = starts[b + 1] - lo;
+    KeyRow* base = pairs.data() + lo;
+    // The row index is the explicit tie breaker, so an unstable sort still
+    // yields the stable order.
+    if (n < 64 || n > 32768) {
+      // Bound scratch space for skewed groups (at most 1 MiB per worker).
+      std::sort(base, base + n);
+    } else {
+      // First order the leading 24 bits. Only colliding prefixes need the
+      // remaining 40 bits sorted; no numeric precision is discarded.
+      std::vector<KeyRow> scratch(n);
+      auto radix = [&](size_t begin, size_t end, unsigned first, unsigned last) {
+        KeyRow* src = base + begin;
+        KeyRow* dst = scratch.data() + begin;
+        size_t m = end - begin;
+        for (unsigned shift = first; shift < last; shift += 8) {
+          std::array<size_t, 256> counts{};
+          for (size_t i = 0; i < m; ++i)
+            ++counts[(src[i].first >> shift) & 255];
+          if (std::find(counts.begin(), counts.end(), m) != counts.end()) continue;
+          size_t offset = 0;
+          for (auto& count : counts) {
+            size_t k = count;
+            count = offset;
+            offset += k;
+          }
+          for (size_t i = 0; i < m; ++i)
+            dst[counts[(src[i].first >> shift) & 255]++] = src[i];
+          std::swap(src, dst);
+        }
+        if (src != base + begin) std::copy(src, src + m, base + begin);
+      };
+      radix(0, n, 40, 64);
+      for (size_t begin = 0; begin < n;) {
+        size_t end = begin + 1;
+        while (end < n && (base[end].first >> 40) == (base[begin].first >> 40)) ++end;
+        if (end - begin >= 64) radix(begin, end, 0, 40);
+        else if (end - begin > 1) std::sort(base + begin, base + end);
+        begin = end;
       }
-      if (xa == xb) return a < b;
-      return xa < xb;
-    });
+    }
+    for (size_t i = 0; i < n; ++i) ord[lo + i] = base[i].second;
   };
 
   if (nth < 2 || nrow < 200000 || nb < 16) {
@@ -1545,6 +1854,7 @@ bool order_string_real2(SEXP df, int s_col, int x_col, R_xlen_t nrow, bool na_la
     }
     for (auto& th : pool) th.join();
   }
+  profile.mark("bucket_sort");
   return true;
 }
 
@@ -1640,8 +1950,8 @@ bool join_atomic_kind(SEXP s) {
   int t = TYPEOF(s);
   return (t == LGLSXP || t == INTSXP || t == REALSXP) && !Rf_isFactor(s);
 }
-void join_gather_atomic(SEXP dst, SEXP src, const std::vector<R_xlen_t>& rows) {
-  R_xlen_t n = (R_xlen_t)rows.size();
+template <typename Idx>
+void join_gather_atomic(SEXP dst, SEXP src, const Idx* rows, R_xlen_t n) {
   switch (TYPEOF(src)) {
     case LGLSXP: case INTSXP: {
       const int* s = INTEGER(src); int* d = INTEGER(dst);
@@ -1753,8 +2063,14 @@ bool pred_ok(int sign, int op) {
 extern "C" SEXP bt_subset_(SEXP df, SEXP s_rows, SEXP s_cols, SEXP s_n_threads) {
   Frame f = frame_from(df);
   int nth = clamp_threads(s_n_threads, f.nrow, 200000);
-  std::vector<R_xlen_t> rows = row_index(s_rows, f.nrow, nth);
   std::vector<int> cols = col_index(s_cols, f.ncol);
+  bool all_rows = Rf_isNull(s_rows);
+  if (TYPEOF(s_rows) == LGLSXP && Rf_xlength(s_rows) == f.nrow) {
+    const int* mask = LOGICAL(s_rows);
+    all_rows = std::all_of(mask, mask + f.nrow, [](int v) { return v == TRUE; });
+  }
+  if (all_rows) return build_frame(df, {}, cols, nth, true);
+  std::vector<R_xlen_t> rows = row_index(s_rows, f.nrow, nth);
   return build_frame(df, rows, cols, nth);
 }
 
@@ -1766,6 +2082,7 @@ extern "C" SEXP bt_subset_(SEXP df, SEXP s_rows, SEXP s_cols, SEXP s_n_threads) 
 // function returns R_NilValue so the caller can take the generic mask path.
 extern "C" SEXP bt_filter_(SEXP df, SEXP s_cols, SEXP s_code, SEXP s_args,
                            SEXP s_consts, SEXP s_na_false, SEXP s_n_threads) {
+  BtProfile profile("filter");
   (void) s_na_false;  // filter always drops NA rows
   Frame f = frame_from(df);
   if (TYPEOF(s_code) != INTSXP || TYPEOF(s_args) != INTSXP ||
@@ -1874,11 +2191,38 @@ extern "C" SEXP bt_filter_(SEXP df, SEXP s_cols, SEXP s_code, SEXP s_args,
   // advance the cursor by the predicate, so a ~50%-selective filter has no
   // data-dependent branch to mispredict.
   auto compact = [&](R_xlen_t lo, R_xlen_t hi, R_xlen_t* out) -> R_xlen_t {
+    if (ncmp == 1) {
+      const Cmp& c = cmp[0];
+      R_xlen_t k = 0;
+      if (c.type == REALSXP) {
+        const double* p = c.rp;
+        switch (c.op) {
+          case 20: for (R_xlen_t i = lo; i < hi; ++i) { double v = p[i]; unsigned ok = v == v && v <  c.s; out[k] = i; k += ok; } break;
+          case 21: for (R_xlen_t i = lo; i < hi; ++i) { double v = p[i]; unsigned ok = v == v && v <= c.s; out[k] = i; k += ok; } break;
+          case 22: for (R_xlen_t i = lo; i < hi; ++i) { double v = p[i]; unsigned ok = v == v && v >  c.s; out[k] = i; k += ok; } break;
+          case 23: for (R_xlen_t i = lo; i < hi; ++i) { double v = p[i]; unsigned ok = v == v && v >= c.s; out[k] = i; k += ok; } break;
+          case 24: for (R_xlen_t i = lo; i < hi; ++i) { double v = p[i]; unsigned ok = v == v && v == c.s; out[k] = i; k += ok; } break;
+          default: for (R_xlen_t i = lo; i < hi; ++i) { double v = p[i]; unsigned ok = v == v && v != c.s; out[k] = i; k += ok; } break;
+        }
+        return k;
+      }
+      const int* p = c.ip;
+      switch (c.op) {
+        case 20: for (R_xlen_t i = lo; i < hi; ++i) { int v = p[i]; unsigned ok = v != NA_INTEGER && v <  c.s; out[k] = i; k += ok; } break;
+        case 21: for (R_xlen_t i = lo; i < hi; ++i) { int v = p[i]; unsigned ok = v != NA_INTEGER && v <= c.s; out[k] = i; k += ok; } break;
+        case 22: for (R_xlen_t i = lo; i < hi; ++i) { int v = p[i]; unsigned ok = v != NA_INTEGER && v >  c.s; out[k] = i; k += ok; } break;
+        case 23: for (R_xlen_t i = lo; i < hi; ++i) { int v = p[i]; unsigned ok = v != NA_INTEGER && v >= c.s; out[k] = i; k += ok; } break;
+        case 24: for (R_xlen_t i = lo; i < hi; ++i) { int v = p[i]; unsigned ok = v != NA_INTEGER && v == c.s; out[k] = i; k += ok; } break;
+        default: for (R_xlen_t i = lo; i < hi; ++i) { int v = p[i]; unsigned ok = v != NA_INTEGER && v != c.s; out[k] = i; k += ok; } break;
+      }
+      return k;
+    }
     R_xlen_t k = 0;
     for (R_xlen_t i = lo; i < hi; ++i) { out[k] = i; k += keep(i); }
     return k;
   };
 
+  profile.mark("predicate_setup");
   int nth = clamp_threads(s_n_threads, f.nrow, 200000);
   int T = (nth < 2 || f.nrow < 100000) ? 1 : nth;
   std::vector<R_xlen_t> rows;
@@ -1914,6 +2258,7 @@ extern "C" SEXP bt_filter_(SEXP df, SEXP s_cols, SEXP s_code, SEXP s_args,
     for (auto& x : cp) x.join();
   }
 
+  profile.mark("row_indices");
   std::vector<int> cols = col_index(s_cols, f.ncol);
   return build_frame(df, rows, cols, nth);
 }
@@ -2104,11 +2449,13 @@ extern "C" SEXP bt_group_agg_(SEXP df, SEXP s_by, SEXP s_value, SEXP s_fun, SEXP
   const int nv = (int)val.size();
 
   std::vector<SEXP> vcols((size_t)nv);
+  std::vector<NumericColumnView> values;
   for (int j = 0; j < nv; ++j) {
     vcols[(size_t)j] = VECTOR_ELT(df, val[(size_t)j]);
     int t = TYPEOF(vcols[(size_t)j]);
     if (fun != AGG_N && t != LGLSXP && t != INTSXP && t != REALSXP)
       Rf_error("basetable: aggregate value columns must be numeric, integer, or logical");
+    values.emplace_back(vcols[(size_t)j]);
   }
 
   // Cardinality-aware dispatch for a single key column: below a few thousand
@@ -2140,7 +2487,7 @@ extern "C" SEXP bt_group_agg_(SEXP df, SEXP s_by, SEXP s_value, SEXP s_fun, SEXP
           AggState& s = st[base + (size_t)j];
           if (fun == AGG_N) { ++s.n; continue; }
           bool na = false;
-          double x = value_as_double(vcols[(size_t)j], i, na);
+          double x = values[(size_t)j].get(i, na);
           if (na) { if (!na_rm) s.bad = true; continue; }
           agg_update(s, fun, x);
         }
@@ -2184,7 +2531,7 @@ extern "C" SEXP bt_group_agg_(SEXP df, SEXP s_by, SEXP s_value, SEXP s_fun, SEXP
         AggState& s = state[(size_t)g * nv + j];
         if (fun == AGG_N) { ++s.n; continue; }
         bool na = false;
-        double x = value_as_double(vcols[(size_t)j], i, na);
+        double x = values[(size_t)j].get(i, na);
         if (na) { if (!na_rm) s.bad = true; continue; }
         agg_update(s, fun, x);
       }
@@ -2231,7 +2578,9 @@ extern "C" SEXP bt_match_mask_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by, SEXP s_
     Rf_error("basetable: join key length mismatch");
 
   SEXP out = PROTECT(Rf_allocVector(LGLSXP, xf.nrow));
-  if (x_by.size() == 1 && match_mask_int_single(x, y, x_by[0], y_by[0], out)) {
+  if (x_by.size() == 1 &&
+      (match_mask_int_single(x, y, x_by[0], y_by[0], out) ||
+       match_mask_string_single(x, y, x_by[0], y_by[0], out))) {
     UNPROTECT(1);
     return out;
   }
@@ -2316,6 +2665,7 @@ extern "C" SEXP bt_group_id_(SEXP df, SEXP s_by) {
 extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
                          SEXP s_all_x, SEXP s_all_y, SEXP s_suffixes,
                          SEXP s_n_threads) {
+  BtProfile profile("join");
   Frame xf = frame_from(x);
   Frame yf = frame_from(y);
   std::vector<int> x_by = col_index(s_x_by, xf.ncol);
@@ -2369,6 +2719,15 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
   }
 
   std::vector<R_xlen_t> xrows, yrows;
+  bool implicit_x_identity = false;
+  // Unique string joins keep right matches here (-1 = none) instead of yrows.
+  std::vector<int> ymatch;
+  bool y_compact = false;
+  auto expand_ymatch = [&]() {
+    if (!y_compact) return;
+    yrows.assign(ymatch.begin(), ymatch.end());
+    y_compact = false;
+  };
   std::vector<char> y_matched(all_y ? (size_t)yf.nrow : 0, 0);
 
   // Parallel probe for the common inner / left join (no `all_y`): each worker
@@ -2381,6 +2740,50 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
   if (fast_string_join) {
     SEXP xc = VECTOR_ELT(x, x_by[0]);
     SEXP yc = VECTOR_ELT(y, y_by[0]);
+    const SEXP* xp = STRING_PTR_RO(xc);
+    const SEXP* yp = STRING_PTR_RO(yc);
+    FlatPtrIntMap unique_map;
+    unique_map.reserve((size_t)yf.nrow);
+    bool unique_y = yf.nrow <= INT_MAX;
+    if (unique_y) {
+      for (R_xlen_t j = 0; j < yf.nrow; ++j) {
+        if (!unique_map.insert((const void*)yp[j], (int)j)) {
+          unique_y = false;
+          break;
+        }
+      }
+    }
+
+    if (unique_y) {
+      // A unique right key gives at most one result per left row. Keep the
+      // left indices implicit and the right ones as compact 32-bit matches
+      // unless missing matches require compaction.
+      ymatch.resize((size_t)xf.nrow);
+      std::atomic<bool> any_missing(false);
+      par_rows(xf.nrow, JT, [&](R_xlen_t lo, R_xlen_t hi) {
+        int* out = ymatch.data();
+        bool missing = false;
+        for (R_xlen_t i = lo; i < hi; ++i) {
+          const int* yi = unique_map.find((const void*)xp[i]);
+          missing |= yi == nullptr;
+          out[i] = yi == nullptr ? -1 : *yi;
+        }
+        if (missing) any_missing.store(true, std::memory_order_relaxed);
+      });
+      implicit_x_identity = true;
+      y_compact = true;
+      if (!all_x && any_missing.load()) {
+        implicit_x_identity = false;
+        y_compact = false;
+        for (size_t i = 0; i < ymatch.size(); ++i) {
+          if (ymatch[i] >= 0) {
+            xrows.push_back((R_xlen_t)i);
+            yrows.push_back(ymatch[i]);
+          }
+        }
+        std::vector<int>().swap(ymatch);
+      }
+    } else {
     std::unordered_map<const void*, std::vector<R_xlen_t>> smap;
     smap.reserve((size_t)yf.nrow);
     for (R_xlen_t j = 0; j < yf.nrow; ++j)
@@ -2428,6 +2831,7 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
           yrows.push_back(-1);
         }
       }
+    }
     }
   } else if (fast_int_join) {
     SEXP xc = VECTOR_ELT(x, x_by[0]);
@@ -2670,9 +3074,11 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
     }
   }
 
-  R_xlen_t nout = (R_xlen_t)xrows.size();
+  profile.mark("probe");
+
+  R_xlen_t nout = implicit_x_identity ? xf.nrow : (R_xlen_t)xrows.size();
   bool x_identity = nout == xf.nrow;
-  for (R_xlen_t i = 0; x_identity && i < nout; ++i)
+  for (R_xlen_t i = 0; !implicit_x_identity && x_identity && i < nout; ++i)
     if (xrows[(size_t)i] != i) x_identity = false;
 
   R_xlen_t ncol_out = (R_xlen_t)(x_by.size() + x_extra.size() + y_extra.size());
@@ -2697,7 +3103,7 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
   SEXP names = PROTECT(Rf_allocVector(STRSXP, ncol_out));
   // Atomic output columns are allocated here and gathered on worker threads
   // afterwards; key and string/list columns are materialised inline.
-  struct GJob { SEXP dst; SEXP src; const std::vector<R_xlen_t>* rows; };
+  struct GJob { SEXP dst; SEXP src; const R_xlen_t* rows; const int* rows32; };
   std::vector<GJob> jobs;
   R_xlen_t p = 0;
   for (size_t k = 0; k < x_by.size(); ++k) {
@@ -2709,11 +3115,14 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
     if (x_identity && (TYPEOF(xc) == TYPEOF(yc) || same_factor)) {
       SET_VECTOR_ELT(out, p, xc);
     } else {
+      expand_ymatch();
       SET_VECTOR_ELT(out, p, join_take_key(xc, yc, xrows, yrows));
     }
     SET_STRING_ELT(names, p, STRING_ELT(x_names, x_by[k]));
     ++p;
   }
+
+  profile.mark("allocate");
   for (int c : x_extra) {
     SEXP src = VECTOR_ELT(x, c);
     if (x_identity) {
@@ -2722,7 +3131,7 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
       SEXP dst = Rf_allocVector(TYPEOF(src), nout);
       SET_VECTOR_ELT(out, p, dst);
       copy_common_attrs(dst, src);
-      jobs.push_back({dst, src, &xrows});
+      jobs.push_back({dst, src, xrows.data(), nullptr});
     } else {
       SET_VECTOR_ELT(out, p, join_take(src, xrows));
     }
@@ -2737,8 +3146,9 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
       SEXP dst = Rf_allocVector(TYPEOF(src), nout);
       SET_VECTOR_ELT(out, p, dst);
       copy_common_attrs(dst, src);
-      jobs.push_back({dst, src, &yrows});
+      jobs.push_back({dst, src, nullptr, nullptr});
     } else {
+      expand_ymatch();
       SET_VECTOR_ELT(out, p, join_take(src, yrows));
     }
     std::string nm = CHAR(STRING_ELT(y_names, c));
@@ -2747,23 +3157,36 @@ extern "C" SEXP bt_join_(SEXP x, SEXP y, SEXP s_x_by, SEXP s_y_by,
     ++p;
   }
 
+  // Right-side jobs bind their rows only now: a string column above may have
+  // expanded the compact matches into yrows.
+  for (auto& j : jobs) {
+    if (j.rows != nullptr) continue;
+    if (y_compact) j.rows32 = ymatch.data();
+    else j.rows = yrows.data();
+  }
+  auto run_job = [&](const GJob& j) {
+    if (j.rows32) join_gather_atomic(j.dst, j.src, j.rows32, nout);
+    else join_gather_atomic(j.dst, j.src, j.rows, nout);
+  };
   if (!jobs.empty()) {
     int mnth = clamp_threads(s_n_threads, nout, 100000);
     int MT = (mnth < 2 || nout < 100000 || (int)jobs.size() < 2)
       ? 1 : std::min<int>(mnth, (int)jobs.size());
     if (MT <= 1) {
-      for (auto& j : jobs) join_gather_atomic(j.dst, j.src, *j.rows);
+      for (auto& j : jobs) run_job(j);
     } else {
       std::vector<std::thread> pool;
       for (int w = 0; w < MT; ++w) {
         pool.emplace_back([&, w]() {
           for (size_t a = (size_t)w; a < jobs.size(); a += (size_t)MT)
-            join_gather_atomic(jobs[a].dst, jobs[a].src, *jobs[a].rows);
+            run_job(jobs[a]);
         });
       }
       for (auto& t : pool) t.join();
     }
   }
+
+  profile.mark("gather");
 
   Rf_setAttrib(out, R_NamesSymbol, names);
   Rf_setAttrib(out, R_RowNamesSymbol, make_row_names(nout));

@@ -19,6 +19,15 @@ merge <- function(x,
   bt_resolve_cols(y_dt, by)
 
   out <- bt_join_rows(x_dt, y_dt, by = by, all.x = all.x, all.y = all.y, suffixes = suffixes)
+  # Factor keys match by label; like base::merge(), keep the key a factor
+  # with x's levels, adding y's new levels only when y rows are kept.
+  for (k in by) {
+    if (is.factor(x_dt[[k]]) && is.factor(y_dt[[k]]) && !is.factor(out[[k]])) {
+      lev <- levels(x_dt[[k]])
+      if (isTRUE(all.y)) lev <- union(lev, levels(y_dt[[k]]))
+      out[[k]] <- factor(out[[k]], levels = lev)
+    }
+  }
   if (sort) out <- bt_engine_order(out, by = by)
 
   out

@@ -14,7 +14,8 @@ diffrows(x, y, by = NULL)
 \item{by}{Character vector of column names identifying groups or join keys.}
 }
 \value{
-Rows of \code{x} absent from \code{y}.
+Rows of \code{x} absent from \code{y}. With \code{by = NULL}, rows are compared
+on every column of \code{x}, all of which must exist in \code{y}.
 }
 \description{
 Set difference of rows

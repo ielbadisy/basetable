@@ -44,7 +44,9 @@ aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TR
     }
     vals[[g]] <- as.data.frame(row, stringsAsFactors = FALSE)
   }
-  out <- bt_as_data_table(cbind(bt_as_data_frame(keys), do.call(rbind, vals)))
+  vals <- if (length(vals)) do.call(rbind, vals) else
+    as.data.frame(stats::setNames(rep(list(numeric()), length(value)), value))
+  out <- bt_as_data_table(cbind(bt_as_data_frame(keys), vals))
   if (sort && length(by) > 0L) {
     out <- bt_engine_order(out, by = by)
   }

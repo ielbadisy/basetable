@@ -9,15 +9,19 @@ towide(data, names, values, idcols = NULL, fun = NULL, fill = NA)
 \arguments{
 \item{data}{A data.frame.}
 
-\item{names}{Name for the resulting key/value column, depending on the function.}
+\item{names}{Column whose values become the new column names.}
 
-\item{values}{Vector or list of replacement values.}
+\item{values}{Column whose values fill the new columns.}
 
-\item{idcols}{Columns to keep as row identifiers.}
+\item{idcols}{Columns to keep as row identifiers. Defaults to every column
+other than \code{names} and \code{values}.}
 
-\item{fun}{Function applied to each element, column, or group.}
+\item{fun}{Function that reduces the values falling in one cell. When
+\code{NULL} (the default), each cell takes its single value; if any cell holds
+more than one value, cells are counted with \code{length()} and a message says
+so.}
 
-\item{fill}{Value used for positions where no window/result is available.}
+\item{fill}{Value used for cells with no matching row.}
 }
 \value{
 A wide-format basetable.

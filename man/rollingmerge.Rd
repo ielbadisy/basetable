@@ -11,7 +11,9 @@ rollingmerge(x, y, by, direction = c("backward", "forward", "nearest"),
 \item{by}{Character vector of join columns. The last column is treated as the
 rolling key.}
 
-\item{direction}{Rolling direction: backward, forward, or nearest.}
+\item{direction}{Rolling direction: backward, forward, or nearest. With
+\code{"nearest"}, a tie between an earlier and a later match of equal
+distance goes to the one that comes first in \code{y}.}
 
 \item{tolerance}{Maximum distance allowed for rolling matches.}
 }
