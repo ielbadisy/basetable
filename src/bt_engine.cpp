@@ -720,13 +720,15 @@ struct FlatPtrCounter {
       if (at.key == nullptr) break;
       i = (i + 1) & mask;
     }
-    size_t load_scale = slots.size() <= (1u << 16) ? 16 : 2;
-    if ((used + 1) * load_scale > slots.size()) {
-      resize(slots.size() * 2);
-      return add(key, group);
-    }
-    *place(key) = Slot{key, 1, group};
+    insert_new(key, group);
     return true;
+  }
+
+  // Cold path, kept out of line so add() stays small enough to inline.
+  __attribute__((noinline)) void insert_new(const void* key, int group) {
+    size_t load_scale = slots.size() <= (1u << 16) ? 16 : 2;
+    if ((used + 1) * load_scale > slots.size()) resize(slots.size() * 4);
+    *place(key) = Slot{key, 1, group};
   }
 };
 
