@@ -1525,6 +1525,17 @@ void par_rows(R_xlen_t nrow, int nth, F body) {
   for (auto& x : pool) x.join();
 }
 
+// Order-preserving unsigned code for a double: NaN/NA first or last, and
+// -0.0 folded onto +0.0.
+inline uint64_t real_order_code(double d, bool na_last, bool decreasing) {
+  if (ISNAN(d)) return na_last ? ~(uint64_t)0 : 0ULL;
+  uint64_t u;
+  std::memcpy(&u, &d, sizeof(u));
+  if ((u << 1) == 0) u = 0;
+  u ^= (uint64_t)(-(int64_t)(u >> 63)) | 0x8000000000000000ULL;
+  return decreasing ? ~u : u;
+}
+
 std::vector<uint64_t> order_codes(SEXP col, R_xlen_t nrow, bool na_last, bool decreasing,
                                   bool& supported, int nth = 1) {
   supported = true;
@@ -1604,15 +1615,8 @@ std::vector<uint64_t> order_codes(SEXP col, R_xlen_t nrow, bool na_last, bool de
     case REALSXP: {
       const double* p = REAL(col);
       par_rows(nrow, nth, [&](R_xlen_t lo, R_xlen_t hi) {
-        for (R_xlen_t i = lo; i < hi; ++i) {
-          double d = p[i];
-          if (ISNAN(d)) { cp[i] = na_last ? NA_HI : 0ULL; continue; }
-          uint64_t u;
-          std::memcpy(&u, &d, sizeof(u));
-          if ((u << 1) == 0) u = 0;  // -0.0 and +0.0 compare equal
-          u ^= (uint64_t)(-(int64_t)(u >> 63)) | 0x8000000000000000ULL;
-          cp[i] = decreasing ? ~u : u;
-        }
+        for (R_xlen_t i = lo; i < hi; ++i)
+          cp[i] = real_order_code(p[i], na_last, decreasing);
       });
       return code;
     }
@@ -1734,76 +1738,60 @@ bool order_string_real2(SEXP df, int s_col, int x_col, R_xlen_t nrow, bool na_la
     ++counts[(size_t)code];
   }
   for (size_t b = 0; b < nb; ++b) starts[b + 1] = starts[b] + counts[b];
+  // Scatter (numeric code, row) pairs straight into their string bucket, so
+  // each bucket sorts contiguous memory instead of chasing a key array.
+  using KeyRow = std::pair<uint64_t, R_xlen_t>;
+  const double* xp = REAL(xc);
+  std::vector<KeyRow> pairs((size_t)nrow);
   auto cursor = starts;
-  ord.resize((size_t)nrow);
   for (R_xlen_t i = 0; i < nrow; ++i)
-    ord[cursor[(size_t)group[(size_t)i]]++] = i;
+    pairs[cursor[(size_t)group[(size_t)i]]++] = {real_order_code(xp[i], true, false), i};
+  ord.resize((size_t)nrow);
 
   profile.mark("bucket_scatter");
-  bool x_supported = false;
-  std::vector<uint64_t> xkey = order_codes(xc, nrow, true, false, x_supported, 1);
-  if (!x_supported) return false;
-  profile.mark("numeric_keys");
   auto sort_bucket = [&](size_t b) {
-    R_xlen_t lo = (R_xlen_t)starts[b], hi = (R_xlen_t)starts[b + 1];
-    if (hi - lo < 2) return;
-    // The original row index is the explicit tie breaker, so an unstable
-    // sort retains the same stable result without the extra bookkeeping used
-    // by stable_sort.
-    // Bound scratch space for skewed groups (at most 1 MiB per worker).
-    if (hi - lo > 32768) {
-      std::sort(ord.begin() + lo, ord.begin() + hi, [&](R_xlen_t a, R_xlen_t b) {
-        uint64_t xa = xkey[(size_t)a], xb = xkey[(size_t)b];
-        return xa == xb ? a < b : xa < xb;
-      });
-      return;
-    }
-    std::vector<std::pair<uint64_t, R_xlen_t>> local((size_t)(hi - lo));
-    for (R_xlen_t i = lo; i < hi; ++i) {
-      R_xlen_t row = ord[(size_t)i];
-      local[(size_t)(i - lo)] = {xkey[(size_t)row], row};
-    }
-    if (local.size() < 64) {
-      std::sort(local.begin(), local.end());
+    size_t lo = starts[b], n = starts[b + 1] - lo;
+    KeyRow* base = pairs.data() + lo;
+    // The row index is the explicit tie breaker, so an unstable sort still
+    // yields the stable order.
+    if (n < 64 || n > 32768) {
+      // Bound scratch space for skewed groups (at most 1 MiB per worker).
+      std::sort(base, base + n);
     } else {
       // First order the leading 24 bits. Only colliding prefixes need the
       // remaining 40 bits sorted; no numeric precision is discarded.
-      auto scratch = local;
+      std::vector<KeyRow> scratch(n);
       auto radix = [&](size_t begin, size_t end, unsigned first, unsigned last) {
-        auto* src = local.data() + begin;
-        auto* dst = scratch.data() + begin;
-        size_t n = end - begin;
+        KeyRow* src = base + begin;
+        KeyRow* dst = scratch.data() + begin;
+        size_t m = end - begin;
         for (unsigned shift = first; shift < last; shift += 8) {
           std::array<size_t, 256> counts{};
-          for (size_t i = 0; i < n; ++i)
+          for (size_t i = 0; i < m; ++i)
             ++counts[(src[i].first >> shift) & 255];
-          if (std::find(counts.begin(), counts.end(), n) != counts.end()) continue;
+          if (std::find(counts.begin(), counts.end(), m) != counts.end()) continue;
           size_t offset = 0;
           for (auto& count : counts) {
             size_t k = count;
             count = offset;
             offset += k;
           }
-          for (size_t i = 0; i < n; ++i)
+          for (size_t i = 0; i < m; ++i)
             dst[counts[(src[i].first >> shift) & 255]++] = src[i];
           std::swap(src, dst);
         }
-        if (src != local.data() + begin)
-          std::copy(src, src + n, local.begin() + begin);
+        if (src != base + begin) std::copy(src, src + m, base + begin);
       };
-      radix(0, local.size(), 40, 64);
-      for (size_t begin = 0; begin < local.size();) {
+      radix(0, n, 40, 64);
+      for (size_t begin = 0; begin < n;) {
         size_t end = begin + 1;
-        while (end < local.size() &&
-               (local[end].first >> 40) == (local[begin].first >> 40)) ++end;
+        while (end < n && (base[end].first >> 40) == (base[begin].first >> 40)) ++end;
         if (end - begin >= 64) radix(begin, end, 0, 40);
-        else if (end - begin > 1)
-          std::sort(local.begin() + begin, local.begin() + end);
+        else if (end - begin > 1) std::sort(base + begin, base + end);
         begin = end;
       }
     }
-    for (R_xlen_t i = lo; i < hi; ++i)
-      ord[(size_t)i] = local[(size_t)(i - lo)].second;
+    for (size_t i = 0; i < n; ++i) ord[lo + i] = base[i].second;
   };
 
   if (nth < 2 || nrow < 200000 || nb < 16) {
