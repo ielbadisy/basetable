@@ -948,9 +948,11 @@ bool unique_single(SEXP col, R_xlen_t nrow, std::vector<R_xlen_t>& rows) {
       return unique_int_dense(INTEGER(col), nrow, rows) ||
              unique_hash_typed<int>(INTEGER(col), nrow, rows);
     case STRSXP: {
+      BtProfile profile("distinct");
       FlatPtrIntMap seen;
       seen.reserve((size_t)nrow);
       const SEXP* strings = STRING_PTR_RO(col);
+      profile.mark("allocate");
       for (R_xlen_t i = 0; i < nrow; ++i) {
         const void* key = (const void*)strings[i];
         if (seen.find(key) == nullptr) {
@@ -958,6 +960,7 @@ bool unique_single(SEXP col, R_xlen_t nrow, std::vector<R_xlen_t>& rows) {
           rows.push_back(i);
         }
       }
+      profile.mark("lookup");
       return true;
     }
     default:
@@ -1145,11 +1148,13 @@ bool count_hash_typed(SEXP df, int by, const T* p, R_xlen_t nrow, SEXP s_name, S
 }
 
 bool count_string(SEXP df, int by, SEXP col, R_xlen_t nrow, SEXP s_name, SEXP* out_ptr) {
+  BtProfile profile("count");
   FlatPtrIntMap pos;
   pos.reserve((size_t)nrow);
   std::vector<R_xlen_t> first;
   std::vector<int> counts;
   const SEXP* strings = STRING_PTR_RO(col);
+  profile.mark("allocate");
   for (R_xlen_t i = 0; i < nrow; ++i) {
     const void* key = (const void*)strings[i];
     int* it = pos.find_mutable(key);
@@ -1160,8 +1165,10 @@ bool count_string(SEXP df, int by, SEXP col, R_xlen_t nrow, SEXP s_name, SEXP* o
       ++*it;
     }
   }
+  profile.mark("lookup_and_accumulate");
   counts.reserve(first.size());
   for (R_xlen_t row : first) counts.push_back(*pos.find((const void*)strings[row]));
+  profile.mark("gather_counts");
 
   std::vector<int> key_cols{by};
   SEXP keys = PROTECT(build_frame(df, first, key_cols));
@@ -1986,6 +1993,7 @@ extern "C" SEXP bt_subset_(SEXP df, SEXP s_rows, SEXP s_cols, SEXP s_n_threads) 
 // function returns R_NilValue so the caller can take the generic mask path.
 extern "C" SEXP bt_filter_(SEXP df, SEXP s_cols, SEXP s_code, SEXP s_args,
                            SEXP s_consts, SEXP s_na_false, SEXP s_n_threads) {
+  BtProfile profile("filter");
   (void) s_na_false;  // filter always drops NA rows
   Frame f = frame_from(df);
   if (TYPEOF(s_code) != INTSXP || TYPEOF(s_args) != INTSXP ||
@@ -2125,6 +2133,7 @@ extern "C" SEXP bt_filter_(SEXP df, SEXP s_cols, SEXP s_code, SEXP s_args,
     return k;
   };
 
+  profile.mark("predicate_setup");
   int nth = clamp_threads(s_n_threads, f.nrow, 200000);
   int T = (nth < 2 || f.nrow < 100000) ? 1 : nth;
   std::vector<R_xlen_t> rows;
@@ -2160,6 +2169,7 @@ extern "C" SEXP bt_filter_(SEXP df, SEXP s_cols, SEXP s_code, SEXP s_args,
     for (auto& x : cp) x.join();
   }
 
+  profile.mark("row_indices");
   std::vector<int> cols = col_index(s_cols, f.ncol);
   return build_frame(df, rows, cols, nth);
 }
