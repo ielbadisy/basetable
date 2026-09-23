@@ -1,5 +1,22 @@
 # basetable (development version)
 
+## New features
+
+* `nest()` and `unnest()` support nested tables: `nest()` collapses each group
+  into a data frame stored in a list-column, and `unnest()` expands list-columns
+  back into rows.
+
+## Performance
+
+* `bt_default_threads()` no longer calls `parallel::detectCores()` on every
+  verb (about 4 ms each); the detected core count is cached for the session.
+
+* Indexed subsets no longer call `INTEGER()` once per row while converting the
+  row index, which makes a 1e6-row indexed subset about 7x faster.
+
+* Grouping a single integer or logical key uses a dense table instead of the
+  generic byte-key hash map, which is about 18x faster on 1e6 rows.
+
 ## Fixes
 
 * `semimerge()`, `antimerge()`, `matchedkeys()`, `unmatchedkeys()`,

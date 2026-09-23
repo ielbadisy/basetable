@@ -185,9 +185,19 @@ btwrite <- function(x,
 
 # --- internal helpers -------------------------------------------------------
 
+# detectCores() shells out on Linux (~4 ms), and every verb asks for the
+# default thread count, so the detected value is cached for the session.
+bt_cores <- local({
+  cores <- NULL
+  function() {
+    if (is.null(cores)) cores <<- max(1L, parallel::detectCores(logical = TRUE))
+    cores
+  }
+})
+
 bt_default_threads <- function() {
   n <- getOption("basetable.threads", NA_integer_)
-  if (is.na(n) || n < 1L) n <- max(1L, parallel::detectCores(logical = TRUE))
+  if (is.na(n) || n < 1L) n <- bt_cores()
   as.integer(min(n, 8L))
 }
 
