@@ -7,6 +7,10 @@
   Previously two factor keys were compared by their integer codes, so
   factors with different levels silently returned the wrong rows.
 
+* `merge()` keeps a factor key a factor with the levels of `x`, plus any new
+  levels of `y` for right and full joins, as `base::merge()` does. It was
+  returned as character.
+
 # basetable 1.4.2
 
 ## Fixes
