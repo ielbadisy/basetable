@@ -11,6 +11,11 @@
   levels of `y` for right and full joins, as `base::merge()` does. It was
   returned as character.
 
+* `rbindfill()` keeps a column that is a factor in every input holding it as
+  a factor, with the union of levels in input order, as `base::rbind()`
+  does. Factors were returned as character, including when a table without
+  the column was filled with `NA`.
+
 # basetable 1.4.2
 
 ## Fixes

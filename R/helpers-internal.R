@@ -47,13 +47,24 @@ bt_rbind_fill <- function(dfs, fill = TRUE, id = NULL) {
   }
   id_values <- names(dfs)
   dfs <- lapply(unname(dfs), bt_as_data_frame)
-  bt_as_data_table(.Call(
+  out <- .Call(
     bt_rbind_,
     dfs,
     isTRUE(fill),
     if (is.null(id)) NULL else as.character(id)[[1L]],
     if (is.null(id_values)) NULL else as.character(id_values)
-  ))
+  )
+  # The native bind stores factors as their labels. Like base::rbind(), a
+  # column that is a factor in every input holding it stays a factor, with
+  # the union of levels in input order.
+  for (nm in names(out)) {
+    held <- Filter(function(d) nm %in% names(d), dfs)
+    if (length(held) && all(vapply(held, function(d) is.factor(d[[nm]]), logical(1)))) {
+      lev <- unique(unlist(lapply(held, function(d) levels(d[[nm]])), use.names = FALSE))
+      out[[nm]] <- factor(out[[nm]], levels = lev)
+    }
+  }
+  bt_as_data_table(out)
 }
 
 # Comparison-operator codes shared with the native range-join kernel.
