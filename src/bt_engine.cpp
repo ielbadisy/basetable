@@ -7,6 +7,7 @@
 #define R_NO_REMAP
 #include <R.h>
 #include <Rinternals.h>
+#include <Rversion.h>
 #include "bt_profile.h"
 
 #include <algorithm>
@@ -181,6 +182,33 @@ void copy_common_attrs(SEXP out, SEXP in) {
   // Copies every attribute except names / dim / dimnames -- exactly what a
   // reshaped column needs (class, levels, tzone, units, ...).
   Rf_copyMostAttrib(in, out);
+}
+
+// ATTRIB() left the R API in R 4.6; ANY_ATTRIB() joined it in R 4.5.
+inline bool has_attrs(SEXP x) {
+#if R_VERSION >= R_Version(4, 5, 0)
+  return ANY_ATTRIB(x);
+#else
+  return ATTRIB(x) != R_NilValue;
+#endif
+}
+
+// Attribute equality without reading the attribute list: `carrier` is a
+// reusable zero-length vector that receives `x`'s copyable attributes before
+// being compared with the template's carrier.
+inline void clear_attrs(SEXP x) {
+#if R_VERSION >= R_Version(4, 5, 0)
+  CLEAR_ATTRIB(x);
+#else
+  SET_ATTRIB(x, R_NilValue);
+  SET_OBJECT(x, 0);
+#endif
+}
+
+bool attrs_match_carrier(SEXP x, SEXP carrier, SEXP tmpl_carrier) {
+  clear_attrs(carrier);
+  Rf_copyMostAttrib(x, carrier);
+  return R_compute_identical(carrier, tmpl_carrier, 16);
 }
 
 // Gather one atomic column's rows[] into an already-allocated dst. Thread-safe
@@ -4058,7 +4086,7 @@ extern "C" SEXP bt_nest_(SEXP df, SEXP s_ids, SEXP s_ngroups, SEXP s_cols,
       SEXP src = srcs[(size_t)j];
       SEXP dst = Rf_allocVector(TYPEOF(src), cnt);
       SET_VECTOR_ELT(frame, j, dst);
-      if (ATTRIB(src) != R_NilValue) copy_common_attrs(dst, src);
+      if (has_attrs(src)) copy_common_attrs(dst, src);
       dsts[(size_t)g * (size_t)nc + (size_t)j] = dst;
     }
     Rf_setAttrib(frame, R_NamesSymbol, names);
@@ -4158,30 +4186,44 @@ extern "C" SEXP bt_unnest_frames_(SEXP elts, SEXP s_n_threads) {
       return R_NilValue;
   }
 
+  // Per column: the template's attribute carrier and a reusable scratch one.
+  SEXP carriers = PROTECT(Rf_allocVector(VECSXP, 2 * nc));
+  for (R_xlen_t j = 0; j < nc; ++j) {
+    SEXP t = tmpl[(size_t)j];
+    SET_VECTOR_ELT(carriers, 2 * j, Rf_allocVector(TYPEOF(t), 0));
+    SET_VECTOR_ELT(carriers, 2 * j + 1, Rf_allocVector(TYPEOF(t), 0));
+    Rf_copyMostAttrib(t, VECTOR_ELT(carriers, 2 * j));
+  }
   std::vector<R_xlen_t> off((size_t)nf + 1, 0);
-  for (R_xlen_t i = 0; i < nf; ++i) {
+  bool uniform = true;
+  for (R_xlen_t i = 0; uniform && i < nf; ++i) {
     SEXP e = VECTOR_ELT(elts, i);
-    if (!Rf_isNewList(e) || !Rf_inherits(e, "data.frame") || Rf_xlength(e) != nc)
-      return R_NilValue;
+    if (!Rf_isNewList(e) || !Rf_inherits(e, "data.frame") || Rf_xlength(e) != nc) {
+      uniform = false;
+      break;
+    }
     if (i > 0) {
       SEXP nm = Rf_getAttrib(e, R_NamesSymbol);
       if (nm != names) {
-        if (TYPEOF(nm) != STRSXP) return R_NilValue;
-        for (R_xlen_t j = 0; j < nc; ++j)
-          if (STRING_ELT(nm, j) != STRING_ELT(names, j)) return R_NilValue;
+        if (TYPEOF(nm) != STRSXP) { uniform = false; break; }
+        for (R_xlen_t j = 0; uniform && j < nc; ++j)
+          if (STRING_ELT(nm, j) != STRING_ELT(names, j)) uniform = false;
+        if (!uniform) break;
       }
     }
     for (R_xlen_t j = 0; j < nc; ++j) {
       SEXP c = VECTOR_ELT(e, j);
       SEXP t = tmpl[(size_t)j];
       if (c == t) continue;
-      if (TYPEOF(c) != TYPEOF(t)) return R_NilValue;
-      SEXP ac = ATTRIB(c), at = ATTRIB(t);
-      if ((ac != R_NilValue || at != R_NilValue) && !R_compute_identical(ac, at, 16))
-        return R_NilValue;
+      if (TYPEOF(c) != TYPEOF(t)) { uniform = false; break; }
+      if (!has_attrs(c) && !has_attrs(t)) continue;
+      if (!attrs_match_carrier(c, VECTOR_ELT(carriers, 2 * j + 1),
+                               VECTOR_ELT(carriers, 2 * j))) { uniform = false; break; }
     }
-    off[(size_t)i + 1] = off[(size_t)i] + Rf_xlength(VECTOR_ELT(e, 0));
+    if (uniform) off[(size_t)i + 1] = off[(size_t)i] + Rf_xlength(VECTOR_ELT(e, 0));
   }
+  UNPROTECT(1);
+  if (!uniform) return R_NilValue;
   const R_xlen_t total = off[(size_t)nf];
   int nth = clamp_threads(s_n_threads, total, 200000);
 
@@ -4190,7 +4232,7 @@ extern "C" SEXP bt_unnest_frames_(SEXP elts, SEXP s_n_threads) {
   for (R_xlen_t j = 0; j < nc; ++j) {
     SEXP d = Rf_allocVector(TYPEOF(tmpl[(size_t)j]), total);
     SET_VECTOR_ELT(out, j, d);
-    if (ATTRIB(tmpl[(size_t)j]) != R_NilValue) copy_common_attrs(d, tmpl[(size_t)j]);
+    if (has_attrs(tmpl[(size_t)j])) copy_common_attrs(d, tmpl[(size_t)j]);
     dsts[(size_t)j] = d;
   }
 
