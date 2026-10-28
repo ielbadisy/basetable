@@ -2,7 +2,7 @@
 % Please edit documentation in R/primitives.R
 \name{unmatchedkeys}
 \alias{unmatchedkeys}
-\title{Distinct keys of \code{x} absent from \code{y}}
+\title{Rows of \code{x} whose key is absent from \code{y}}
 \usage{
 unmatchedkeys(x, y, by)
 }
@@ -17,5 +17,5 @@ unmatchedkeys(x, y, by)
 Rows of \code{x} whose key is not present in \code{y}.
 }
 \description{
-Distinct keys of \code{x} absent from \code{y}
+Rows of \code{x} whose key is absent from \code{y}
 }
