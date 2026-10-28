@@ -266,3 +266,20 @@ Every exported function has direct test coverage. Vignettes cover getting
 started, data manipulation, exploration, a complete function reference, and
 benchmarks. CI checks release R on Linux, macOS and Windows plus oldrel and
 devel.
+
+## Base R compatibility and join diagnostics
+
+The interface is inspired by base R; it is not a drop-in replacement for every
+base function. In particular, `aggregate()` accepts column names in `by` and
+`value`, rather than the `by` list or formula interface of `stats::aggregate()`.
+`merge()` defaults to `sort = FALSE` (base R defaults to `TRUE`) and requires
+at least one join column. Results carry the `basetable` class; use
+`as.data.frame()` when a plain data frame is required. Consult each function's
+help for its arguments and supported behavior.
+
+Before joining, `joinrelationship(x, y, by)` reports whether keys are unique
+on each side. It checks the entire input, including keys that do not match;
+repeated missing keys count as duplicates. `matchedkeys(x, y, by)` and
+`unmatchedkeys(x, y, by)` return rows of `x` with keys present or absent in
+`y`, respectively, preserving duplicate rows from `x`. These tools help expose
+unexpected multiplicity and missing matches before a join.

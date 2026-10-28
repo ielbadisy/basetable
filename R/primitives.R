@@ -924,7 +924,7 @@ applyby <- function(data, by, fun, ..., bind = FALSE, id = ".group") {
   bt_rbind_fill(out, fill = TRUE, id = id)
 }
 
-#' Distinct keys of `x` absent from `y`
+#' Rows of `x` whose key is absent from `y`
 #'
 #' @param x An atomic vector.
 #' @param y An atomic vector, data.frame, or basetable, depending on the function.
@@ -957,6 +957,10 @@ matchedkeys <- function(x, y, by) {
 }
 
 #' Cardinality of a join key relationship
+#'
+#' Uniqueness is checked across all rows of each input, including unmatched
+#' keys. Repeated missing keys are treated as duplicates. This describes the
+#' inputs, rather than only the keys that would match in a join.
 #'
 #' @param x An atomic vector.
 #' @param y An atomic vector, data.frame, or basetable, depending on the function.

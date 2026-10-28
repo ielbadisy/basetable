@@ -230,3 +230,24 @@ test_that("nearestmerge wraps rollingmerge nearest mode", {
   expect_s3_class(out, "basetable")
   expect_true("id" %in% names(out))
 })
+
+test_that("join diagnostics report duplicate keys and preserve matching rows", {
+  x <- data.frame(id = c(1, 1, NA, 3), value = 1:4)
+  y <- data.frame(id = c(1, NA, 4), value = 5:7)
+  expect_identical(joinrelationship(x, y, "id"), "many-to-one")
+  expect_equal(matchedkeys(x, y, "id")$value, 1:3)
+  expect_equal(unmatchedkeys(x, y, "id")$value, 4L)
+  expect_identical(joinrelationship(y, x, "id"), "one-to-many")
+  expect_identical(joinrelationship(x, x, "id"), "many-to-many")
+  expect_identical(joinrelationship(y, y, "id"), "one-to-one")
+  expect_identical(joinrelationship(x[FALSE, ], y, "id"), "one-to-one")
+})
+
+test_that("full joins agree with base for duplicate Date keys and missing keys", {
+  x <- data.frame(id = as.Date(c("2020-01-01", "2020-01-01", NA)), a = 1:3)
+  y <- data.frame(id = as.Date(c("2020-01-01", NA, "2020-02-01")), b = 4:6)
+  actual <- as.data.frame(merge(x, y, by = "id", all = TRUE, sort = TRUE))
+  expected <- base::merge(x, y, by = "id", all = TRUE, sort = TRUE)
+  rownames(actual) <- rownames(expected) <- NULL
+  expect_equal(actual, expected)
+})

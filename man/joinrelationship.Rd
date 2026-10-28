@@ -17,5 +17,7 @@ joinrelationship(x, y, by)
 One of \code{"one-to-one"}, \code{"one-to-many"}, \code{"many-to-one"}, \code{"many-to-many"}.
 }
 \description{
-Cardinality of a join key relationship
+Uniqueness is checked across all rows of each input, including unmatched
+keys. Repeated missing keys are treated as duplicates. This describes the
+inputs, rather than only the keys that would match in a join.
 }
