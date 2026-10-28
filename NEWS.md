@@ -1,4 +1,4 @@
-# basetable (development version)
+# basetable 1.4.3
 
 ## New features
 
