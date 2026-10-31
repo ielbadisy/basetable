@@ -28,6 +28,10 @@
   levels of `y` for right and full joins, as `base::merge()` does. It was
   returned as character.
 
+* `rbindfill()` keeps list-columns. They were returned as all `NA`, so
+  binding nested tables from `nest()` lost their contents. Rows from an
+  input without the column get `NULL` cells.
+
 * `rbindfill()` keeps a column that is a factor in every input holding it as
   a factor, with the union of levels in input order, as `base::rbind()`
   does. Factors were returned as character, including when a table without

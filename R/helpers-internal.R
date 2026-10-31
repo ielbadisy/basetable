@@ -64,6 +64,17 @@ bt_rbind_fill <- function(dfs, fill = TRUE, id = NULL) {
       out[[nm]] <- factor(out[[nm]], levels = lev)
     }
   }
+  # The native bind has no list type. A column that is a list in any input
+  # is rebuilt as a list-column: atomic values become one cell each, and rows
+  # from inputs without the column get NULL cells.
+  for (nm in names(out)) {
+    is_list <- vapply(dfs, function(d) is.list(d[[nm]]), logical(1))
+    if (!any(is_list)) next
+    out[[nm]] <- unlist(lapply(dfs, function(d) {
+      v <- d[[nm]]
+      if (is.null(v)) vector("list", nrow(d)) else if (is.list(v)) unclass(v) else as.list(v)
+    }), recursive = FALSE, use.names = FALSE)
+  }
   bt_as_data_table(out)
 }
 

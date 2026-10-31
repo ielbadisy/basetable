@@ -408,3 +408,23 @@ test_that("renamecols does not mutate its input", {
 
   expect_identical(input, original)
 })
+
+test_that("rbindfill() keeps list-columns", {
+  a <- data.frame(x = 1:2)
+  a$l <- list(1:3, "a")
+  b <- data.frame(x = 3L)
+  b$l <- list(TRUE)
+  out <- rbindfill(a, b)
+  expect_true(is.list(out$l))
+  expect_identical(out$l, list(1:3, "a", TRUE))
+
+  # an input without the column contributes NULL cells
+  out2 <- rbindfill(a, data.frame(x = 4L))
+  expect_identical(out2$l, list(1:3, "a", NULL))
+
+  # nested tables survive a row bind
+  n <- nest(data.frame(g = c(1, 1, 2), v = 1:3), by = "g")
+  nn <- rbindfill(n, n)
+  expect_equal(nrow(nn), 4L)
+  expect_identical(nn$data[[3]], n$data[[1]])
+})
