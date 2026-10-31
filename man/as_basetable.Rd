@@ -34,8 +34,10 @@ the class.
 }
 \details{
 The data are left unchanged; only the class and the \code{row.names} attribute
-are normalised. An object that is already a \code{basetable} is returned as-is,
-and \code{\link[=as.data.frame]{as.data.frame()}} strips the class again.
+are normalised. An object that is already a plain \code{basetable} is returned
+as-is. A subclass of \code{basetable} (an object carrying extra classes in front
+of \code{"basetable"}) is returned as a plain \code{basetable}, as \code{\link[=as.data.frame]{as.data.frame()}}
+returns a plain data frame, and \code{\link[=as.data.frame]{as.data.frame()}} strips the class again.
 }
 \examples{
 bt <- as_basetable(data.frame(g = c("a", "b"), x = 1:2))

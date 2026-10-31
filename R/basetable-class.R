@@ -30,8 +30,10 @@ new_basetable <- function(x) {
 #' the class.
 #'
 #' The data are left unchanged; only the class and the `row.names` attribute
-#' are normalised. An object that is already a `basetable` is returned as-is,
-#' and [as.data.frame()] strips the class again.
+#' are normalised. An object that is already a plain `basetable` is returned
+#' as-is. A subclass of `basetable` (an object carrying extra classes in front
+#' of `"basetable"`) is returned as a plain `basetable`, as [as.data.frame()]
+#' returns a plain data frame, and [as.data.frame()] strips the class again.
 #'
 #' @param x An object to coerce.
 #' @param ... Passed to [as.data.frame()] by the default method; ignored
@@ -51,7 +53,9 @@ as_basetable <- function(x, ...) {
 
 #' @rdname as_basetable
 #' @export
-as_basetable.basetable <- function(x, ...) x
+as_basetable.basetable <- function(x, ...) {
+  if (identical(class(x), c("basetable", "data.frame"))) x else new_basetable(x)
+}
 
 #' @rdname as_basetable
 #' @export

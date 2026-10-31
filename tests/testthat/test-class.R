@@ -68,3 +68,12 @@ test_that("is_basetable() recognises the class", {
   expect_false(is_basetable(mtcars))
   expect_false(is_basetable(list(a = 1)))
 })
+
+test_that("as_basetable() returns a plain basetable for a subclass", {
+  bt <- as_basetable(data.frame(x = 1:2))
+  expect_identical(as_basetable(bt), bt)
+  sub <- structure(bt, class = c("myclass", "basetable", "data.frame"))
+  out <- as_basetable(sub)
+  expect_identical(class(out), c("basetable", "data.frame"))
+  expect_identical(out$x, 1:2)
+})
