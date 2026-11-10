@@ -20,7 +20,9 @@ one or more of \code{"sum"}, \code{"mean"}, \code{"var"}, \code{"sd"},
 options such as \code{where}, \code{delim}, \code{n_threads}.}
 
 \item{na.rm}{Whether to remove missing values before summarizing (defaults to
-\code{TRUE} in file mode).}
+\code{TRUE} in file mode). A custom \code{fun} receives \code{na.rm} when it
+has an \code{na.rm} argument, or through \code{...} when \code{na.rm} is set
+explicitly.}
 
 \item{sort}{Whether to sort output rows by group.}
 }

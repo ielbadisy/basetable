@@ -101,3 +101,14 @@ test_that("split falls back to base::split() for non-data-frame input", {
   expect_equal(split(letters[1:6], rep(c("a", "b"), 3)),
                base::split(letters[1:6], rep(c("a", "b"), 3)))
 })
+
+test_that("aggregate does not pass an unrequested na.rm to fun", {
+  d <- data.frame(g = c(1, 1, 2), v = c("a", "b", "c"))
+  r <- aggregate(d, by = "g", value = "v", fun = paste, collapse = " ")
+  expect_equal(r$v, c("a b", "c"))
+  d2 <- data.frame(g = c(1, 1, 2), v = c(1, NA, 3))
+  expect_equal(aggregate(d2, by = "g", value = "v", fun = mean)$v, c(NA, 3))
+  expect_equal(aggregate(d2, by = "g", value = "v", fun = mean, na.rm = TRUE)$v, c(1, 3))
+  med <- function(x, na.rm = FALSE) stats::median(x, na.rm = na.rm)
+  expect_equal(aggregate(d2, by = "g", value = "v", fun = med, na.rm = TRUE)$v, c(1, 3))
+})

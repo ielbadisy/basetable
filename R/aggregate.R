@@ -26,7 +26,9 @@ aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TR
 
   f <- match.fun(fun)
   f_args <- names(formals(args(f)))
-  forward_na_rm <- "na.rm" %in% f_args || "..." %in% f_args
+  # pass na.rm when fun declares it, or through `...` only when the caller set it,
+  # so functions such as paste() do not receive an unrequested na.rm = FALSE
+  forward_na_rm <- "na.rm" %in% f_args || (!missing(na.rm) && "..." %in% f_args)
 
   group_info <- bt_engine_groups(df, by)
   groups <- bt_group_rows(group_info$id)
