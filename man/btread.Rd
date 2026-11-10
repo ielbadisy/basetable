@@ -37,7 +37,8 @@ one of \verb{,} \verb{\\t} \verb{;} \code{|} and a space.}
 
 \item{col_types}{\code{NULL} to guess, or a character vector of
 \code{"logical"}, \code{"integer"}, \code{"double"}, \code{"character"}, \code{"skip"}, \code{"guess"}.
-Length 1 is recycled; otherwise it must have one entry per column.}
+Length 1 is recycled to every column; otherwise it must have one entry per
+column. A named vector sets only the named columns and guesses the rest.}
 
 \item{col_select}{Optional integer positions or character names of the
 columns to keep. Other columns are not parsed.}

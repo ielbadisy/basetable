@@ -241,9 +241,13 @@ extern "C" SEXP btread_(SEXP s_path, SEXP s_delim, SEXP s_quote, SEXP s_comment,
     if (!seen_value[c]) types[c] = COL_LOGICAL; // all-NA column
 
   // ---- explicit col_types override -------------------------------------
-  if (!Rf_isNull(s_col_types) && Rf_xlength(s_col_types) == ncol) {
+  if (!Rf_isNull(s_col_types)) {
+    R_xlen_t ntypes = Rf_xlength(s_col_types);
+    if (ntypes != 1 && ntypes != ncol)
+      Rf_error("btread: col_types has %d entries but the file has %d columns",
+               (int) ntypes, ncol);
     for (int c = 0; c < ncol; ++c) {
-      const char* t = CHAR(STRING_ELT(s_col_types, c));
+      const char* t = CHAR(STRING_ELT(s_col_types, ntypes == 1 ? 0 : c));
       if      (strcmp(t, "logical")   == 0) types[c] = COL_LOGICAL;
       else if (strcmp(t, "integer")   == 0) types[c] = COL_INTEGER;
       else if (strcmp(t, "double")    == 0) types[c] = COL_DOUBLE;

@@ -69,6 +69,27 @@ test_that("btread col_types override", {
   expect_named(r, c("a", "b"))
 })
 
+test_that("btread recycles a single col_types entry", {
+  p <- tempfile(fileext = ".csv")
+  writeLines(c("a,b,c", "01,TRUE,x", "2,FALSE,y"), p)
+  r <- btread(p, col_types = "character")
+  expect_true(all(vapply(r, is.character, logical(1))))
+  expect_equal(r$a, c("01", "2"))
+  expect_error(btread(p, col_types = c("character", "integer")), "2 entries")
+})
+
+test_that("btread named col_types sets only the named columns", {
+  p <- tempfile(fileext = ".csv")
+  writeLines(c("a,b,c", "1,TRUE,x", "2,FALSE,y"), p)
+  r <- btread(p, col_types = c(a = "character"))
+  expect_type(r$a, "character")
+  expect_type(r$b, "logical")
+  r2 <- btread(p, col_types = c(c = "character", a = "double"))
+  expect_type(r2$a, "double")
+  expect_type(r2$c, "character")
+  expect_error(btread(p, col_types = c(zz = "character")), "unknown col_types")
+})
+
 test_that("btread lazy mode returns correct values", {
   p <- tempfile(fileext = ".csv")
   df <- data.frame(a = 1:500L, b = rnorm(500), c = 500:1L)

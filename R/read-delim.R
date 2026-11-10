@@ -18,7 +18,8 @@
 #'   `header = FALSE`. Defaults to `V1`, `V2`, ...
 #' @param col_types `NULL` to guess, or a character vector of
 #'   `"logical"`, `"integer"`, `"double"`, `"character"`, `"skip"`, `"guess"`.
-#'   Length 1 is recycled; otherwise it must have one entry per column.
+#'   Length 1 is recycled to every column; otherwise it must have one entry per
+#'   column. A named vector sets only the named columns and guesses the rest.
 #' @param col_select Optional integer positions or character names of the
 #'   columns to keep. Other columns are not parsed.
 #' @param na Character vector of strings to read as `NA`.
@@ -74,7 +75,7 @@ btread <- function(file,
 
   header_names <- NULL
   if (!is.null(col_select) && is.character(col_select) ||
-      (!is.null(col_types) && length(col_types) > 1L && !is.null(names(col_types)))) {
+      (!is.null(col_types) && !is.null(names(col_types)))) {
     header_names <- bt_peek_header(file, delim_chr, quote, skip, header)
   }
 
@@ -95,7 +96,10 @@ btread <- function(file,
     if (!is.null(names(col_types)) && !is.null(header_names)) {
       full <- rep("guess", length(header_names))
       idx <- match(names(col_types), header_names)
-      full[idx[!is.na(idx)]] <- ct[!is.na(idx)]
+      if (anyNA(idx)) stop("btread: unknown col_types name(s): ",
+                           paste(names(col_types)[is.na(idx)], collapse = ", "),
+                           call. = FALSE)
+      full[idx] <- ct
       ct <- full
     }
     if (!all(ct %in% valid))
