@@ -1,3 +1,21 @@
+# basetable 1.4.4
+
+## Fixes
+
+* `btread()` recycles a single `col_types` entry to every column, as
+  documented. Before, `col_types = "character"` was silently ignored and every
+  column was guessed. A `col_types` vector whose length is neither 1 nor the
+  number of columns is now an error instead of being ignored.
+
+* `btread()` honours a named `col_types` with one entry, such as
+  `col_types = c(id = "character")`, and errors on names that are not columns.
+  Before, a single named entry was ignored and unknown names were dropped.
+
+* `aggregate()` no longer passes `na.rm = FALSE` to a custom `fun` that only
+  takes `...`. `aggregate(fun = paste, collapse = " ")` appended "FALSE" to
+  every value. `na.rm` still reaches `fun` when `fun` has an `na.rm` argument,
+  or through `...` when `na.rm` is set explicitly.
+
 # basetable 1.4.3
 
 ## New features
