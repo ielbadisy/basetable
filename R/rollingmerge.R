@@ -1,3 +1,12 @@
+#' Rolling join two tables
+#'
+#' Join tables using a rolling match on the last key column.
+#' @param x,y Data frames or data tables to join.
+#' @param by Character vector of join columns. The last column is treated as the rolling key.
+#' @param direction Rolling direction: backward, forward, or nearest. With \code{"nearest"}, a tie between an earlier and a later match of equal distance goes to the one that comes first in \code{y}.
+#' @param tolerance Maximum distance allowed for rolling matches.
+#' @return A basetable with rows from \code{x} joined to nearest matches in \code{y}.
+#' @export
 rollingmerge <- function(x, y, by, direction = c("backward", "forward", "nearest"), tolerance = Inf) {
   x_dt <- bt_as_data_frame(x)
   y_dt <- bt_as_data_frame(y)

@@ -1,3 +1,11 @@
+#' Update rows from another table
+#'
+#' Update matching rows in \code{x} from \code{y}.
+#' @param x,y Data frames or data tables.
+#' @param by Character vector of key columns.
+#' @param cols Optional columns to update.
+#' @return A basetable with selected columns updated from \code{y}.
+#' @export
 updatemerge <- function(x, y, by, cols = NULL) {
   x_dt <- bt_as_data_frame(x)
   y_dt <- bt_as_data_frame(y)

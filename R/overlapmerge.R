@@ -1,3 +1,12 @@
+#' Merge tables on overlapping intervals
+#'
+#' Join tables by overlapping interval ranges.
+#' @param x,y Data frames or data tables to join.
+#' @param startx,endx Interval bounds in \code{x}.
+#' @param starty,endy Interval bounds in \code{y}.
+#' @param by Optional character vector of exact-match grouping columns.
+#' @return A basetable containing the overlap matches.
+#' @export
 overlapmerge <- function(x, y, startx, endx, starty, endy, by = NULL) {
   x_dt <- bt_as_data_frame(x)
   y_dt <- bt_as_data_frame(y)

@@ -1,3 +1,5 @@
+#' @rdname subset
+#' @export
 transform <- function(data, ..., .keep = TRUE, by = NULL) {
   dots <- as.list(substitute(list(...)))[-1L]
   bt_transform(data, dots, env = parent.frame(), keep = .keep, by = by)
@@ -51,6 +53,13 @@ bt_transform <- function(data, dots, env, keep = TRUE, by = NULL) {
   bt_as_data_table(df)
 }
 
+#' Modify a table within an environment
+#'
+#' Evaluate expressions inside a table and return the modified result.
+#' @param data A data frame or data table.
+#' @param expr An expression evaluated in the data's environment.
+#' @return A basetable containing the modified table.
+#' @export
 within <- function(data, expr) {
   df <- bt_as_data_frame(data)
   env <- list2env(as.list(df), parent = parent.frame())

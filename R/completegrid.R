@@ -1,3 +1,11 @@
+#' Complete a table grid
+#'
+#' Create all combinations of selected columns and merge them back to the input.
+#' @param data A data frame or data table.
+#' @param cols Character vector of columns to complete across.
+#' @param fill Named list of values used to fill missing cells.
+#' @return A basetable containing the completed grid.
+#' @export
 completegrid <- function(data, cols, fill = list()) {
   df <- bt_as_data_frame(data)
   cols <- bt_resolve_cols(df, cols)

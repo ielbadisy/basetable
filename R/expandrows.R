@@ -1,3 +1,10 @@
+#' Repeat rows in a table
+#'
+#' Repeat each row of a table according to a count vector.
+#' @param data A data frame or data table.
+#' @param times A scalar or row-wise count vector giving repetitions.
+#' @return A basetable with repeated rows.
+#' @export
 expandrows <- function(data, times) {
   df <- bt_as_data_frame(data)
 

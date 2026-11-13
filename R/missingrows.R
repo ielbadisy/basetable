@@ -1,3 +1,11 @@
+#' Return rows with missing values
+#'
+#' Return rows where selected columns are missing or blank.
+#' @param data A data frame or data table.
+#' @param cols Optional character vector of columns to inspect.
+#' @param mode Whether any or all selected columns must be missing.
+#' @return A basetable containing the matching rows.
+#' @export
 missingrows <- function(data, cols = NULL, mode = c("any", "all")) {
   df <- bt_as_data_frame(data)
   cols <- bt_resolve_cols(df, cols, allow_null = TRUE)

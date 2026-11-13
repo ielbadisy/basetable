@@ -1,8 +1,20 @@
+#' Table dimensions
+#'
+#' Return the number of rows and columns in a table.
+#' @param data A data frame or data table.
+#' @return A one-row data frame with the row and column counts.
+#' @export
 dims <- function(data) {
   df <- bt_as_data_frame(data)
   bt_as_data_table(data.frame(rows = nrow(df), cols = ncol(df), stringsAsFactors = FALSE))
 }
 
+#' Column types
+#'
+#' Return the column name, class, and storage type for each variable in a table.
+#' @param data A data frame or data table.
+#' @return A data frame with one row per column.
+#' @export
 types <- function(data) {
   df <- bt_as_data_frame(data)
   bt_as_data_table(data.frame(
@@ -13,6 +25,13 @@ types <- function(data) {
   ))
 }
 
+#' Head and tail rows
+#'
+#' Return the first and last `n` rows of a table.
+#' @param data A data frame or data table.
+#' @param n Number of rows to show from the start and end.
+#' @return A basetable containing the selected rows.
+#' @export
 headtail <- function(data, n = 3) {
   df <- bt_as_data_frame(data)
   if (nrow(df) <= (2L * n)) {
@@ -22,6 +41,14 @@ headtail <- function(data, n = 3) {
   bt_as_data_table(df[idx, , drop = FALSE])
 }
 
+#' Compact table preview
+#'
+#' Print a concise preview of a table with its row and column counts and a short
+#' summary of each variable.
+#' @param data A data frame or data table.
+#' @param width Maximum line width for printed output.
+#' @return The input data, invisibly.
+#' @export
 preview <- function(data, width = getOption("width")) {
   df <- bt_as_data_frame(data)
   cat(sprintf("Rows: %s  Columns: %s\n", nrow(df), ncol(df)))
@@ -33,6 +60,15 @@ preview <- function(data, width = getOption("width")) {
   invisible(data)
 }
 
+#' Column descriptions
+#'
+#' Summarize a table with basic counts, missingness, distinct values, and
+#' descriptive statistics.
+#' @param data A data frame or data table.
+#' @param cols Optional character vector of columns to describe.
+#' @param top_n Number of most frequent values to show for non-numeric columns.
+#' @return A basetable with one row per column.
+#' @export
 describe <- function(data, cols = NULL, top_n = 3) {
   df <- bt_as_data_frame(data)
   if (!is.null(cols)) {
@@ -67,10 +103,29 @@ describe <- function(data, cols = NULL, top_n = 3) {
   bt_as_data_table(do.call(rbind, rows))
 }
 
+#' Compact variable profile
+#'
+#' Return a compact profile table for the variables in a data set.
+#' @param data A data frame or data table.
+#' @param cols Optional character vector of columns to profile.
+#' @param top_n Number of most frequent values to show for non-numeric columns.
+#' @return A basetable with one row per column.
+#' @export
 profile <- function(data, cols = NULL, top_n = 3) {
   describe(data, cols = cols, top_n = top_n)
 }
 
+#' Frequency table
+#'
+#' Count the occurrences of values in a column, optionally within groups.
+#' @param data A data frame, or a single path to a delimited text file. In file mode the second argument is taken as the grouping column(s).
+#' @param column Name of the column to tabulate.
+#' @param by Optional grouping column or columns.
+#' @param prop Whether to include proportions.
+#' @param sort Whether to sort rows by descending frequency.
+#' @param ... In file mode, reader options such as \code{where}, \code{delim}.
+#' @return A basetable containing frequencies, and proportions when requested.
+#' @export
 freq <- function(data, column, by = NULL, prop = FALSE, sort = TRUE, ...) {
   if (is.character(data) && length(data) == 1L) {
     groups <- if (!missing(column)) column else by
@@ -235,6 +290,14 @@ summarytab <- function(data, vars = NULL, by = NULL, overall = TRUE, p_value = F
   bt_as_data_table(do.call(rbind, rows))
 }
 
+#' Compare tables
+#'
+#' Compare dimensions, names, types, missingness, and key overlap for two
+#' tables.
+#' @param x,y Data frames or data tables to compare.
+#' @param by Optional key columns for overlap checks.
+#' @return A list of comparison tables.
+#' @export
 compare <- function(x, y, by = NULL) {
   x_df <- bt_as_data_frame(x)
   y_df <- bt_as_data_frame(y)

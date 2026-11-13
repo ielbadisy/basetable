@@ -1,3 +1,11 @@
+#' Fill missing values upward
+#'
+#' Fill missing values in selected columns using the next observed value.
+#' @param data A data frame or data table.
+#' @param cols Character vector of columns to fill.
+#' @param by Optional grouping columns.
+#' @return A basetable with missing values filled upward.
+#' @export
 fillup <- function(data, cols, by = NULL) {
   df <- bt_as_data_frame(data)
   cols <- bt_resolve_cols(df, cols)
