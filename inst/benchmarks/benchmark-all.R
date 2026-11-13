@@ -33,7 +33,7 @@ workloads <- list(
   count = function() basetable::count(dt, by = "grp"),
   count_dt = function() dt[, .N, by = grp],
 
-  duplicated_keys = function() basetable::duplicated_keys(dt, by = "grp2"),
+  duplicatedkeys = function() basetable::duplicatedkeys(dt, by = "grp2"),
   duplicated_keys_dt = function() dt[, .N, by = grp2][N > 1L],
 
   freq = function() basetable::freq(dt, column = "grp"),

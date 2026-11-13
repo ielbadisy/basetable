@@ -12,7 +12,7 @@ duplicatekeys(data, by)
 \item{by}{Character vector of column names identifying groups or join keys.}
 }
 \value{
-See \code{\link[=duplicated_keys]{duplicated_keys()}}.
+See \code{\link[=duplicatedkeys]{duplicatedkeys()}}.
 }
 \description{
 Duplicated key combinations

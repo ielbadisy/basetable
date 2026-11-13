@@ -135,10 +135,10 @@ uniquerows <- function(data, cols = NULL, .keep_all = FALSE, ...) {
 #' @param data A data.frame.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
-#' @return See [duplicated_keys()].
+#' @return See [duplicatedkeys()].
 #' @export
 duplicatekeys <- function(data, by) {
-  duplicated_keys(data, by)
+  duplicatedkeys(data, by)
 }
 
 #' Duplicated column names
@@ -150,17 +150,6 @@ duplicatekeys <- function(data, by) {
 duplicatenames <- function(data) {
   df <- bt_as_data_frame(data)
   names(df)[duplicated(names(df))]
-}
-
-#' Column names shared by two tables
-#'
-#' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or basetable, depending on the function.
-#'
-#' @return See [common_names()].
-#' @export
-commonnames <- function(x, y) {
-  common_names(x, y)
 }
 
 #' Clean column names to a unique, syntactic form
@@ -2306,22 +2295,6 @@ assertnames <- function(data, names) {
   if (!all(names %in% base::names(bt_as_data_frame(data)))) stop("Missing required names.", call. = FALSE)
   invisible(data)
 }
-#' Assert that columns exist (alias)
-#'
-#' @param data A data.frame.
-#' @param cols Character vector of column names.
-#'
-#' @return See [assert_cols()].
-#' @export
-assertcols <- function(data, cols) assert_cols(data, cols)
-#' Assert that a key is unique (alias)
-#'
-#' @param data A data.frame.
-#' @param by Character vector of column names identifying groups or join keys.
-#'
-#' @return See [assert_key()].
-#' @export
-assertkey <- function(data, by) assert_key(data, by)
 #' Assert that a row-wise condition holds for every row
 #'
 #' @param data A data.frame.

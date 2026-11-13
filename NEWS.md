@@ -1,3 +1,19 @@
+# basetable 1.4.5
+
+## Renamed functions
+
+Exported functions are now glued lowercase, with no underscores. The old names
+still work but are deprecated and will be removed in a future release.
+
+| Old name          | New name         |
+|-------------------|------------------|
+| `as_basetable()`  | `asbasetable()`  |
+| `is_basetable()`  | `isbasetable()`  |
+| `assert_cols()`   | `assertcols()`   |
+| `assert_key()`    | `assertkey()`    |
+| `common_names()`  | `commonnames()`  |
+| `duplicated_keys()` | `duplicatedkeys()` |
+
 # basetable 1.4.4
 
 ## Fixes

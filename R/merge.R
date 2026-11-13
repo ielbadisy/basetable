@@ -10,7 +10,7 @@ merge <- function(x,
   y_dt <- bt_as_data_frame(y)
 
   if (is.null(by)) {
-    by <- common_names(x_dt, y_dt)
+    by <- commonnames(x_dt, y_dt)
   }
   if (length(by) == 0L) {
     stop("No common join columns found; supply `by` explicitly.", call. = FALSE)
