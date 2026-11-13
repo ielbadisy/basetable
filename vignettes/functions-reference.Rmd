@@ -481,13 +481,12 @@ tryCatch(assertunique(mtcars, "cyl"), error = function(e) conditionMessage(e))
 tryCatch(assertvalues(mtcars, "am", allowed = c(0, 1)), error = function(e) "passes")
 ```
 
-`assertcols()`/`assertkey()` are convenience aliases for the lower-level
-`assert_cols()`/`assert_key()`, which do the same checks and are what you'd
-call from code that doesn't need the `assert*` naming convention:
+`assertcols()` and `assertkey()` check that columns exist and that a key is
+unique:
 
 ```{r}
-assert_cols(mtcars, c("mpg", "cyl")) |> invisible()
-tryCatch(assert_key(mtcars, "cyl"), error = function(e) conditionMessage(e))
+assertcols(mtcars, c("mpg", "cyl")) |> invisible()
+tryCatch(assertkey(mtcars, "cyl"), error = function(e) conditionMessage(e))
 ```
 
 ## Finding rows/values that fail a check: `invalidrows()`, `invalidvalues()`, `outofrange()`
@@ -543,10 +542,10 @@ duplicaterows(data.frame(x = c(1, 1, 2)))
 duplicatekeys(dup_df, "id")
 ```
 
-`duplicatekeys()` is a convenience alias for the lower-level `duplicated_keys()`:
+`duplicatekeys()` is a convenience alias for `duplicatedkeys()`:
 
 ```{r}
-duplicated_keys(dup_df, "id")
+duplicatedkeys(dup_df, "id")
 ```
 
 ## Column-name hygiene: `cleannames()`, `repairnames()`, `renamewith()`, `commonnames()`
@@ -557,10 +556,10 @@ cleannames(messy)
 commonnames(mtcars, iris)
 ```
 
-`commonnames()` is a convenience alias for the lower-level `common_names()`:
+`commonnames()` returns the column names shared by two tables:
 
 ```{r}
-common_names(mtcars, iris)
+commonnames(mtcars, iris)
 ```
 
 ## Filling in missing values within groups: `filldown()`, `fillup()`, `fillboth()`

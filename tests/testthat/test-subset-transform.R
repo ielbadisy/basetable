@@ -42,7 +42,7 @@ test_that("merge and key helpers behave consistently", {
 
   out <- merge(x, y, by = "id", all.x = TRUE)
   expect_equal(nrow(out), 2L)
-  expect_equal(common_names(x, y), "id")
+  expect_equal(commonnames(x, y), "id")
 })
 
 test_that("subset/pick/transform/orderrows/renamecols compose into a pipeline", {
