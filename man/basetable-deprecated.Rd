@@ -29,6 +29,8 @@ duplicated_keys(data, by)
 }
 \description{
 These functions were renamed to glued lowercase names and will be removed in
-a future release.
+a future release. The deprecation warning is given only when an old name is
+called directly from the global environment (soft deprecation), so packages
+that still use the old names keep working silently until they update.
 }
 \keyword{internal}
