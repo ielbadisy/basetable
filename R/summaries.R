@@ -1,3 +1,11 @@
+#' Named grouped summaries
+#'
+#' Compute multiple named summary expressions, optionally by group.
+#' @param data A data frame or data table.
+#' @param by Optional grouping columns.
+#' @param ... Named summary expressions.
+#' @return A basetable containing the requested summaries.
+#' @export
 summaries <- function(data, by = NULL, ...) {
   df <- bt_as_data_frame(data)
   dots <- as.list(substitute(list(...)))[-1L]

@@ -1,3 +1,10 @@
+#' Anti-join two tables
+#'
+#' Keep rows in \code{x} whose keys do not exist in \code{y}.
+#' @param x,y Data frames or data tables to compare.
+#' @param by Character vector of join columns.
+#' @return A basetable containing rows from \code{x} without matches in \code{y}.
+#' @export
 antimerge <- function(x, y, by) {
   x_df <- bt_as_data_frame(x)
   y_df <- bt_as_data_frame(y)

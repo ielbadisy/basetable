@@ -1,3 +1,11 @@
+#' Drop rows with missing values
+#'
+#' Drop rows where selected columns are missing or blank.
+#' @param data A data frame or data table.
+#' @param cols Optional character vector of columns to inspect.
+#' @param mode Whether any or all selected columns must be missing before a row is dropped.
+#' @return A basetable without the omitted rows.
+#' @export
 omitmissing <- function(data, cols = NULL, mode = c("any", "all")) {
   df <- bt_as_data_frame(data)
   cols <- bt_resolve_cols(df, cols, allow_null = TRUE)

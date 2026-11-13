@@ -1,3 +1,11 @@
+#' Add missingness indicators
+#'
+#' Append logical indicators showing whether selected columns are missing or blank.
+#' @param data A data frame or data table.
+#' @param cols Optional character vector of columns to inspect.
+#' @param prefix Prefix used for the added indicator columns.
+#' @return A basetable with logical missingness indicator columns appended.
+#' @export
 missingindicator <- function(data, cols = NULL, prefix = "missing_") {
   df <- bt_as_data_frame(data)
   cols <- bt_resolve_cols(df, cols, allow_null = TRUE)

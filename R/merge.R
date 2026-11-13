@@ -1,3 +1,13 @@
+#' Merge two tables
+#'
+#' Merge two tables using shared keys.
+#' @param x,y Data frames or data tables to merge.
+#' @param by Optional character vector of join columns.
+#' @param all,all.x,all.y Controls for keeping unmatched rows.
+#' @param sort Whether to sort the result.
+#' @param suffixes Suffixes used for overlapping column names.
+#' @return A basetable containing the merged rows.
+#' @export
 merge <- function(x,
                   y,
                   by = NULL,
