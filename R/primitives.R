@@ -2199,12 +2199,20 @@ addyears <- function(x, n, invalid = c("previous", "next", "missing", "error")) 
 }
 #' Difference between two dates
 #'
-#' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or basetable, depending on the function.
-#' @param units Unit used to express the difference.
+#' Returns `x - y`: positive when `x` is later than `y`. Put the later date
+#' first, as in `datediff(end, start)`, to get an elapsed time.
 #'
-#' @return A numeric vector of differences.
+#' @param x Dates or date-times (Date, POSIXct, or text that parses as one):
+#'   the date the difference is taken from.
+#' @param y Dates or date-times subtracted from `x`.
+#' @param units Unit of the result, as in [difftime()]: `"days"` (default),
+#'   `"weeks"`, `"hours"`, `"mins"`, `"secs"` or `"auto"`.
+#'
+#' @return A numeric vector, `x - y` in `units`.
 #' @export
+#' @examples
+#' datediff(as.Date("2020-01-10"), as.Date("2020-01-01"))  # 9
+#' datediff(as.Date("2020-01-01"), as.Date("2020-01-10"))  # -9
 datediff <- function(x, y, units = "days") {
   as.numeric(difftime(bt_as_datetime(x), bt_as_datetime(y), units = units))
 }

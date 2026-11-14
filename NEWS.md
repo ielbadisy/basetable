@@ -1,3 +1,7 @@
+# basetable 1.4.7
+
+- `datediff()` help now states the direction (`x - y`, positive when `x` is later), describes the accepted inputs and `units`, and has examples. Behaviour is unchanged.
+
 # basetable 1.4.6
 
 - Deprecated underscore aliases (`as_basetable()` etc.) now warn only when called directly by the user, not from inside another package, so packages that still use the old names keep passing their tests.
