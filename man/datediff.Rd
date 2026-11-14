@@ -7,15 +7,22 @@
 datediff(x, y, units = "days")
 }
 \arguments{
-\item{x}{An atomic vector.}
+\item{x}{Dates or date-times (Date, POSIXct, or text that parses as one):
+the date the difference is taken from.}
 
-\item{y}{An atomic vector, data.frame, or basetable, depending on the function.}
+\item{y}{Dates or date-times subtracted from \code{x}.}
 
-\item{units}{Unit used to express the difference.}
+\item{units}{Unit of the result, as in \code{\link[=difftime]{difftime()}}: \code{"days"} (default),
+\code{"weeks"}, \code{"hours"}, \code{"mins"}, \code{"secs"} or \code{"auto"}.}
 }
 \value{
-A numeric vector of differences.
+A numeric vector, \code{x - y} in \code{units}.
 }
 \description{
-Difference between two dates
+Returns \code{x - y}: positive when \code{x} is later than \code{y}. Put the later date
+first, as in \code{datediff(end, start)}, to get an elapsed time.
+}
+\examples{
+datediff(as.Date("2020-01-10"), as.Date("2020-01-01"))  # 9
+datediff(as.Date("2020-01-01"), as.Date("2020-01-10"))  # -9
 }

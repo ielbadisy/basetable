@@ -78,3 +78,14 @@ test_that("datediff honors the units argument", {
   expect_equal(datediff(x, y, units = "days"), 2)
   expect_equal(datediff(x, y, units = "weeks"), 2 / 7)
 })
+
+test_that("datediff(x, y) is x minus y and its help page says so", {
+  expect_equal(datediff(as.Date("2020-01-10"), as.Date("2020-01-01")), 9)
+  expect_equal(datediff(as.Date("2020-01-01"), as.Date("2020-01-10")), -9)
+  expect_equal(datediff(as.Date("2020-01-15"), as.Date("2020-01-01"), units = "weeks"), 2)
+
+  rd <- testthat::test_path("..", "..", "man", "datediff.Rd")
+  skip_if_not(file.exists(rd))
+  txt <- paste(readLines(rd), collapse = " ")
+  expect_match(txt, "x - y", fixed = TRUE)
+})
