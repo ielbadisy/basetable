@@ -29,3 +29,15 @@ Compute grouped summaries for one or more value columns. When \code{data} is a
 single file path, the file is scanned once and only the grouping and value
 fields are extracted, without materialising the other columns.
 }
+\details{
+basetable's \code{aggregate()} masks \code{\link[stats:aggregate]{stats::aggregate()}} when the
+package is attached. Calls written for \code{\link[stats:aggregate]{stats::aggregate()}} are passed to
+it unchanged: a formula (\code{aggregate(y ~ g, data = d, FUN = mean)}), a
+vector or time series as first argument, a list as \code{by}, or any of the
+stats-only arguments \code{x}, \code{formula}, \code{FUN}, \code{simplify}, \code{drop}, \code{subset},
+\code{na.action}, \code{nfrequency}, \code{ndeltat}, \code{ts.eps}.
+}
+\examples{
+aggregate(mtcars, by = "cyl", value = "mpg", fun = mean)
+aggregate(mpg ~ cyl, data = mtcars, FUN = mean) # stats::aggregate()
+}

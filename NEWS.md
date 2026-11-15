@@ -2,6 +2,8 @@
 
 - `summarytab()` gains a `stat` argument for numeric variables: `"meansd"` (default, unchanged), `"medianiqr"` (median with first and third quartiles, as `stats::quantile()`) and `"minmax"`. Several can be combined, one row each.
 
+- `drop()`, `merge()` and `aggregate()` mask `base::drop()`, `base::merge()` and `stats::aggregate()` when basetable is attached. Calls written for the base/stats versions are now passed to them: `drop(x)` without `cols`, `merge()` with base-only arguments (`by.x`, `by.y`, `no.dups`, ...), and `aggregate()` with a formula, a vector or time series, a list `by`, or `FUN`/`x`/`simplify`/... . basetable calls behave as before. `merge()` gains `...` for this.
+
 # basetable 1.4.7
 
 - `datediff()` help now states the direction (`x - y`, positive when `x` is later), describes the accepted inputs and `units`, and has examples. Behaviour is unchanged.

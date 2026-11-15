@@ -10,9 +10,23 @@
 #' @param ... Additional arguments passed to \code{fun}; in file mode, reader options such as \code{where}, \code{delim}, \code{n_threads}.
 #' @param na.rm Whether to remove missing values before summarizing (defaults to \code{TRUE} in file mode). A custom \code{fun} receives \code{na.rm} when it has an \code{na.rm} argument, or through \code{...} when \code{na.rm} is set explicitly.
 #' @param sort Whether to sort output rows by group.
+#' @details basetable's `aggregate()` masks [stats::aggregate()] when the
+#'   package is attached. Calls written for [stats::aggregate()] are passed to
+#'   it unchanged: a formula (`aggregate(y ~ g, data = d, FUN = mean)`), a
+#'   vector or time series as first argument, a list as `by`, or any of the
+#'   stats-only arguments `x`, `formula`, `FUN`, `simplify`, `drop`, `subset`,
+#'   `na.action`, `nfrequency`, `ndeltat`, `ts.eps`.
 #' @return A basetable containing one row per group.
+#' @examples
+#' aggregate(mtcars, by = "cyl", value = "mpg", fun = mean)
+#' aggregate(mpg ~ cyl, data = mtcars, FUN = mean) # stats::aggregate()
 #' @export
 aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TRUE) {
+  if (bt_is_stats_aggregate_call(match.call(expand.dots = FALSE),
+                                 if (missing(data)) NULL else data,
+                                 if (missing(by)) NULL else by)) {
+    return(bt_call_base(sys.call(), quote(stats::aggregate), parent.frame()))
+  }
   if (is.character(data) && length(data) == 1L) {
     return(aggregate_from_file(
       data, by = by, value = value,

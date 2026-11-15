@@ -6,7 +6,19 @@
 #' @param all,all.x,all.y Controls for keeping unmatched rows.
 #' @param sort Whether to sort the result.
 #' @param suffixes Suffixes used for overlapping column names.
+#' @param ... Arguments of [base::merge()] only (`by.x`, `by.y`,
+#'   `incomparables`, `no.dups`, ...). When any is given, the whole call is
+#'   passed to [base::merge()] and its result is returned.
+#' @details basetable's `merge()` masks [base::merge()] when the package is
+#'   attached. Calls that use only the arguments above keep basetable's
+#'   behaviour (`sort = FALSE` by default, a basetable result). Calls with
+#'   base-only arguments go to [base::merge()], so base code keeps working.
 #' @return A basetable containing the merged rows.
+#' @examples
+#' a <- data.frame(id = 1:3, u = c("x", "y", "z"))
+#' b <- data.frame(id = c(2, 3, 4), v = c(10, 20, 30))
+#' merge(a, b, by = "id")
+#' merge(a, b, by.x = "id", by.y = "id", all = TRUE) # base::merge()
 #' @export
 merge <- function(x,
                   y,
@@ -15,7 +27,11 @@ merge <- function(x,
                   all.x = all,
                   all.y = all,
                   sort = FALSE,
-                  suffixes = c(".x", ".y")) {
+                  suffixes = c(".x", ".y"),
+                  ...) {
+  if (...length() > 0L) {
+    return(bt_call_base(sys.call(), quote(base::merge), parent.frame()))
+  }
   x_dt <- bt_as_data_frame(x)
   y_dt <- bt_as_data_frame(y)
 
