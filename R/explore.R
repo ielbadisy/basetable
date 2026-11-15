@@ -173,12 +173,31 @@ freq <- function(data, column, by = NULL, prop = FALSE, sort = TRUE, ...) {
 #' @param overall Include an "Overall" column alongside the by-group columns.
 #' @param p_value Include a column of between-group p-values. Requires `by`.
 #' @param digits Number of decimal places used when formatting numbers.
+#' @param stat Summary statistics shown for numeric variables, one row each,
+#'   in the order given. Any of `"meansd"` (mean and standard deviation),
+#'   `"medianiqr"` (median with first and third quartiles, from
+#'   [stats::quantile()] with its default `type = 7`) and `"minmax"`
+#'   (minimum and maximum). Missing values are ignored. Defaults to
+#'   `"meansd"`.
+#'
+#' @details The p-value for a numeric variable is always a Welch t-test (two
+#'   groups) or a Welch one-way ANOVA (more groups), whatever `stat` is. It is
+#'   shown on the first statistic row.
 #'
 #' @return A basetable with one row per variable (or variable level), and one
 #'   column per stratum plus `Overall`/`p_value` as requested.
+#' @examples
+#' summarytab(mtcars, vars = c("mpg", "cyl"), by = "am")
+#' summarytab(mtcars, vars = "mpg", by = "am", stat = c("medianiqr", "minmax"))
 #' @export
-summarytab <- function(data, vars = NULL, by = NULL, overall = TRUE, p_value = FALSE, digits = 1) {
+summarytab <- function(data, vars = NULL, by = NULL, overall = TRUE, p_value = FALSE, digits = 1,
+                       stat = "meansd") {
   df <- bt_as_data_frame(data)
+  stat_choices <- c("meansd", "medianiqr", "minmax")
+  if (!is.character(stat) || length(stat) == 0L || anyNA(stat) || !all(stat %in% stat_choices)) {
+    stop("`stat` must contain only \"meansd\", \"medianiqr\" or \"minmax\".", call. = FALSE)
+  }
+  stat <- unique(stat)
 
   if (!is.null(by)) {
     by <- bt_resolve_cols(df, by)
@@ -217,24 +236,26 @@ summarytab <- function(data, vars = NULL, by = NULL, overall = TRUE, p_value = F
     p_value_label <- if (p_value) bt_summarytab_p_value(x, group) else NULL
 
     if (is.numeric(x)) {
-      group_values <- if (length(group_keys) > 0L) {
-        vapply(group_keys, function(key) {
-          bt_summarytab_numeric(x[bt_summarytab_match(group, key)], digits = digits)
-        }, character(1))
-      } else {
-        character(0)
-      }
+      for (j in seq_along(stat)) {
+        group_values <- if (length(group_keys) > 0L) {
+          vapply(group_keys, function(key) {
+            bt_summarytab_numeric(x[bt_summarytab_match(group, key)], digits = digits, stat = stat[[j]])
+          }, character(1))
+        } else {
+          character(0)
+        }
 
-      rows[[length(rows) + 1L]] <- bt_summarytab_row(
-        variable = var,
-        level = "Mean (SD)",
-        group_labels = group_labels,
-        group_values = group_values,
-        overall = overall,
-        overall_value = bt_summarytab_numeric(x, digits = digits),
-        p_value = p_value,
-        p_value_label = p_value_label
-      )
+        rows[[length(rows) + 1L]] <- bt_summarytab_row(
+          variable = if (j == 1L) var else "",
+          level = bt_summarytab_stat_label(stat[[j]]),
+          group_labels = group_labels,
+          group_values = group_values,
+          overall = overall,
+          overall_value = bt_summarytab_numeric(x, digits = digits, stat = stat[[j]]),
+          p_value = p_value,
+          p_value_label = if (j == 1L) p_value_label else ""
+        )
+      }
 
       if (any(is.na(x))) {
         missing_values <- if (length(group_keys) > 0L) {
@@ -362,17 +383,28 @@ bt_summarytab_row <- function(variable, level, group_labels, group_values, overa
   bt_as_data_table(as.data.frame(out, stringsAsFactors = FALSE, check.names = FALSE))
 }
 
-bt_summarytab_numeric <- function(x, digits = 1) {
+bt_summarytab_numeric <- function(x, digits = 1, stat = "meansd") {
   x <- x[!is.na(x)]
   if (length(x) == 0L) {
     return("NA")
   }
+  fmt <- function(v) bt_summarytab_number(v, digits = digits)
 
-  paste0(
-    bt_summarytab_number(mean(x), digits = digits),
-    " (",
-    bt_summarytab_number(stats::sd(x), digits = digits),
-    ")"
+  switch(stat,
+    meansd = paste0(fmt(mean(x)), " (", fmt(stats::sd(x)), ")"),
+    medianiqr = {
+      q <- stats::quantile(x, probs = c(0.5, 0.25, 0.75), names = FALSE)
+      paste0(fmt(q[[1L]]), " [", fmt(q[[2L]]), ", ", fmt(q[[3L]]), "]")
+    },
+    minmax = paste0(fmt(min(x)), ", ", fmt(max(x)))
+  )
+}
+
+bt_summarytab_stat_label <- function(stat) {
+  switch(stat,
+    meansd = "Mean (SD)",
+    medianiqr = "Median [Q1, Q3]",
+    minmax = "Min, Max"
   )
 }
 

@@ -1,3 +1,7 @@
+# basetable 1.4.8
+
+- `summarytab()` gains a `stat` argument for numeric variables: `"meansd"` (default, unchanged), `"medianiqr"` (median with first and third quartiles, as `stats::quantile()`) and `"minmax"`. Several can be combined, one row each.
+
 # basetable 1.4.7
 
 - `datediff()` help now states the direction (`x - y`, positive when `x` is later), describes the accepted inputs and `units`, and has examples. Behaviour is unchanged.

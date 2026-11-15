@@ -10,7 +10,8 @@ summarytab(
   by = NULL,
   overall = TRUE,
   p_value = FALSE,
-  digits = 1
+  digits = 1,
+  stat = "meansd"
 )
 }
 \arguments{
@@ -26,6 +27,13 @@ column other than \code{by}.}
 \item{p_value}{Include a column of between-group p-values. Requires \code{by}.}
 
 \item{digits}{Number of decimal places used when formatting numbers.}
+
+\item{stat}{Summary statistics shown for numeric variables, one row each,
+in the order given. Any of \code{"meansd"} (mean and standard deviation),
+\code{"medianiqr"} (median with first and third quartiles, from
+\code{\link[stats:quantile]{stats::quantile()}} with its default \code{type = 7}) and \code{"minmax"}
+(minimum and maximum). Missing values are ignored. Defaults to
+\code{"meansd"}.}
 }
 \value{
 A basetable with one row per variable (or variable level), and one
@@ -34,4 +42,13 @@ column per stratum plus \code{Overall}/\code{p_value} as requested.
 \description{
 Build a publication-style summary table of one or more variables, optionally
 stratified by a grouping column, in the manner of a clinical "Table 1".
+}
+\details{
+The p-value for a numeric variable is always a Welch t-test (two
+groups) or a Welch one-way ANOVA (more groups), whatever \code{stat} is. It is
+shown on the first statistic row.
+}
+\examples{
+summarytab(mtcars, vars = c("mpg", "cyl"), by = "am")
+summarytab(mtcars, vars = "mpg", by = "am", stat = c("medianiqr", "minmax"))
 }
