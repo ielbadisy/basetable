@@ -52,6 +52,44 @@ test_that("summarytab builds table1-style summaries with optional p-values", {
   expect_true(any(!is.na(out$p_value) & nzchar(out$p_value)))
 })
 
+test_that("summarytab stat = medianiqr and minmax match base quantile/min/max", {
+  set.seed(42)
+  dat <- data.frame(
+    x = c(rexp(57), NA, NA),
+    g = rep(c("a", "b", "c"), length.out = 59)
+  )
+  out <- summarytab(dat, vars = "x", by = "g", stat = c("meansd", "medianiqr", "minmax"),
+                    p_value = TRUE, digits = 3)
+
+  expect_equal(out$level, c("Mean (SD)", "Median [Q1, Q3]", "Min, Max", "Missing"))
+  expect_equal(out$variable, c("x", "", "", ""))
+  expect_true(nzchar(out$p_value[[1]]))
+  expect_equal(out$p_value[2:3], c("", ""))
+
+  ref_med <- function(v) {
+    q <- quantile(v, c(0.5, 0.25, 0.75), na.rm = TRUE, names = FALSE)
+    sprintf("%.3f [%.3f, %.3f]", q[1], q[2], q[3])
+  }
+  ref_rng <- function(v) sprintf("%.3f, %.3f", min(v, na.rm = TRUE), max(v, na.rm = TRUE))
+  ref_msd <- function(v) sprintf("%.3f (%.3f)", mean(v, na.rm = TRUE), sd(v, na.rm = TRUE))
+
+  for (lev in c("a", "b", "c")) {
+    v <- dat$x[dat$g == lev]
+    expect_equal(out[[lev]], c(ref_msd(v), ref_med(v), ref_rng(v),
+                               sprintf("%d (%.3f%%)", sum(is.na(v)), 100 * mean(is.na(v)))))
+  }
+  expect_equal(out$Overall[2], ref_med(dat$x))
+  expect_equal(out$Overall[3], ref_rng(dat$x))
+
+  # default is unchanged, medianiqr alone gives one row
+  expect_identical(summarytab(mtcars, vars = "mpg")$level, "Mean (SD)")
+  med <- summarytab(mtcars, vars = "mpg", stat = "medianiqr", digits = 2)
+  q <- quantile(mtcars$mpg, c(0.5, 0.25, 0.75), names = FALSE)
+  expect_identical(med$Overall, sprintf("%.2f [%.2f, %.2f]", q[1], q[2], q[3]))
+
+  expect_error(summarytab(mtcars, vars = "mpg", stat = "iqr"), "`stat` must")
+})
+
 # ---- describe --------------------------------------------------------------
 
 test_that("describe returns one row per column", {
