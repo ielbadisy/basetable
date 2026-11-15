@@ -554,3 +554,26 @@ bt_set_row_names <- function(x, n) {
     stop("Length mismatch.", call. = FALSE)
   }
 }
+
+# Re-run a masked call with the base/stats function it masks. The arguments
+# are evaluated again in the caller's frame, as in a fresh call.
+bt_call_base <- function(call, fun, envir) {
+  call[[1L]] <- fun
+  eval(call, envir)
+}
+
+# TRUE when an aggregate() call is written for stats::aggregate().
+bt_is_stats_aggregate_call <- function(mc, data, by) {
+  stats_only <- c("x", "formula", "FUN", "simplify", "drop", "subset",
+                  "na.action", "nfrequency", "ndeltat", "ts.eps")
+  if (any(names(mc$...) %in% stats_only)) {
+    return(TRUE)
+  }
+  if (inherits(data, "formula") || inherits(by, "formula") || stats::is.ts(data)) {
+    return(TRUE)
+  }
+  if (is.list(by)) {
+    return(TRUE)
+  }
+  is.atomic(data) && !is.null(data) && !(is.character(data) && length(data) == 1L)
+}

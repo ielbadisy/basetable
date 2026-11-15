@@ -12,7 +12,8 @@ merge(
   all.x = all,
   all.y = all,
   sort = FALSE,
-  suffixes = c(".x", ".y")
+  suffixes = c(".x", ".y"),
+  ...
 )
 }
 \arguments{
@@ -25,10 +26,26 @@ merge(
 \item{sort}{Whether to sort the result.}
 
 \item{suffixes}{Suffixes used for overlapping column names.}
+
+\item{...}{Arguments of \code{\link[base:merge]{base::merge()}} only (\code{by.x}, \code{by.y},
+\code{incomparables}, \code{no.dups}, ...). When any is given, the whole call is
+passed to \code{\link[base:merge]{base::merge()}} and its result is returned.}
 }
 \value{
 A basetable containing the merged rows.
 }
 \description{
 Merge two tables using shared keys.
+}
+\details{
+basetable's \code{merge()} masks \code{\link[base:merge]{base::merge()}} when the package is
+attached. Calls that use only the arguments above keep basetable's
+behaviour (\code{sort = FALSE} by default, a basetable result). Calls with
+base-only arguments go to \code{\link[base:merge]{base::merge()}}, so base code keeps working.
+}
+\examples{
+a <- data.frame(id = 1:3, u = c("x", "y", "z"))
+b <- data.frame(id = c(2, 3, 4), v = c(10, 20, 30))
+merge(a, b, by = "id")
+merge(a, b, by.x = "id", by.y = "id", all = TRUE) # base::merge()
 }

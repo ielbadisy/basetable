@@ -17,3 +17,12 @@ A basetable with the selected columns removed.
 \description{
 Drop columns by name.
 }
+\details{
+basetable's \code{drop()} masks \code{\link[base:drop]{base::drop()}} when the package is
+attached. A call without \code{cols}, such as \code{drop(x)} on a matrix or array,
+is passed to \code{\link[base:drop]{base::drop()}}, so base code keeps working.
+}
+\examples{
+drop(mtcars, c("mpg", "cyl"))[1:2, 1:3]
+drop(matrix(1:3, nrow = 1)) # base::drop()
+}
