@@ -4,7 +4,7 @@
 \alias{profile}
 \title{Compact variable profile}
 \usage{
-profile(data, cols = NULL, top_n = 3)
+profile(data, cols = NULL, top_n = 3, ...)
 }
 \arguments{
 \item{data}{A data frame or data table.}
@@ -12,10 +12,16 @@ profile(data, cols = NULL, top_n = 3)
 \item{cols}{Optional character vector of columns to profile.}
 
 \item{top_n}{Number of most frequent values to show for non-numeric columns.}
+
+\item{...}{Arguments of \code{\link[stats:profile]{stats::profile()}} only.}
 }
 \value{
 A basetable with one row per column.
 }
 \description{
 Return a compact profile table for the variables in a data set.
+}
+\details{
+basetable's \code{profile()} masks \code{\link[stats:profile]{stats::profile()}} when attached; a
+fitted model (any non-data-frame \code{data}) goes to \code{\link[stats:profile]{stats::profile()}}.
 }

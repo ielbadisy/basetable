@@ -1381,10 +1381,16 @@ middle <- function(x, start, end) substr(x, start, end)
 #' @param x An atomic vector.
 #' @param n Integer count.
 #' @param ellipsis String appended to truncated text.
+#' @param ... Passed to [base::truncate()] when `x` is a connection.
+#' @details basetable's `truncate()` masks [base::truncate()] when attached;
+#'   a connection is passed to [base::truncate()].
 #'
 #' @return A character vector.
 #' @export
-truncate <- function(x, n, ellipsis = "...") ifelse(nchar(x) > n, paste0(substr(x, 1L, n - nchar(ellipsis)), ellipsis), x)
+truncate <- function(x, n, ellipsis = "...", ...) {
+  if (inherits(x, "connection")) return(base::truncate(x, ...))
+  ifelse(nchar(x) > n, paste0(substr(x, 1L, n - nchar(ellipsis)), ellipsis), x)
+}
 #' Pad text on the left
 #'
 #' @param x An atomic vector.

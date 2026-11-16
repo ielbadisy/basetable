@@ -109,9 +109,15 @@ describe <- function(data, cols = NULL, top_n = 3) {
 #' @param data A data frame or data table.
 #' @param cols Optional character vector of columns to profile.
 #' @param top_n Number of most frequent values to show for non-numeric columns.
+#' @param ... Arguments of [stats::profile()] only.
+#' @details basetable's `profile()` masks [stats::profile()] when attached; a
+#'   fitted model (any non-data-frame `data`) goes to [stats::profile()].
 #' @return A basetable with one row per column.
 #' @export
-profile <- function(data, cols = NULL, top_n = 3) {
+profile <- function(data, cols = NULL, top_n = 3, ...) {
+  if (...length() > 0L || "fitted" %in% names(sys.call()) || !is.data.frame(data)) {
+    return(bt_call_base(sys.call(), quote(stats::profile), parent.frame(), c(data = "fitted")))
+  }
   describe(data, cols = cols, top_n = top_n)
 }
 

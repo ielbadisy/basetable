@@ -4,16 +4,22 @@
 \alias{within}
 \title{Modify a table within an environment}
 \usage{
-within(data, expr)
+within(data, expr, ...)
 }
 \arguments{
 \item{data}{A data frame or data table.}
 
 \item{expr}{An expression evaluated in the data's environment.}
+
+\item{...}{Arguments of \code{\link[base:with]{base::within()}} only.}
 }
 \value{
 A basetable containing the modified table.
 }
 \description{
 Evaluate expressions inside a table and return the modified result.
+}
+\details{
+basetable's \code{within()} masks \code{\link[base:with]{base::within()}} when attached; a
+list or any non-data-frame \code{data}, or extra arguments, go to \code{\link[base:with]{base::within()}}.
 }
