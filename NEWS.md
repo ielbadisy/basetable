@@ -1,3 +1,7 @@
+# basetable 1.4.9
+
+- Grouped `var` and `sd` in `aggregate()` (data frame and file-path forms) were computed with the one-pass sum-of-squares formula, which loses all precision when the mean is large relative to the spread: with values near 1e6 the result was off in the second digit, and near 1e8 it was `NaN`. They now use Welford's update on values shifted by the first value of each group, with the Chan et al. pairwise formula to combine per-thread partial results. Results match an exact two-pass computation to about 1e-15 relative error (for values near 1e12, more closely than `stats::sd()`).
+
 # basetable 1.4.8
 
 - `summarytab()` gains a `stat` argument for numeric variables: `"meansd"` (default, unchanged), `"medianiqr"` (median with first and third quartiles, as `stats::quantile()`) and `"minmax"`. Several can be combined, one row each.
