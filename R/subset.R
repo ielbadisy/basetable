@@ -12,6 +12,9 @@
 #' @param select,by Character vectors naming columns. For \code{subset},     \code{by} names optional grouping columns: the \code{subset} expression     is then evaluated within every group, so aggregate references in it     (\code{mean(x)}, \code{max(x)}, ...) are per group; kept rows are     returned in their original order. For \code{transform}, \code{by} names     optional grouping columns and each expression in \code{...} is evaluated     within every group (e.g. \code{cumsum(x)} or \code{x - mean(x)} computed     per group), so the result still has one row per input row. Use     \code{\link{summaries}} for one row per group instead.
 #' @param drop,.keep Control flags.
 #' @param ... Additional expressions or arguments passed through to helpers.
+#' @details basetable's \code{subset()} masks \code{base::subset()} when
+#'   attached. A vector, matrix or any non-data-frame \code{data}, an argument
+#'   named \code{x}, or extra arguments send the call to \code{base::subset()}.
 #' @return Most functions return a basetable.
 #' @examples
 #' subset(mtcars, cyl == 6, select = c("mpg", "hp"))
@@ -19,7 +22,10 @@
 #' transform(mtcars, power = hp / wt)
 #' transform(mtcars, dev_mpg = mpg - mean(mpg), by = "cyl")
 #' @export
-subset <- function(data, subset = NULL, select = NULL, drop = FALSE, by = NULL) {
+subset <- function(data, subset = NULL, select = NULL, drop = FALSE, by = NULL, ...) {
+  if (...length() > 0L || "x" %in% names(sys.call()) || !is.data.frame(data)) {
+    return(bt_call_base(sys.call(), quote(base::subset), parent.frame(), c(data = "x")))
+  }
   df <- bt_as_data_frame(data)
   penv <- parent.frame()
 

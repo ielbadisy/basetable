@@ -5,7 +5,7 @@
 \alias{transform}
 \title{Core data manipulation operations}
 \usage{
-subset(data, subset = NULL, select = NULL, drop = FALSE, by = NULL)
+subset(data, subset = NULL, select = NULL, drop = FALSE, by = NULL, ...)
 
 transform(data, ..., .keep = TRUE, by = NULL)
 }
@@ -31,6 +31,11 @@ returning a \code{basetable}. See \code{\link{aggregate}}, \code{\link{count}},
 \code{\link{split}}, \code{\link{stack}}, \code{\link{summaries}},
 \code{\link{uniquerows}}, \code{\link{unstack}}, and \code{\link{within}}
 for the remaining core verbs, each documented on its own page.
+}
+\details{
+basetable's \code{subset()} masks \code{base::subset()} when
+attached. A vector, matrix or any non-data-frame \code{data}, an argument
+named \code{x}, or extra arguments send the call to \code{base::subset()}.
 }
 \examples{
 subset(mtcars, cyl == 6, select = c("mpg", "hp"))

@@ -57,3 +57,34 @@ test_that("aggregate() calls written for stats::aggregate() go to stats", {
   expect_s3_class(out, "basetable")
   expect_equal(out$mpg, as.numeric(tapply(mtcars$mpg, mtcars$cyl, mean)), ignore_attr = TRUE)
 })
+
+test_that("subset(), split(), within(), stack(), unstack() keep base meaning off data frames", {
+  v <- c(a = 1, b = 5, c = 9)
+  expect_identical(subset(v, v > 2), base::subset(v, v > 2))
+  m <- matrix(1:6, 2, dimnames = list(NULL, c("p", "q", "r")))
+  expect_identical(subset(m, m[, "p"] > 1, select = q), base::subset(m, m[, "p"] > 1, select = q))
+  expect_identical(subset(x = airquality, Temp > 90, select = Ozone),
+                   base::subset(airquality, Temp > 90, select = Ozone))
+  expect_identical(split(mtcars, mtcars$cyl), base::split(mtcars, mtcars$cyl))
+  expect_identical(split(1:6, c(1, 2)), base::split(1:6, c(1, 2)))
+  expect_identical(split(mtcars, list(mtcars$am, mtcars$vs), sep = "_"),
+                   base::split(mtcars, list(mtcars$am, mtcars$vs), sep = "_"))
+  expect_s3_class(split(mtcars, "cyl")[[1]], "basetable")
+  l <- list(a = 1:3)
+  expect_identical(within(l, b <- a * 2), base::within(l, b <- a * 2))
+  sl <- list(a = 1:2, b = 3)
+  expect_identical(stack(sl), utils::stack(sl))
+  st <- utils::stack(list(a = 1:2, b = 3:4))
+  expect_identical(unstack(x = st), utils::unstack(st))
+})
+
+test_that("truncate() on a connection and profile() on a model go to base/stats", {
+  f <- tempfile(); con <- file(f, "w+"); on.exit(close(con))
+  writeLines("abcdef", con)
+  expect_silent(truncate(con))
+  expect_identical(truncate("abcdefgh", 5), "ab...")
+  skip_if(getRversion() < "4.4.0")  # profile.glm moved from MASS to stats in 4.4.0
+  fit <- glm(am ~ wt, binomial, mtcars)
+  expect_s3_class(profile(fit), "profile")
+  expect_s3_class(profile(mtcars), "basetable")
+})

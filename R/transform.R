@@ -58,9 +58,15 @@ bt_transform <- function(data, dots, env, keep = TRUE, by = NULL) {
 #' Evaluate expressions inside a table and return the modified result.
 #' @param data A data frame or data table.
 #' @param expr An expression evaluated in the data's environment.
+#' @param ... Arguments of [base::within()] only.
+#' @details basetable's `within()` masks [base::within()] when attached; a
+#'   list or any non-data-frame `data`, or extra arguments, go to [base::within()].
 #' @return A basetable containing the modified table.
 #' @export
-within <- function(data, expr) {
+within <- function(data, expr, ...) {
+  if (...length() > 0L || !is.data.frame(data)) {
+    return(bt_call_base(sys.call(), quote(base::within), parent.frame()))
+  }
   df <- bt_as_data_frame(data)
   env <- list2env(as.list(df), parent = parent.frame())
   eval(substitute(expr), envir = env)

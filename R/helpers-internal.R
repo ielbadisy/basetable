@@ -556,9 +556,16 @@ bt_set_row_names <- function(x, n) {
 }
 
 # Re-run a masked call with the base/stats function it masks. The arguments
-# are evaluated again in the caller's frame, as in a fresh call.
-bt_call_base <- function(call, fun, envir) {
+# are evaluated again in the caller's frame, as in a fresh call. `rename` maps
+# basetable argument names to the masked function's (e.g. data = "x").
+bt_call_base <- function(call, fun, envir, rename = NULL) {
   call[[1L]] <- fun
+  nm <- names(call)
+  if (!is.null(nm) && length(rename)) {
+    i <- nm %in% names(rename)
+    nm[i] <- rename[nm[i]]
+    names(call) <- nm
+  }
   eval(call, envir)
 }
 

@@ -4,7 +4,7 @@
 \alias{stack}
 \title{Stack columns}
 \usage{
-stack(data, select = NULL, drop = FALSE)
+stack(data, select = NULL, drop = FALSE, ...)
 }
 \arguments{
 \item{data}{A data frame or data table.}
@@ -12,10 +12,17 @@ stack(data, select = NULL, drop = FALSE)
 \item{select}{Optional character vector of columns to stack.}
 
 \item{drop}{Whether to drop rows with missing values.}
+
+\item{...}{Arguments of \code{\link[utils:stack]{utils::stack()}} only.}
 }
 \value{
 A basetable with a stacked value column.
 }
 \description{
 Convert selected columns into long format with an indicator column.
+}
+\details{
+basetable's \code{stack()} and \code{unstack()} mask the \code{\link[utils:stack]{utils::stack()}}
+versions when attached; a list, a vector or an argument named \code{x} goes to
+\code{\link[utils:stack]{utils::stack()}} / \code{\link[utils:stack]{utils::unstack()}}.
 }

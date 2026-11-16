@@ -4,7 +4,7 @@
 \alias{split}
 \title{Split a table by groups}
 \usage{
-split(data, by, drop = FALSE, keep.by = TRUE)
+split(data, by, drop = FALSE, keep.by = TRUE, ...)
 }
 \arguments{
 \item{data}{A data frame or data table, or an atomic vector.}
@@ -14,6 +14,8 @@ split(data, by, drop = FALSE, keep.by = TRUE)
 \item{drop}{Whether to drop empty groups.}
 
 \item{keep.by}{Whether to keep grouping columns in each piece. Ignored when \code{data} is not a data frame.}
+
+\item{...}{Arguments of \code{base::split()} only (\code{sep}, \code{lex.order}).}
 }
 \value{
 A named list of basetables (data frame input) or a named list of vectors
@@ -23,4 +25,10 @@ A named list of basetables (data frame input) or a named list of vectors
 Split a table into pieces by one or more grouping columns. When \code{data}
 is not a data frame, dispatches to \code{base::split()} so the classic
 \code{split(vector, factor)} idiom keeps working with basetable attached.
+}
+\details{
+basetable's \code{split()} masks \code{base::split()} when attached.
+The call goes to \code{base::split()} unless \code{data} is a data frame
+and \code{by} names its columns, so \code{split(df, df$g)} keeps its base
+meaning.
 }

@@ -4,7 +4,7 @@
 \alias{truncate}
 \title{Truncate text with an ellipsis}
 \usage{
-truncate(x, n, ellipsis = "...")
+truncate(x, n, ellipsis = "...", ...)
 }
 \arguments{
 \item{x}{An atomic vector.}
@@ -12,10 +12,16 @@ truncate(x, n, ellipsis = "...")
 \item{n}{Integer count.}
 
 \item{ellipsis}{String appended to truncated text.}
+
+\item{...}{Passed to \code{\link[base:seek]{base::truncate()}} when \code{x} is a connection.}
 }
 \value{
 A character vector.
 }
 \description{
 Truncate text with an ellipsis
+}
+\details{
+basetable's \code{truncate()} masks \code{\link[base:seek]{base::truncate()}} when attached;
+a connection is passed to \code{\link[base:seek]{base::truncate()}}.
 }
