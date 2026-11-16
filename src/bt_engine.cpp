@@ -420,7 +420,11 @@ bool parse_agg_fun(SEXP s_fun, AggFun& fun) {
 
 struct AggState {
   double sum = 0.0;
+  // var/sd: Welford on x - k (k = first value seen), so large offsets cancel exactly;
+  // mu is the mean of x - k and sq the sum of squared deviations from it
   double sq = 0.0;
+  double mu = 0.0;
+  double k = 0.0;
   double min = R_PosInf;
   double max = R_NegInf;
   int n = 0;
@@ -479,9 +483,9 @@ double agg_finish(const AggState& s, AggFun fun, bool na_rm) {
     case AGG_MAX:
       return s.n > 0 ? s.max : NA_REAL;
     case AGG_VAR:
-      return s.n > 1 ? (s.sq - s.sum * s.sum / s.n) / (s.n - 1) : NA_REAL;
+      return s.n > 1 ? s.sq / (s.n - 1) : NA_REAL;
     case AGG_SD:
-      return s.n > 1 ? std::sqrt((s.sq - s.sum * s.sum / s.n) / (s.n - 1)) : NA_REAL;
+      return s.n > 1 ? std::sqrt(s.sq / (s.n - 1)) : NA_REAL;
     case AGG_N:
       return (double)s.n;
   }
@@ -507,10 +511,15 @@ void agg_update(AggState& s, AggFun fun, double x) {
       break;
     case AGG_VAR:
     case AGG_SD:
+    {
       s.sum += x;
-      s.sq += x * x;
+      if (s.n == 0) s.k = x;
       ++s.n;
+      double y = x - s.k, d = y - s.mu;
+      s.mu += d / s.n;
+      s.sq += d * (y - s.mu);
       break;
+    }
     case AGG_N:
       ++s.n;
       break;
@@ -518,8 +527,16 @@ void agg_update(AggState& s, AggFun fun, double x) {
 }
 
 void agg_merge(AggState& a, const AggState& b) {
+  // Chan et al. pairwise update of (mu, sq); mu and sq stay 0 for non-var reducers
+  if (b.n > 0) {
+    if (a.n == 0) { a.mu = b.mu; a.sq = b.sq; a.k = b.k; }
+    else {
+      double n = (double)a.n + b.n, d = (b.k - a.k) + (b.mu - a.mu);
+      a.sq += b.sq + d * d * ((double)a.n * b.n / n);
+      a.mu += d * (b.n / n);
+    }
+  }
   a.sum += b.sum;
-  a.sq += b.sq;
   a.n += b.n;
   if (b.min < a.min) a.min = b.min;
   if (b.max > a.max) a.max = b.max;

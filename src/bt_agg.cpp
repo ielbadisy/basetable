@@ -63,7 +63,8 @@ inline bool parse_i64(const char* p, size_t n, int64_t& out) {
 //   K_INT / K_DBL : 1 byte tag (0 = value, 1 = NA) + 8 bytes little-endian
 //   K_STR         : 4 bytes len (0xFFFFFFFF = NA) + len bytes
 struct Accum {
-  std::vector<double> sum, sq, cnt, mn, mx;
+  // sq/mu: Welford on x - k, k = first value of the group (see AggState in bt_engine.cpp)
+  std::vector<double> sum, sq, mu, k, cnt, mn, mx;
   std::vector<char>   bad;      // ng*nv : group had NA value and !na_rm
 };
 
@@ -89,7 +90,10 @@ struct Table {
   size_t n_groups() const { return numeric_key ? nkey.size() : blob.size(); }
   void grow_group() {
     a.sum.resize(a.sum.size() + nv, 0.0);
-    if (need_sq)  a.sq.resize(a.sq.size() + nv, 0.0);
+    if (need_sq)  {
+      a.sq.resize(a.sq.size() + nv, 0.0); a.mu.resize(a.mu.size() + nv, 0.0);
+      a.k.resize(a.k.size() + nv, 0.0);
+    }
     if (need_cnt) a.cnt.resize(a.cnt.size() + nv, 0.0);
     if (need_mn)  a.mn.resize(a.mn.size() + nv,  std::numeric_limits<double>::infinity());
     if (need_mx)  a.mx.resize(a.mx.size() + nv, -std::numeric_limits<double>::infinity());
@@ -290,7 +294,12 @@ void run_range(const Job& J, size_t r0, size_t r1, Table& T) {
       if (J.need_mn && x < T.a.mn[off]) T.a.mn[off] = x;
       if (J.need_mx && x > T.a.mx[off]) T.a.mx[off] = x;
       T.a.sum[off] += x;
-      if (J.need_sq)  T.a.sq[off]  += x * x;
+      if (J.need_sq) {
+        if (T.a.cnt[off] == 0) T.a.k[off] = x;
+        double y = x - T.a.k[off], d = y - T.a.mu[off];
+        T.a.mu[off] += d / (T.a.cnt[off] + 1.0);
+        T.a.sq[off] += d * (y - T.a.mu[off]);
+      }
       if (J.need_cnt) T.a.cnt[off] += 1.0;
     }
   }
@@ -397,7 +406,15 @@ extern "C" SEXP bt_agg_(SEXP s_path, SEXP s_delim, SEXP s_quote, SEXP s_comment,
       for (int v = 0; v < nv; ++v) {
         size_t o = (size_t) g * nv + v, lo = gi * nv + v;
         G.a.sum[o] += L.a.sum[lo];
-        if (need_sq)  G.a.sq[o]  += L.a.sq[lo];
+        if (need_sq && L.a.cnt[lo] > 0) {
+          double na_ = G.a.cnt[o], nb = L.a.cnt[lo];
+          if (na_ == 0) { G.a.mu[o] = L.a.mu[lo]; G.a.sq[o] = L.a.sq[lo]; G.a.k[o] = L.a.k[lo]; }
+          else {
+            double n = na_ + nb, d = (L.a.k[lo] - G.a.k[o]) + (L.a.mu[lo] - G.a.mu[o]);
+            G.a.sq[o] += L.a.sq[lo] + d * d * (na_ * nb / n);
+            G.a.mu[o] += d * (nb / n);
+          }
+        }
         if (need_cnt) G.a.cnt[o] += L.a.cnt[lo];
         if (need_mn && L.a.mn[lo] < G.a.mn[o]) G.a.mn[o] = L.a.mn[lo];
         if (need_mx && L.a.mx[lo] > G.a.mx[o]) G.a.mx[o] = L.a.mx[lo];
@@ -475,8 +492,8 @@ extern "C" SEXP bt_agg_(SEXP s_path, SEXP s_delim, SEXP s_quote, SEXP s_comment,
           case F_MEAN: r = C > 0 ? S / C : NA_REAL; break;
           case F_MIN:  r = std::isinf(G.a.mn[k]) ? NA_REAL : G.a.mn[k]; break;
           case F_MAX:  r = std::isinf(G.a.mx[k]) ? NA_REAL : G.a.mx[k]; break;
-          case F_VAR:  r = C > 1 ? (Q - S * S / C) / (C - 1) : NA_REAL; break;
-          case F_SD:   r = C > 1 ? std::sqrt((Q - S * S / C) / (C - 1)) : NA_REAL; break;
+          case F_VAR:  r = C > 1 ? Q / (C - 1) : NA_REAL; break;
+          case F_SD:   r = C > 1 ? std::sqrt(Q / (C - 1)) : NA_REAL; break;
           default:     r = NA_REAL;
         }
         o[g] = (!na_rm && G.a.bad[k]) ? NA_REAL : r;

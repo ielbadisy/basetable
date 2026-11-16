@@ -112,3 +112,33 @@ test_that("aggregate does not pass an unrequested na.rm to fun", {
   med <- function(x, na.rm = FALSE) stats::median(x, na.rm = na.rm)
   expect_equal(aggregate(d2, by = "g", value = "v", fun = med, na.rm = TRUE)$v, c(1, 3))
 })
+
+test_that("grouped var/sd stay accurate when the mean is large relative to the spread", {
+  set.seed(7)
+  ref <- function(d, f) tapply(d$x, d$g, function(v) f(v - v[1]))  # shift-exact reference
+  for (thr in c(1L, 4L)) {
+    old <- setthreads(threads = thr)
+    for (m in c(1e6, 1e9, 1e12)) {
+      d <- data.frame(g = sample(c("a", "b", "c"), 2e5, TRUE), x = m + rnorm(2e5))
+      for (f in list(sd, var)) {
+        r <- aggregate(d, by = "g", value = "x", fun = f)
+        expect_equal(r$x, as.vector(ref(d, f)[r$g]), tolerance = 1e-10)
+        file <- tempfile(fileext = ".csv"); btwrite(d, file, digits = 17)
+        rf <- aggregate(file, by = "g", value = "x", fun = if (identical(f, sd)) "sd" else "var")
+        rf <- rf[order(rf$g), ]
+        expect_equal(rf$x, as.vector(ref(btread(file), f)[rf$g]), tolerance = 1e-10)
+      }
+    }
+    setthreads(threads = old)
+  }
+})
+
+test_that("grouped var/sd agree with stats on the parallel aggregation paths", {
+  skip_on_cran()
+  set.seed(8)
+  old <- setthreads(threads = 4L)
+  d <- data.frame(g = sample(sprintf("k%05d", 1:5e4), 1e6, TRUE), x = 1e8 + rnorm(1e6))
+  r <- aggregate(d, by = "g", value = "x", fun = sd)
+  expect_equal(r$x, as.vector(tapply(d$x, d$g, function(v) sd(v - v[1]))[r$g]), tolerance = 1e-10)
+  setthreads(threads = old)
+})
