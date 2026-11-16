@@ -297,3 +297,21 @@ test_that("uniquerows (file) and freq", {
   expect_equal(sum(f$prop), 1)
   expect_true(all(diff(f$n) <= 0))   # sorted desc
 })
+
+test_that("lazy string columns work in every engine verb (1.4.9 fix)", {
+  set.seed(1); n <- 500
+  d <- data.frame(pid = sample(60, n, TRUE), s = sample(c("a", "bb", NA), n, TRUE), x = rnorm(n))
+  p <- data.frame(pid = 1:50, s = c("a", "bb"))
+  f <- tempfile(fileext = ".csv"); btwrite(d, f)
+  e <- btread(f); l <- function() btread(f, lazy = TRUE)
+  same <- function(fn) expect_equal(as.data.frame(fn(l())), as.data.frame(fn(e)))
+  same(function(v) subset(v, s == "a"))
+  same(function(v) orderrows(v, by = c("s", "x")))
+  same(function(v) uniquerows(v, cols = "s"))
+  same(function(v) count(v, by = "s"))
+  same(function(v) aggregate(v, by = "s", value = "x", fun = sd))
+  same(function(v) merge(v, p, by = "s"))
+  same(function(v) semimerge(v, p, by = "pid"))
+  same(function(v) unmatchedkeys(v, p, by = "pid"))
+  expect_equal(lapply(split(l(), "s"), as.data.frame), lapply(split(e, "s"), as.data.frame))
+})
