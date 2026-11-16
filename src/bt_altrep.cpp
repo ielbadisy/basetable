@@ -114,6 +114,15 @@ static SEXP bt_str_Elt(SEXP x, R_xlen_t i) {
 static void bt_str_Set_elt(SEXP x, R_xlen_t i, SEXP v) {
   SET_STRING_ELT(bt_str_materialise(x), i, v);
 }
+// Engine code reads string columns through STRING_PTR_RO, which an
+// ALTSTRING without these methods refuses; hand out the realised cache.
+static const void* bt_str_Dataptr_or_null(SEXP x) {
+  SEXP c = R_altrep_data2(x);
+  return c == R_NilValue ? nullptr : (const void*) STRING_PTR_RO(c);
+}
+static void* bt_str_Dataptr(SEXP x, Rboolean) {
+  return (void*) STRING_PTR_RO(bt_str_materialise(x));
+}
 
 // ---- registration + constructors ---------------------------------------
 
@@ -139,6 +148,8 @@ extern "C" void bt_init_altrep(DllInfo* dll) {
   R_set_altrep_Inspect_method(bt_str_class, bt_Inspect);
   R_set_altstring_Elt_method(bt_str_class, bt_str_Elt);
   R_set_altstring_Set_elt_method(bt_str_class, bt_str_Set_elt);
+  R_set_altvec_Dataptr_method(bt_str_class, bt_str_Dataptr);
+  R_set_altvec_Dataptr_or_null_method(bt_str_class, bt_str_Dataptr_or_null);
 }
 
 static SEXP bt_make_altrep(SEXP xptr, int col, bool is_int) {
